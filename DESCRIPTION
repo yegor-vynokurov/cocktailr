@@ -1,6 +1,6 @@
 Package: cocktailr
 Title: Fast, Reproducible Cocktail Clustering for Vegetation Tables
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: c(
     person("Denys", "Vynokurov", role = c("aut", "cre"),
            email = "denys.vynokurov@gmail.com",
