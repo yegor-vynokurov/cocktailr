@@ -469,15 +469,14 @@ The returned object is a named character vector (names = plot IDs). Each value i
 
 ### (Optional) Attach assignments to a header data frame
 
-The following example creates a simple header table `hea` and adds multiple assignment strategies as new columns:
+The following example creates a simple header table with plot IDs and adds multiple assignment strategies as new columns:
 
 ```{r attach-assignments, eval=TRUE}
 library(dplyr)
 
 # Example header table with plot IDs matching the names of rel_assigned
 hea <- data.frame(
-  releve_number = rownames(vm),
-  site = paste0("site_", seq_len(nrow(vm)))
+  releve_number = rownames(vm)
 )
 
 strategies <- c("count", "cover", "phi", "phi_cover")
