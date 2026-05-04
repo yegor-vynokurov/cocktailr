@@ -622,11 +622,17 @@ value is:
 
 ### (Optional) Attach assignments to a header data frame
 
-If you have a header table `hea` with a column `releve_number`, you can
-add multiple assignment strategies as new columns:
+The following example creates a simple header table `hea` and adds
+multiple assignment strategies as new columns:
 
 ``` r
 library(dplyr)
+
+# Example header table with plot IDs matching the names of rel_assigned
+hea <- data.frame(
+  releve_number = rownames(vm),
+  site = paste0("site_", seq_len(nrow(vm)))
+)
 
 strategies <- c("count", "cover", "phi", "phi_cover")
 
@@ -647,13 +653,20 @@ for (s in strategies) {
 
   # Align by releve_number using the names of rel_assigned
   idx <- match(as.character(hea2$releve_number), names(rel_assigned))
-  # This assumes that hea2$releve_number matches the plot IDs stored in names(rel_assigned).
 
   colname <- paste0("unit_", s)
   hea2[[colname]] <- rel_assigned[idx]
 }
 
 dplyr::glimpse(hea2)
+#> Rows: 8
+#> Columns: 6
+#> $ releve_number  <chr> "plot1", "plot2", "plot3", "plot4", "plot5", "plot6", "…
+#> $ site           <chr> "site_1", "site_2", "site_3", "site_4", "site_5", "site…
+#> $ unit_count     <chr> "+", "+", "u_4", "+", "u_4", "u_4", "u_4", "u_4"
+#> $ unit_cover     <chr> "u_2", "u_2", "u_2", "u_2", "u_4", "u_4", "u_4", "u_4"
+#> $ unit_phi       <chr> "u_1", "u_1", "u_4", "u_1", "u_4", "u_4", "u_4", "u_4"
+#> $ unit_phi_cover <chr> "u_2", "u_2", "u_2", "u_2", "u_4", "u_4", "u_4", "u_4"
 ```
 
 ------------------------------------------------------------------------
