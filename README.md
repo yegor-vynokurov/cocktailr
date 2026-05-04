@@ -28,15 +28,16 @@ cocktailr
 
 # cocktailr
 
-Fast and reproducible *Cocktail* clustering for vegetation data.
+*Cocktail* clustering for diagnostic species-based vegetation
+classification.
 
 ------------------------------------------------------------------------
 
 ## Citation
 
-A manuscript describing `cocktailr` is in preparation. Until then,
-please cite the GitHub repository and the original Cocktail method
-papers listed below.
+If you use `cocktailr`, please cite the GitHub repository and the
+original Cocktail method papers listed below. A manuscript describing
+the package and workflow has been prepared for submission.
 
 ## Overview
 
@@ -94,8 +95,8 @@ For details, see the original works:
 The development version of `cocktailr` can be installed from GitHub:
 
 ``` r
-# Install from GitHub
 install.packages("remotes")
+
 remotes::install_github("dvynokur/cocktailr")
 library(cocktailr)
 ```
@@ -106,6 +107,9 @@ version, for example:
 ``` r
 remotes::install_github("dvynokur/cocktailr@v0.1.0")
 ```
+
+This command will work after the corresponding GitHub release/tag has
+been created.
 
 ------------------------------------------------------------------------
 
@@ -532,14 +536,11 @@ cocktail_plot(
 ### 7) Assign plots (relevés) to candidate vegetation units
 
 `assign_releves()` assigns each plot to one of the provided candidate
-vegetation units using the vegetation matrix stored in the Cocktail
-object (`x$vegmatrix`).
-
-`assign_releves()` uses the vegetation matrix stored inside the Cocktail
-object (`x$vegmatrix`), which is created by `cocktail_cluster()` when
-`save_vegmatrix = TRUE` (default). If the Cocktail object was created
-with `save_vegmatrix = FALSE`, `assign_releves()` will stop with an
-error.
+vegetation units using the vegetation matrix stored inside the Cocktail
+object (`x$vegmatrix`). This matrix is created by `cocktail_cluster()`
+when `save_vegmatrix = TRUE` (default). If the Cocktail object was
+created with `save_vegmatrix = FALSE`, `assign_releves()` will stop with
+an error.
 
 Strategies:
 
