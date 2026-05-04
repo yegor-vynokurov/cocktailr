@@ -9,7 +9,7 @@ cocktailr
   - [Typical workflow](#typical-workflow)
     - [Long-format input](#long-format-input)
     - [Notes on long-format input](#notes-on-long-format-input)
-    - [1) Visualise the dendrogram](#1-visualise-the-dendrogram)
+    - [1) Visualize the dendrogram](#1-visualize-the-dendrogram)
     - [2) Select clusters at a φ cut **or** select strongest clusters by
       score](#2-select-clusters-at-a-φ-cut-or-select-strongest-clusters-by-score)
     - [3) Cluster diagnostics (helper
@@ -18,8 +18,8 @@ cocktailr
       clusters](#4-diagnostic-species-for-selected-clusters)
     - [5) Distances between clusters (direct plot co-membership
       φ)](#5-distances-between-clusters-direct-plot-co-membership-φ)
-    - [6) Visualise grouped clusters on the Cocktail
-      dendrogram](#6-visualise-grouped-clusters-on-the-cocktail-dendrogram)
+    - [6) Visualize grouped clusters on the Cocktail
+      dendrogram](#6-visualize-grouped-clusters-on-the-cocktail-dendrogram)
     - [7) Assign plots (relevés) to candidate vegetation
       units](#7-assign-plots-relevés-to-candidate-vegetation-units)
     - [(Optional) Attach assignments to a header data
@@ -268,7 +268,7 @@ res_long2 <- cocktail_cluster(
 
 ------------------------------------------------------------------------
 
-### 1) Visualise the dendrogram
+### 1) Visualize the dendrogram
 
 ``` r
 cocktail_plot(
@@ -515,7 +515,7 @@ cluster_groups
 
 ------------------------------------------------------------------------
 
-### 6) Visualise grouped clusters on the Cocktail dendrogram
+### 6) Visualize grouped clusters on the Cocktail dendrogram
 
 You can pass combinations of clusters (`cluster_groups`) to
 `cocktail_plot()`:

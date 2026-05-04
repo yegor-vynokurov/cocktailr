@@ -1,5 +1,5 @@
 Package: cocktailr
-Title: Fast, Reproducible Cocktail Clustering for Vegetation Tables
+Title: Cocktail clustering for diagnostic species-based vegetation classification
 Version: 0.1.0
 Authors@R: c(
     person("Denys", "Vynokurov", role = c("aut", "cre"),
@@ -21,6 +21,7 @@ Imports:
     graphics,
     grDevices,
     Matrix,
+    methods,
     stats,
     utils
 Suggests:

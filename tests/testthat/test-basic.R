@@ -11,6 +11,6 @@ test_that("cocktail_cluster works on a tiny matrix", {
   expect_equal(ncol(x$Cluster.species), 2L)
   expect_equal(nrow(x$Cluster.species), 1L)   # n-1 merges
 
-  labs <- clusters_at_cut(x, phi = 0.3)
+  labs <- clusters_at_cut(x, phi_cut = 0.3)
   expect_true(is.character(labs))
 })

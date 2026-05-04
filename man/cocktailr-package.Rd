@@ -4,10 +4,11 @@
 \name{cocktailr-package}
 \alias{cocktailr}
 \alias{cocktailr-package}
-\title{cocktailr: fast Cocktail clustering for vegetation tables}
+\title{cocktailr: fast Cocktail clustering for vegetation-plot data}
 \description{
 \strong{cocktailr} provides fast and reproducible \emph{Cocktail} clustering of vegetation data,
-identifying groups of co-occurring species from \strong{plots × species} tables.
+identifying groups of co-occurring species from \strong{plots × species} tables
+or long-format vegetation tables.
 It uses sparse-matrix calculations and φ (phi) coefficients to produce deterministic
 results, even for large vegetation databases.
 }
@@ -31,7 +32,7 @@ The package implements:
 
 \enumerate{
 \item Run clustering: \code{\link{cocktail_cluster}}
-\item Visualise dendrogram: \code{\link{cocktail_plot}}
+\item Visualize dendrogram: \code{\link{cocktail_plot}}
 \item Select clusters: \code{\link{clusters_at_cut}} or \code{\link{select_clusters}}
 \item Diagnose clusters: \code{\link{species_in_clusters}}, \code{\link{releves_in_clusters}},
 \code{\link{clusters_with_species}}

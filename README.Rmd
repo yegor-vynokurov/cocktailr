@@ -203,7 +203,7 @@ res_long2 <- cocktail_cluster(
 
 ***
 
-### 1) Visualise the dendrogram
+### 1) Visualize the dendrogram
 
 ```{r typical-plot}
 cocktail_plot(
@@ -390,7 +390,7 @@ cluster_groups
 
 ***
 
-### 6) Visualise grouped clusters on the Cocktail dendrogram
+### 6) Visualize grouped clusters on the Cocktail dendrogram
 
 You can pass combinations of clusters (`cluster_groups`) to `cocktail_plot()`:
 
