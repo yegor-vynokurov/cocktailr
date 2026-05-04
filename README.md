@@ -2,6 +2,7 @@ cocktailr
 ================
 
 - [cocktailr](#cocktailr)
+  - [Citation](#citation)
   - [Overview](#overview)
   - [Background](#background)
   - [Installation](#installation)
@@ -23,22 +24,27 @@ cocktailr
       units](#7-assign-plots-relevés-to-candidate-vegetation-units)
     - [(Optional) Attach assignments to a header data
       frame](#optional-attach-assignments-to-a-header-data-frame)
-  - [Reference](#reference)
+  - [Function help](#function-help)
 
 # cocktailr
 
-Fast, reproducible *Cocktail* clustering for vegetation data.
+Fast and reproducible *Cocktail* clustering for vegetation data.
 
 ------------------------------------------------------------------------
 
+## Citation
+
+A manuscript describing `cocktailr` is in preparation. Until then,
+please cite the GitHub repository and the original Cocktail method
+papers listed below.
+
 ## Overview
 
-**cocktailr** provides fast and reproducible *Cocktail* clustering of
-vegetation data, identifying groups of co-occurring species from **plots
-× species** tables or **long-format vegetation tables**
-(plot–species–value). It uses optimized sparse-matrix calculations and φ
-(phi) coefficients to produce consistent, deterministic results, even
-for large vegetation databases.
+**cocktailr** provides fast and reproducible *Cocktail* clustering for
+vegetation-plot data. It identifies groups of co-occurring species from
+**plots × species** tables or **long-format vegetation tables**
+(plot–species–value) and supports their use in diagnostic species-based
+vegetation classification.
 
 The package implements:
 
@@ -85,9 +91,20 @@ For details, see the original works:
 
 ## Installation
 
+The development version of `cocktailr` can be installed from GitHub:
+
 ``` r
 # Install from GitHub
+install.packages("remotes")
 remotes::install_github("dvynokur/cocktailr")
+library(cocktailr)
+```
+
+For reproducible analyses based on a tagged release, install a specific
+version, for example:
+
+``` r
+remotes::install_github("dvynokur/cocktailr@v0.1.0")
 ```
 
 ------------------------------------------------------------------------
@@ -141,8 +158,9 @@ res <- cocktail_cluster(
 )
 
 names(res)
-#> [1] "Cluster.species"     "Cluster.info"        "Plot.cluster"        "Cluster.merged"      "Cluster.height"     
-#> [6] "Species.cluster.phi" "species"             "plots"               "vegmatrix"
+#> [1] "Cluster.species"     "Cluster.info"        "Plot.cluster"       
+#> [4] "Cluster.merged"      "Cluster.height"      "Species.cluster.phi"
+#> [7] "species"             "plots"               "vegmatrix"
 ```
 
 `assign_releves()` reads the vegetation matrix from `res$vegmatrix`, so
@@ -207,8 +225,9 @@ res_long <- cocktail_cluster(
 
 # Same output structure as for wide input
 names(res_long)
-#> [1] "Cluster.species"     "Cluster.info"        "Plot.cluster"        "Cluster.merged"      "Cluster.height"     
-#> [6] "Species.cluster.phi" "species"             "plots"               "vegmatrix"
+#> [1] "Cluster.species"     "Cluster.info"        "Plot.cluster"       
+#> [4] "Cluster.merged"      "Cluster.height"      "Species.cluster.phi"
+#> [7] "species"             "plots"               "vegmatrix"
 ```
 
 The returned Cocktail object also stores the internally used, aligned
@@ -437,8 +456,10 @@ diag_sp_phi
 
 `cluster_phi_dist()` computes distances between clusters using the φ
 coefficient between their **binary plot-membership vectors** (membership
-= `Plot.cluster > 0`). Distance is always: `d(A,B) = 1 - phi(A,B)`. s We
-must specify which clusters to compare (e.g. selected strong clusters):
+= `Plot.cluster > 0`). Distance is always: `d(A,B) = 1 - phi(A,B)`.
+
+We must specify which clusters to compare (e.g. selected strong
+clusters):
 
 ``` r
 clusters_for_dist <- select_clusters(
@@ -624,7 +645,8 @@ for (s in strategies) {
   )
 
   # Align by releve_number using the names of rel_assigned
-  idx <- match(hea2$releve_number, as.integer(sub("^plot", "", names(rel_assigned))))
+  idx <- match(as.character(hea2$releve_number), names(rel_assigned))
+  # This assumes that hea2$releve_number matches the plot IDs stored in names(rel_assigned).
 
   colname <- paste0("unit_", s)
   hea2[[colname]] <- rel_assigned[idx]
@@ -635,7 +657,7 @@ dplyr::glimpse(hea2)
 
 ------------------------------------------------------------------------
 
-## Reference
+## Function help
 
 See function help for details:
 
@@ -656,4 +678,4 @@ See function help for details:
 
 ------------------------------------------------------------------------
 
-© 2025 Denys Vynokurov & Helge Bruelheide. Licensed under MIT.
+© 2026 Denys Vynokurov & Helge Bruelheide. Licensed under MIT.

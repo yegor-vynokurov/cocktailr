@@ -24,6 +24,10 @@ Imports:
     stats,
     utils
 Suggests:
+    dplyr,
+    remotes,
     testthat (>= 3.0.0),
+    tibble,
+    tidyr,
     vegan
 Config/testthat/edition: 3

@@ -37,8 +37,11 @@
 #'           stores relative cover.
 #'   }
 #'
-#' @param drop0 Logical; if \code{TRUE} (default), omit plots with membership value 0.
-#'   If \code{FALSE}, keep all plots, including non-members with value 0.
+#' @param drop0 Logical; if \code{TRUE} (default), omit plots with membership
+#'   value 0. This argument is mainly relevant when \code{values = TRUE} or
+#'   \code{return = "matrix"}. When \code{values = FALSE} and
+#'   \code{return = "list"} or \code{return = "vector"}, only member plot IDs
+#'   are returned.
 #'
 #' @param return Character; return format:
 #' \itemize{
