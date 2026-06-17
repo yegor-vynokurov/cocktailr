@@ -1,0 +1,51 @@
+{
+  "schema_version": "0.1.0",
+  "cluster_id": "c_12",
+  "status": "abstain",
+  "canonical_label": null,
+  "display_label": null,
+  "interpretation_summary": "The cluster has insufficiently distinctive evidence for a reliable ecological label in a single pass.",
+  "basis_in_data": [
+    {
+      "claim_id": "C1",
+      "statement": "The cluster contains weakly distinctive membership support and limited separation from surrounding composition.",
+      "evidence_ids": ["E3", "E8"],
+      "support_strength": "weak"
+    }
+  ],
+  "key_species": [
+    {
+      "species": "Poa pratensis",
+      "role": "other",
+      "evidence_ids": ["E5"]
+    }
+  ],
+  "external_knowledge": [],
+  "not_confirmed_by_data": [
+    {
+      "statement": "The cluster corresponds to a stable meadow community.",
+      "reason": "The evidence object does not provide enough distinctiveness to support that interpretation."
+    }
+  ],
+  "confidence": {
+    "score": 0.22,
+    "rationale": "Species support is weak and the cluster is not clearly distinctive enough for a confident label."
+  },
+  "checks_to_run": [
+    {
+      "check": "Inspect whether the cluster remains stable under alternative cut thresholds.",
+      "priority": "high",
+      "reason": "Weak support may indicate that the cluster is transitional or unstable."
+    }
+  ],
+  "abstain_reason": "Distinctive species and plot support are too weak for a defensible label without additional context or contrastive evidence.",
+  "ontology_slots": null,
+  "contrastive_notes": null,
+  "report_recommendation": {
+    "report_priority": "low",
+    "merge_candidate": null,
+    "notes": [
+      "Treat this as a review case rather than a finalized labeled cluster."
+    ]
+  }
+}

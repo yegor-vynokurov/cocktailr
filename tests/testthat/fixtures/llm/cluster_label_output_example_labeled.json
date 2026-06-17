@@ -1,0 +1,73 @@
+{
+  "schema_version": "0.1.0",
+  "cluster_id": "c_1",
+  "status": "labeled",
+  "canonical_label": "dry_grassland_cluster",
+  "display_label": "dry grassland cluster",
+  "interpretation_summary": "The cluster is dominated by a small set of co-occurring species with strong membership support and a consistent prototype plot set.",
+  "basis_in_data": [
+    {
+      "claim_id": "C1",
+      "statement": "The cluster has a compact core defined by a few recurring species with high cluster support.",
+      "evidence_ids": ["E1", "E2", "E7"],
+      "support_strength": "strong"
+    },
+    {
+      "claim_id": "C2",
+      "statement": "Prototype plots show that the same species set recurs across the strongest member plots.",
+      "evidence_ids": ["E10", "E11"],
+      "support_strength": "moderate"
+    }
+  ],
+  "key_species": [
+    {
+      "species": "Festuca ovina",
+      "role": "phi_ranked",
+      "evidence_ids": ["E4"]
+    },
+    {
+      "species": "Koeleria macrantha",
+      "role": "topological",
+      "evidence_ids": ["E2"]
+    }
+  ],
+  "external_knowledge": [
+    {
+      "statement": "Festuca ovina is often associated with dry open grassland settings in many regional floras.",
+      "knowledge_type": "habitat_hint",
+      "confidence": "medium"
+    }
+  ],
+  "not_confirmed_by_data": [
+    {
+      "statement": "The cluster represents a calcareous grassland habitat.",
+      "reason": "The provided evidence object does not include soil chemistry, pH, or direct habitat annotations."
+    }
+  ],
+  "confidence": {
+    "score": 0.73,
+    "rationale": "The label is supported by recurring species and prototype plots, but habitat interpretation remains only partly constrained by the available evidence."
+  },
+  "checks_to_run": [
+    {
+      "check": "Compare the proposed label against plot metadata or site descriptions if available.",
+      "priority": "high",
+      "reason": "Habitat wording is only indirectly supported by species composition."
+    },
+    {
+      "check": "Review whether neighboring clusters share the same phi-ranked species.",
+      "priority": "medium",
+      "reason": "This would test whether the label is specific or too broad."
+    }
+  ],
+  "abstain_reason": null,
+  "ontology_slots": null,
+  "contrastive_notes": null,
+  "report_recommendation": {
+    "report_priority": "medium",
+    "merge_candidate": null,
+    "notes": [
+      "Interpret habitat phrasing conservatively until external metadata is checked."
+    ]
+  }
+}

@@ -7,3 +7,4 @@
 .Ruserdata
 *.Rcheck/
 Thumbs.db
+temp/

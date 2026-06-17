@@ -8,6 +8,7 @@ cocktailr
   - [Installation](#installation)
   - [Synthetic data for cluster labeling](#synthetic-data-for-cluster-labeling)
   - [Typical workflow](#typical-workflow)
+    - [Evidence for LLM-assisted labeling (experimental)](#evidence-for-llm-assisted-labeling-experimental)
     - [Long-format input](#long-format-input)
     - [Notes on long-format input](#notes-on-long-format-input)
     - [1) Visualize the dendrogram](#1-visualize-the-dendrogram)
@@ -71,6 +72,8 @@ The package implements:
 - **Human-readable synthetic vegetation datasets** for testing
   clustering and LLM-based cluster labeling
   (`generate_synthetic_vegetation_data()`).
+- **Evidence objects** for LLM-assisted cluster labeling and
+  interpretation (`cluster_evidence()`).
 
 ------------------------------------------------------------------------
 
@@ -115,6 +118,17 @@ remotes::install_github("dvynokur/cocktailr@v0.1.0")
 
 This command will work after the corresponding GitHub release/tag has
 been created.
+
+If you are working from a local development checkout and want to use
+newly added functions immediately, either load the package source into
+the current R session:
+
+``` r
+pkgload::load_all("path/to/cocktailr")
+```
+
+or reinstall the local package before calling `library(cocktailr)`
+again.
 
 ------------------------------------------------------------------------
 
@@ -231,6 +245,10 @@ A small end-to-end example on a toy **plots × species** matrix, showing:
 6.  Distances between clusters  
 7.  Plot assignment to candidate vegetation units
 
+If you are copying commands into a fresh R session, run the whole chunk
+below: it first creates the toy matrix `vm`, then builds the Cocktail
+object `res`.
+
 ``` r
 library(cocktailr)
 
@@ -276,6 +294,90 @@ For very large datasets, you can reduce memory usage by setting
 `save_vegmatrix = FALSE` in `cocktail_cluster()`. In that case, however,
 `assign_releves()` will not work unless you recompute the Cocktail
 object with `save_vegmatrix = TRUE`.
+
+### Evidence for LLM-assisted labeling (experimental)
+
+`cluster_evidence()` does not call an LLM. Instead, it collects a
+deterministic fact bundle for one cluster: merge metrics, topological
+species, φ-ranked species (if available), member plots,
+prototype/borderline plots, optional cover summaries, topology, and
+explicit limitations.
+
+This object is intended as the handoff layer between `cocktailr` and a
+later `llm_label_cluster()`-style workflow, but it is also useful on its
+own for inspection and debugging.
+
+This example assumes that `res` already exists from the toy workflow
+chunk above. In a fresh session, run the `vm <- matrix(...)` and
+`res <- cocktail_cluster(...)` example first.
+
+``` r
+ev <- cluster_evidence(
+  x                  = res,
+  cluster            = "c_1",
+  top_n_phi          = 5,
+  n_prototype_plots  = 3,
+  n_borderline_plots = 2
+)
+
+names(ev)
+#> [1] "meta"        "context"     "summaries"   "evidence"    "limitations"
+#> [6] "future"
+ev$context$cluster_metrics
+#> $h
+#> [1] 0.745356
+#>
+#> $k
+#> [1] 2
+#>
+#> $m
+#> [1] 2
+#>
+#> $evidence_ids
+#>    h    k    m
+#> "E1" "E2" "E3"
+ev$summaries$species_phi
+#>   species       phi evidence_id
+#> 1     sp4 1.0000000          E9
+#> 2     sp3 0.7453560         E10
+#> 3     sp1 0.1490712         E11
+ev$summaries$plots_prototype[, c("plot", "support_score")]
+#>    plot support_score
+#> 1 plot1     0.7863248
+#> 2 plot2     0.7659864
+#> 3 plot3     0.7276786
+head(names(ev$evidence$items))
+#> [1] "E1" "E2" "E3" "E4" "E5" "E6"
+
+print(ev)
+#> Cluster evidence for c_1
+#>   h = 0.745
+#>   k = 2
+#>   m = 2
+#>   plot_values = rel_cover
+#>   parent = c_6
+#>   topological species (2): sp3, sp4
+#>   phi species (3): sp4=1.000, sp3=0.745, sp1=0.149
+#>   member plots = 5
+#>   evidence records = 21
+```
+
+What to inspect first:
+
+- `ev$context$cluster_metrics` for `h`, `k`, and `m`
+- `ev$summaries$species_topological` for the cluster-constituting
+  species
+- `ev$summaries$species_phi` for ranked fidelity evidence when
+  `Species.cluster.phi` is available
+- `ev$summaries$plots_prototype` for the strongest example plots
+- `ev$limitations` for missing components or explicit caution notes
+- `ev$evidence$items` for machine-addressable fact records (`E1`, `E2`,
+  ...)
+
+If the Cocktail object was built with `species_cluster_phi = FALSE`, the
+φ summary is omitted and the limitation is recorded explicitly. If it
+was built with `save_vegmatrix = FALSE`, cover summaries are omitted and
+prototype/borderline support falls back to `Plot.cluster` values only.
 
 ### Long-format input
 
@@ -791,6 +893,8 @@ See function help for details:
 
 - `?generate_synthetic_vegetation_data` - create synthetic vegetation
   datasets and matching truth tables for labeling experiments
+- `?cluster_evidence` - collect deterministic evidence for one cluster
+  before LLM labeling or interpretation
 
 ------------------------------------------------------------------------
 

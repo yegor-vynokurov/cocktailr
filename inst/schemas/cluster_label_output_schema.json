@@ -1,0 +1,324 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cluster_label_output_schema.json",
+  "title": "cluster_label_output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "cluster_id",
+    "status",
+    "canonical_label",
+    "display_label",
+    "interpretation_summary",
+    "basis_in_data",
+    "key_species",
+    "external_knowledge",
+    "not_confirmed_by_data",
+    "confidence",
+    "checks_to_run",
+    "abstain_reason"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "cluster_id": {
+      "type": "string",
+      "pattern": "^c_[0-9]+$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["labeled", "abstain"]
+    },
+    "canonical_label": {
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "display_label": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "interpretation_summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "basis_in_data": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/basisClaim"
+      }
+    },
+    "key_species": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/keySpecies"
+      }
+    },
+    "external_knowledge": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/externalKnowledgeClaim"
+      }
+    },
+    "not_confirmed_by_data": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/unconfirmedClaim"
+      }
+    },
+    "confidence": {
+      "$ref": "#/$defs/confidence"
+    },
+    "checks_to_run": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/checkToRun"
+      }
+    },
+    "abstain_reason": {
+      "type": ["string", "null"]
+    },
+    "ontology_slots": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "physiognomy": {
+          "type": ["string", "null"]
+        },
+        "moisture": {
+          "type": ["string", "null"]
+        },
+        "light": {
+          "type": ["string", "null"]
+        },
+        "fertility": {
+          "type": ["string", "null"]
+        },
+        "disturbance": {
+          "type": ["string", "null"]
+        },
+        "dominant_taxa": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "contrastive_notes": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "report_recommendation": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "report_priority": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "unknown"]
+        },
+        "merge_candidate": {
+          "type": ["boolean", "null"]
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "basisClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "statement", "evidence_ids"],
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "pattern": "^C[0-9]+$"
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^E[0-9]+$"
+          }
+        },
+        "support_strength": {
+          "type": "string",
+          "enum": ["weak", "moderate", "strong"]
+        }
+      }
+    },
+    "keySpecies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["species", "role", "evidence_ids"],
+      "properties": {
+        "species": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "topological",
+            "phi_ranked",
+            "prototype_support",
+            "borderline_indicator",
+            "other"
+          ]
+        },
+        "evidence_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^E[0-9]+$"
+          }
+        }
+      }
+    },
+    "externalKnowledgeClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statement", "knowledge_type", "confidence"],
+      "properties": {
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "knowledge_type": {
+          "type": "string",
+          "enum": [
+            "habitat_hint",
+            "species_trait",
+            "syntaxonomic_hint",
+            "other"
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        }
+      }
+    },
+    "unconfirmedClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statement", "reason"],
+      "properties": {
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "rationale"],
+      "properties": {
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "checkToRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check", "priority", "reason"],
+      "properties": {
+        "check": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "labeled"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "canonical_label": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "display_label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "abstain_reason": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "abstain"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "abstain_reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}
