@@ -70,6 +70,7 @@ species groups in vegetation databases. \emph{Journal of Vegetation Science}, 27
 
 Authors:
 \itemize{
+  \item Denys Vynokurov \email{denys.vynokurov@gmail.com} (\href{https://orcid.org/0000-0001-7003-6680}{ORCID})
   \item Helge Bruelheide (\href{https://orcid.org/0000-0003-3135-0356}{ORCID})
 }
 

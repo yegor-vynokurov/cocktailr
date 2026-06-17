@@ -1,0 +1,137 @@
+"plot","community","community_label","is_transition","mix_a","mix_b"
+"dry_meadow_001","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_002","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_003","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_004","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_005","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_006","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_007","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_008","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_009","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_010","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_011","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_012","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_013","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_014","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_015","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_016","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_017","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_018","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_019","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_020","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_021","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_022","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_023","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_024","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_025","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_026","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_027","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_028","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_029","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"dry_meadow_030","dry_meadow","Dry calcareous meadow",FALSE,"dry_meadow",NA
+"wet_meadow_001","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_002","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_003","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_004","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_005","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_006","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_007","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_008","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_009","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_010","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_011","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_012","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_013","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_014","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_015","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_016","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_017","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_018","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_019","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_020","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_021","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_022","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_023","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_024","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_025","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_026","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_027","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_028","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_029","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"wet_meadow_030","wet_meadow","Wet meadow and marsh edge",FALSE,"wet_meadow",NA
+"woodland_001","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_002","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_003","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_004","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_005","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_006","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_007","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_008","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_009","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_010","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_011","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_012","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_013","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_014","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_015","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_016","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_017","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_018","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_019","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_020","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_021","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_022","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_023","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_024","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_025","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_026","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_027","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_028","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_029","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"woodland_030","woodland","Deciduous woodland shade",FALSE,"woodland",NA
+"ruderal_edge_001","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_002","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_003","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_004","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_005","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_006","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_007","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_008","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_009","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_010","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_011","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_012","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_013","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_014","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_015","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_016","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_017","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_018","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_019","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_020","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_021","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_022","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_023","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_024","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_025","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_026","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_027","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_028","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_029","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"ruderal_edge_030","ruderal_edge","Ruderal nitrophilous edge",FALSE,"ruderal_edge",NA
+"transition_dry_meadow_wet_meadow_001","transition_dry_meadow_wet_meadow","Transition: Dry calcareous meadow / Wet meadow and marsh edge",TRUE,"dry_meadow","wet_meadow"
+"transition_dry_meadow_wet_meadow_002","transition_dry_meadow_wet_meadow","Transition: Dry calcareous meadow / Wet meadow and marsh edge",TRUE,"dry_meadow","wet_meadow"
+"transition_dry_meadow_wet_meadow_003","transition_dry_meadow_wet_meadow","Transition: Dry calcareous meadow / Wet meadow and marsh edge",TRUE,"dry_meadow","wet_meadow"
+"transition_dry_meadow_wet_meadow_004","transition_dry_meadow_wet_meadow","Transition: Dry calcareous meadow / Wet meadow and marsh edge",TRUE,"dry_meadow","wet_meadow"
+"transition_wet_meadow_woodland_001","transition_wet_meadow_woodland","Transition: Wet meadow and marsh edge / Deciduous woodland shade",TRUE,"wet_meadow","woodland"
+"transition_wet_meadow_woodland_002","transition_wet_meadow_woodland","Transition: Wet meadow and marsh edge / Deciduous woodland shade",TRUE,"wet_meadow","woodland"
+"transition_wet_meadow_woodland_003","transition_wet_meadow_woodland","Transition: Wet meadow and marsh edge / Deciduous woodland shade",TRUE,"wet_meadow","woodland"
+"transition_wet_meadow_woodland_004","transition_wet_meadow_woodland","Transition: Wet meadow and marsh edge / Deciduous woodland shade",TRUE,"wet_meadow","woodland"
+"transition_woodland_ruderal_edge_001","transition_woodland_ruderal_edge","Transition: Deciduous woodland shade / Ruderal nitrophilous edge",TRUE,"woodland","ruderal_edge"
+"transition_woodland_ruderal_edge_002","transition_woodland_ruderal_edge","Transition: Deciduous woodland shade / Ruderal nitrophilous edge",TRUE,"woodland","ruderal_edge"
+"transition_woodland_ruderal_edge_003","transition_woodland_ruderal_edge","Transition: Deciduous woodland shade / Ruderal nitrophilous edge",TRUE,"woodland","ruderal_edge"
+"transition_woodland_ruderal_edge_004","transition_woodland_ruderal_edge","Transition: Deciduous woodland shade / Ruderal nitrophilous edge",TRUE,"woodland","ruderal_edge"
+"transition_dry_meadow_ruderal_edge_001","transition_dry_meadow_ruderal_edge","Transition: Dry calcareous meadow / Ruderal nitrophilous edge",TRUE,"dry_meadow","ruderal_edge"
+"transition_dry_meadow_ruderal_edge_002","transition_dry_meadow_ruderal_edge","Transition: Dry calcareous meadow / Ruderal nitrophilous edge",TRUE,"dry_meadow","ruderal_edge"
+"transition_dry_meadow_ruderal_edge_003","transition_dry_meadow_ruderal_edge","Transition: Dry calcareous meadow / Ruderal nitrophilous edge",TRUE,"dry_meadow","ruderal_edge"
+"transition_dry_meadow_ruderal_edge_004","transition_dry_meadow_ruderal_edge","Transition: Dry calcareous meadow / Ruderal nitrophilous edge",TRUE,"dry_meadow","ruderal_edge"
