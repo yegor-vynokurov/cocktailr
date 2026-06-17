@@ -6,6 +6,7 @@ cocktailr
   - [Overview](#overview)
   - [Background](#background)
   - [Installation](#installation)
+  - [Synthetic data for cluster labeling](#synthetic-data-for-cluster-labeling)
   - [Typical workflow](#typical-workflow)
     - [Long-format input](#long-format-input)
     - [Notes on long-format input](#notes-on-long-format-input)
@@ -67,6 +68,10 @@ The package implements:
 - **Assignment of plots (relevés) to candidate vegetation units** using
   cover- and φ-based strategies (`assign_releves()`).
 
+- **Human-readable synthetic vegetation datasets** for testing
+  clustering and LLM-based cluster labeling
+  (`generate_synthetic_vegetation_data()`).
+
 ------------------------------------------------------------------------
 
 ## Background
@@ -110,6 +115,102 @@ remotes::install_github("dvynokur/cocktailr@v0.1.0")
 
 This command will work after the corresponding GitHub release/tag has
 been created.
+
+------------------------------------------------------------------------
+
+## Synthetic data for cluster labeling
+
+`generate_synthetic_vegetation_data()` creates a synthetic but
+human-readable vegetation dataset with real plant names. It is designed
+for testing the Cocktail workflow and for building supervised datasets
+for local LLM experiments where the model has to assign human-readable
+labels to Cocktail clusters.
+
+The generator always uses four predefined community templates:
+
+- `dry_meadow`
+- `wet_meadow`
+- `woodland`
+- `ruderal_edge`
+
+Each template has its own diagnostic species set. The function then adds
+shared generalists, rare/noise species, and optional transition plots
+between community pairs. Species names are real, but co-occurrence
+probabilities and cover values are artificial.
+
+Useful arguments:
+
+- `n_plots_per_community`: one number for all four communities, or a
+  length-4 vector for `dry_meadow`, `wet_meadow`, `woodland`, and
+  `ruderal_edge`
+- `n_transition_plots`: number of mixed plots split across predefined
+  transition pairs
+- `seed`: random seed for reproducibility
+- `use_underscores`: convert species names such as `Festuca ovina` to
+  `Festuca_ovina`
+- `keep_absences_in_long`: if `TRUE`, keep zero-valued rows in
+  `long_table`; by default only present species are stored
+
+``` r
+syn <- generate_synthetic_vegetation_data(
+  n_plots_per_community = 30,
+  n_transition_plots = 16,
+  seed = 42
+)
+```
+
+The returned list contains:
+
+- `wide_matrix`: plot x species cover matrix, ready for
+  `cocktail_cluster()`
+- `long_table`: long-format version of the same data with columns
+  `plot`, `species`, `value`
+- `plot_truth`: gold-standard plot labels, including transition flags
+  and source communities
+- `species_truth`: expected ecological role of each species plus
+  per-community occurrence probabilities
+- `community_profiles`: human-readable labels, ecological hints, and
+  diagnostic species lists
+- `metadata`: generation settings and summary counts
+
+For cluster labeling tasks, a practical workflow is:
+
+1.  Run `cocktail_cluster()` on `syn$wide_matrix` or `syn$long_table`.
+2.  Use `species_in_clusters()` to extract diagnostic species for
+    selected clusters.
+3.  Feed those species lists to your local LLM and ask it for a
+    community label or short description.
+4.  Compare the predicted labels against `syn$community_profiles`, and
+    use `syn$plot_truth` / `syn$species_truth` as ground truth for
+    evaluation.
+
+If you want CSV exports like the examples shipped with the package:
+
+``` r
+wide_df <- data.frame(
+  plot = rownames(syn$wide_matrix),
+  syn$wide_matrix,
+  check.names = FALSE
+)
+
+write.csv(wide_df, "synthetic_vegetation_wide.csv", row.names = FALSE)
+write.csv(syn$long_table, "synthetic_vegetation_long.csv", row.names = FALSE)
+write.csv(syn$plot_truth, "synthetic_plot_truth.csv", row.names = FALSE)
+write.csv(syn$species_truth, "synthetic_species_truth.csv", row.names = FALSE)
+write.csv(syn$community_profiles, "synthetic_community_profiles.csv", row.names = FALSE)
+```
+
+The package also ships with example exports produced by this function in
+`inst/extdata`. After installation, you can load them with:
+
+``` r
+extdir <- system.file("extdata", package = "cocktailr")
+
+veg_long <- read.csv(file.path(extdir, "synthetic_vegetation_long.csv"))
+plot_truth <- read.csv(file.path(extdir, "synthetic_plot_truth.csv"))
+species_truth <- read.csv(file.path(extdir, "synthetic_species_truth.csv"))
+community_profiles <- read.csv(file.path(extdir, "synthetic_community_profiles.csv"))
+```
 
 ------------------------------------------------------------------------
 
@@ -687,6 +788,9 @@ See function help for details:
   φ)
 - `?assign_releves` – assign plots to candidate vegetation units using
   covers and φ
+
+- `?generate_synthetic_vegetation_data` - create synthetic vegetation
+  datasets and matching truth tables for labeling experiments
 
 ------------------------------------------------------------------------
 
