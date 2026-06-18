@@ -8,6 +8,14 @@
 #'   Either one number or a vector of four numbers.
 #' @param n_transition_plots Number of mixed transition plots.
 #' @param seed Random seed for reproducibility.
+#' @param transition_mix_weight Weight applied to each parent community when
+#'   generating transition plots. Higher values make transitions more blended.
+#' @param diagnostic_species_scale Multiplier applied to diagnostic-species
+#'   occurrence probabilities before transition mixing.
+#' @param common_species_scale Multiplier applied to common/generalist-species
+#'   occurrence probabilities.
+#' @param noise_species_scale Multiplier applied to rare/noise-species
+#'   occurrence probabilities.
 #' @param use_underscores If TRUE, species names use underscores instead of spaces.
 #' @param keep_absences_in_long If TRUE, the long table includes zero values.
 #'
@@ -21,11 +29,26 @@
 #'     \item{metadata}{Generation settings.}
 #'   }
 #'
+#' @examples
+#' syn <- generate_synthetic_vegetation_data(
+#'   n_plots_per_community = 4,
+#'   n_transition_plots = 2,
+#'   seed = 42
+#' )
+#'
+#' dim(syn$wide_matrix)
+#' head(syn$plot_truth)
+#' head(syn$community_profiles)
+#'
 #' @export
 generate_synthetic_vegetation_data <- function(
   n_plots_per_community = 30,
   n_transition_plots = 16,
   seed = 42,
+  transition_mix_weight = 0.55,
+  diagnostic_species_scale = 1,
+  common_species_scale = 1,
+  noise_species_scale = 1,
   use_underscores = FALSE,
   keep_absences_in_long = FALSE
 ) {
@@ -148,6 +171,32 @@ generate_synthetic_vegetation_data <- function(
     stop("n_transition_plots must be >= 0.")
   }
 
+  if (!is.numeric(transition_mix_weight) ||
+      length(transition_mix_weight) != 1L ||
+      !is.finite(transition_mix_weight) ||
+      transition_mix_weight <= 0 ||
+      transition_mix_weight > 1) {
+    stop("transition_mix_weight must be a single number in the interval (0, 1].")
+  }
+
+  validate_scale <- function(x, name) {
+    if (!is.numeric(x) ||
+        length(x) != 1L ||
+        !is.finite(x) ||
+        x <= 0) {
+      stop(name, " must be a single positive number.")
+    }
+  }
+
+  validate_scale(diagnostic_species_scale, "diagnostic_species_scale")
+  validate_scale(common_species_scale, "common_species_scale")
+  validate_scale(noise_species_scale, "noise_species_scale")
+
+  scale_probability <- function(x, scale, cap) {
+    out <- pmin(cap, pmax(0, x * scale))
+    stats::setNames(out, names(x))
+  }
+
   diagnostic_species <- unlist(
     lapply(communities, function(x) x$species),
     use.names = FALSE
@@ -211,6 +260,7 @@ generate_synthetic_vegetation_data <- function(
     for (species_name in sp) {
       row_id <- species_truth$species == species_name
       probs <- assign_probabilities(species_name, group_name)
+      probs <- scale_probability(probs, diagnostic_species_scale, cap = 0.98)
       species_truth[row_id, names(probs)] <- probs
     }
   }
@@ -219,14 +269,22 @@ generate_synthetic_vegetation_data <- function(
   species_truth$expected_group[common_rows] <- "shared"
   species_truth$ecological_role[common_rows] <- "common/generalist"
   for (col in community_names) {
-    species_truth[common_rows, col] <- runif(sum(common_rows), 0.28, 0.58)
+    species_truth[common_rows, col] <- scale_probability(
+      runif(sum(common_rows), 0.28, 0.58),
+      common_species_scale,
+      cap = 0.95
+    )
   }
 
   noise_rows <- species_truth$species %in% noise_species
   species_truth$expected_group[noise_rows] <- "noise"
   species_truth$ecological_role[noise_rows] <- "rare/noise"
   for (col in community_names) {
-    species_truth[noise_rows, col] <- runif(sum(noise_rows), 0.03, 0.14)
+    species_truth[noise_rows, col] <- scale_probability(
+      runif(sum(noise_rows), 0.03, 0.14),
+      noise_species_scale,
+      cap = 0.60
+    )
   }
 
   # Community profile table for humans and LLM prompts.
@@ -322,7 +380,7 @@ generate_synthetic_vegetation_data <- function(
     probs_b <- species_truth[[plot_row$mix_b]]
 
     # Transition plots intentionally contain a mixture of both communities.
-    probs <- pmin(0.95, 0.55 * probs_a + 0.55 * probs_b)
+    probs <- pmin(0.95, transition_mix_weight * probs_a + transition_mix_weight * probs_b)
     names(probs) <- species_truth$species
     probs
   }
@@ -398,12 +456,38 @@ generate_synthetic_vegetation_data <- function(
     n_species = ncol(wide_matrix),
     n_pure_plots = sum(!plot_truth$is_transition),
     n_transition_plots = sum(plot_truth$is_transition),
+    transition_mix_weight = transition_mix_weight,
+    diagnostic_species_scale = diagnostic_species_scale,
+    common_species_scale = common_species_scale,
+    noise_species_scale = noise_species_scale,
     use_underscores = use_underscores,
     keep_absences_in_long = keep_absences_in_long,
+    dataset_type = "synthetic",
+    dataset_label = paste0(
+      "synthetic_seed", seed,
+      "_p", paste(n_plots_per_community, collapse = "x"),
+      "_tr", n_transition_plots
+    ),
     note = paste(
       "Synthetic dataset with real plant names.",
       "Species names are real, but co-occurrence probabilities and cover values are artificial."
     )
+  )
+
+  dataset_info <- list(
+    type = metadata$dataset_type,
+    label = metadata$dataset_label,
+    path = NULL,
+    source = "generate_synthetic_vegetation_data"
+  )
+
+  attr(wide_matrix, "cocktailr_dataset_info") <- c(
+    dataset_info,
+    list(representation = "wide_matrix")
+  )
+  attr(long_table, "cocktailr_dataset_info") <- c(
+    dataset_info,
+    list(representation = "long_table")
   )
 
   result <- list(

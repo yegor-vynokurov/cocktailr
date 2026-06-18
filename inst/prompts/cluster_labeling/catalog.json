@@ -1,0 +1,55 @@
+{
+  "catalog_version": "0.1.0",
+  "prompt_family": "cluster_labeling",
+  "schema_version": "0.1.0",
+  "default_language": "en",
+  "placeholders": [
+    "{{CLUSTER_ID}}",
+    "{{OUTPUT_SCHEMA_JSON}}",
+    "{{CLUSTER_EVIDENCE_TEXT}}"
+  ],
+  "default_generation": {
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "seed": 42,
+    "num_predict": 1200
+  },
+  "system_prompt_path": "system_scientific_caution_v1.md",
+  "variants": {
+    "concise_label_v1": {
+      "user_prompt_path": "user_concise_label_v1.md",
+      "description": "Prefer short, defensible labels with minimal interpretation drift.",
+      "task_type": "label",
+      "temperature": 0.1,
+      "top_p": 0.9
+    },
+    "conservative_interpretation_v1": {
+      "user_prompt_path": "user_conservative_interpretation_v1.md",
+      "description": "Allow a somewhat richer interpretation while keeping caution explicit.",
+      "task_type": "label",
+      "temperature": 0.1,
+      "top_p": 0.9
+    },
+    "abstain_first_v1": {
+      "user_prompt_path": "user_abstain_first_v1.md",
+      "description": "Prefer abstention whenever distinctiveness is not clearly supported.",
+      "task_type": "label",
+      "temperature": 0.05,
+      "top_p": 0.9
+    },
+    "strict_abstention_gate_v1": {
+      "user_prompt_path": "user_strict_abstention_gate_v1.md",
+      "description": "Start from abstention and label only if coherence, distinctiveness, and low inference-jump all pass.",
+      "task_type": "label",
+      "temperature": 0.0,
+      "top_p": 0.8
+    },
+    "gate_abstain_examples_v1": {
+      "user_prompt_path": "user_gate_abstain_examples_v1.md",
+      "description": "Gate-only decision prompt with explicit negative abstention examples for two-step workflows.",
+      "task_type": "gate",
+      "temperature": 0.0,
+      "top_p": 0.8
+    }
+  }
+}

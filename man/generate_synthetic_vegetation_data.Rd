@@ -8,6 +8,10 @@ generate_synthetic_vegetation_data(
   n_plots_per_community = 30,
   n_transition_plots = 16,
   seed = 42,
+  transition_mix_weight = 0.55,
+  diagnostic_species_scale = 1,
+  common_species_scale = 1,
+  noise_species_scale = 1,
   use_underscores = FALSE,
   keep_absences_in_long = FALSE
 )
@@ -19,6 +23,18 @@ Either one number or a vector of four numbers.}
 \item{n_transition_plots}{Number of mixed transition plots.}
 
 \item{seed}{Random seed for reproducibility.}
+
+\item{transition_mix_weight}{Weight applied to each parent community when
+generating transition plots. Higher values make transitions more blended.}
+
+\item{diagnostic_species_scale}{Multiplier applied to diagnostic-species
+occurrence probabilities before transition mixing.}
+
+\item{common_species_scale}{Multiplier applied to common/generalist-species
+occurrence probabilities.}
+
+\item{noise_species_scale}{Multiplier applied to rare/noise-species
+occurrence probabilities.}
 
 \item{use_underscores}{If TRUE, species names use underscores instead of spaces.}
 
@@ -39,4 +55,21 @@ A list with:
 Creates an artificial vegetation dataset with real plant names.
 The data are synthetic and intended for testing Cocktail clustering,
 cluster interpretation, and LLM-assisted labeling.
+}
+\details{
+The returned \code{wide_matrix} and \code{long_table} objects carry
+dataset-provenance attributes that \code{\link{cocktail_cluster}} can reuse.
+This allows downstream review cards to identify the dataset as synthetic and
+to group saved artifacts automatically.
+}
+\examples{
+syn <- generate_synthetic_vegetation_data(
+  n_plots_per_community = 4,
+  n_transition_plots = 2,
+  seed = 42
+)
+
+dim(syn$wide_matrix)
+head(syn$plot_truth)
+head(syn$community_profiles)
 }

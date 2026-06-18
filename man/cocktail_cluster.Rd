@@ -11,7 +11,10 @@ cocktail_cluster(
   species_cluster_phi = TRUE,
   input_format = c("wide", "long"),
   long = list(plot = "plot", species = "species", value = "value"),
-  save_vegmatrix = TRUE
+  save_vegmatrix = TRUE,
+  dataset_path = NULL,
+  dataset_label = NULL,
+  dataset_type = NULL
 )
 }
 \arguments{
@@ -66,6 +69,16 @@ Ignored when \code{input_format = "wide"}.}
 \item{save_vegmatrix}{Logical; if \code{TRUE} (default), store the internally used,
 cleaned and aligned vegetation matrix as a sparse \code{dgCMatrix} in the returned
 object (\verb{$vegmatrix}). Set to \code{FALSE} to reduce memory usage for large datasets.}
+
+\item{dataset_path}{Optional character path to the input dataset on disk.
+Stored as provenance in the returned object for downstream reporting helpers.}
+
+\item{dataset_label}{Optional short human-readable dataset label. Useful when
+one dataset is known by a project name rather than a file path.}
+
+\item{dataset_type}{Optional dataset type such as \code{"synthetic"} or
+\code{"real"}. If omitted, \code{cocktail_cluster()} tries to reuse
+provenance attached to the input object.}
 }
 \value{
 A list of class \code{"cocktail"} with:

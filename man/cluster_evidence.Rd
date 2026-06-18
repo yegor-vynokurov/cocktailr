@@ -40,3 +40,25 @@ Collects deterministic, machine-readable evidence for a single Cocktail cluster.
 The returned object is intended as the fact layer between a \code{"cocktail"}
 object and downstream LLM-based labeling or interpretation.
 }
+\details{
+If the source \code{"cocktail"} object contains dataset provenance
+(for example from \code{\link{generate_synthetic_vegetation_data}} or from
+\code{cocktail_cluster(dataset_path = ...)}), that information is copied into
+\code{meta$dataset}.
+}
+\examples{
+syn <- generate_synthetic_vegetation_data(
+  n_plots_per_community = 4,
+  n_transition_plots = 2,
+  seed = 42
+)
+res <- cocktail_cluster(
+  vegmatrix = syn$wide_matrix,
+  progress = FALSE,
+  plot_values = "rel_cover",
+  species_cluster_phi = TRUE,
+  save_vegmatrix = TRUE
+)
+ev <- cluster_evidence(res, cluster = "c_1", top_n_phi = 3)
+print(ev)
+}

@@ -42,6 +42,22 @@
 #' The \code{evidence$items} component contains atomic fact records with
 #' deterministic IDs such as \code{"E1"}, \code{"E2"}, ...
 #'
+#' @examples
+#' syn <- generate_synthetic_vegetation_data(
+#'   n_plots_per_community = 4,
+#'   n_transition_plots = 2,
+#'   seed = 42
+#' )
+#' res <- cocktail_cluster(
+#'   vegmatrix = syn$wide_matrix,
+#'   progress = FALSE,
+#'   plot_values = "rel_cover",
+#'   species_cluster_phi = TRUE,
+#'   save_vegmatrix = TRUE
+#' )
+#' ev <- cluster_evidence(res, cluster = "c_1", top_n_phi = 3)
+#' print(ev)
+#'
 #' @export
 cluster_evidence <- function(
     x,
@@ -353,6 +369,22 @@ cluster_evidence <- function(
   .fmt_num <- function(x, digits = 3L) {
     if (length(x) != 1L || !is.finite(x)) return("NA")
     formatC(x, digits = digits, format = "f")
+  }
+
+  .dataset_info <- function(x) {
+    info <- x$dataset %||% list()
+    if (!is.list(info)) {
+      info <- list()
+    }
+
+    list(
+      type = info$type %||% NULL,
+      label = info$label %||% NULL,
+      path = info$path %||% NULL,
+      input_format = info$input_format %||% (x$input_format %||% NULL),
+      source = info$source %||% NULL,
+      representation = info$representation %||% NULL
+    )
   }
 
   if (!.is_cocktail(x)) {
@@ -721,11 +753,13 @@ cluster_evidence <- function(
       cluster_id = cluster_label,
       cluster_num = cluster_id,
       generated_at = NULL,
+      dataset = .dataset_info(x),
       source = list(
         object_class = "cocktail",
         has_species_cluster_phi = isTRUE(phi_available),
         has_vegmatrix = !is.null(vm),
-        plot_values = plot_values_kind
+        plot_values = plot_values_kind,
+        input_format = x$input_format %||% NULL
       )
     ),
     context = list(

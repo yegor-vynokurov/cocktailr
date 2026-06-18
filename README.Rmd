@@ -3,7 +3,7 @@ title: "cocktailr"
 output:
   github_document:
     toc: true
-    toc_depth: 3
+    toc_depth: 2
     df_print: default
 editor_options:
   chunk_output_type: console
@@ -11,18 +11,12 @@ editor_options:
 
 ```{r, include=FALSE}
 knitr::opts_chunk$set(
-  collapse   = TRUE,
-  comment    = "#>",
-  fig.path   = "man/figures/README-",
-  fig.width  = 7,
-  fig.height = 5,
-  dpi        = 150,
-  out.width  = "100%",
-  warning    = FALSE,
-  message    = FALSE,
-  cache      = FALSE
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE,
+  warning = FALSE,
+  message = FALSE
 )
-set.seed(1)
 ```
 
 # cocktailr
@@ -33,622 +27,132 @@ set.seed(1)
 
 ## Citation
 
-If you use `cocktailr`, please cite the GitHub repository and the original Cocktail method papers listed below. A manuscript describing the package and workflow has been prepared for submission.
+If you use `cocktailr`, please cite the GitHub repository and the original Cocktail method papers listed in the package documentation.
 
 ## Overview
 
-**cocktailr** provides fast and reproducible *Cocktail* clustering for vegetation-plot data. It identifies groups of co-occurring species from **plots × species** tables or **long-format vegetation tables** (plot–species–value) and supports their use in diagnostic species-based vegetation classification.
+`cocktailr` provides:
 
-The package implements:
+- Cocktail clustering for vegetation data
+- helper functions for selecting and inspecting clusters
+- synthetic vegetation datasets for testing labeling workflows
+- evidence extraction for one cluster
+- structured local LLM labeling through Ollama
+- evidence-aware validation of model output
+- final human-review markdown cards with sidecar metadata
 
-- **Hierarchical Cocktail clustering** of species (`cocktail_cluster()`).
-- **Dendrogram plotting** with φ heights and optional cluster bands (`cocktail_plot()`).
-- Extraction of **parent clusters at a φ cut** (`clusters_at_cut()`).
-- **Selection of strong clusters** by a combined score (`select_clusters()`).
-- **Diagnostic species lists** for clusters or combinations of clusters (`species_in_clusters()`).
-- Listing **plots (relevés) belonging to clusters or combinations of clusters** (`releves_in_clusters()`).
-- Finding **clusters that contain a given species (or set of species)** (`clusters_with_species()`).
-- **Distances between clusters** based on direct plot co-membership φ (`cluster_phi_dist()`).
-- **Assignment of plots (relevés) to candidate vegetation units** using cover- and φ-based strategies (`assign_releves()`).
+Current MVP workflow recommendation:
 
-- **Human-readable synthetic vegetation datasets** for testing clustering and LLM-based cluster labeling (`generate_synthetic_vegetation_data()`).
-- **Evidence objects** for LLM-assisted cluster labeling and interpretation (`cluster_evidence()`).
-
-***
-
-## Background
-
-The *Cocktail* method (Bruelheide 2000, 2016) identifies sets of species that co-occur more often than expected by chance and merges them hierarchically according to the **phi coefficient of association**. Each resulting cluster is characterized by its constituent species and a threshold (*m*) indicating how many species from that cluster a plot must contain to belong to it.
-
-For details, see the original works:
-
-- Bruelheide, H. (2000). *A new measure of fidelity and its application to defining species groups.* **Journal of Vegetation Science**, 11, 167–178. <https://doi.org/10.2307/3236796>  
-- Bruelheide, H. (2016). *Cocktail clustering – a new hierarchical agglomerative algorithm for extracting species groups in vegetation databases.* **Journal of Vegetation Science**, 27(6), 1297–1307. <https://doi.org/10.1111/jvs.12454>
-
-***
+- stable building blocks: `generate_synthetic_vegetation_data()`, `cluster_evidence()`, `validate_cluster_label()`, `render_cluster_review()`, `label_clusters()`
+- experimental boundary: `llm_label_cluster()` and concrete `model + prompt` combinations
 
 ## Installation
 
-The development version of `cocktailr` can be installed from GitHub:
+Install the development version from GitHub:
 
 ```r
 install.packages("remotes")
-
 remotes::install_github("dvynokur/cocktailr")
 library(cocktailr)
 ```
 
-For reproducible analyses based on a tagged release, install a specific version, for example:
-
-```r
-remotes::install_github("dvynokur/cocktailr@v0.1.0")
-```
-This command will work after the corresponding GitHub release/tag has been created.
-
-If you are working from a local development checkout and want to use newly added functions immediately, either load the package source into the current R session:
+If you are working from a local development checkout and want newly added functions immediately, use:
 
 ```r
 pkgload::load_all("path/to/cocktailr")
 ```
 
-or reinstall the local package before calling `library(cocktailr)` again.
+## Input Data
 
-***
+`cocktail_cluster()` does **not** take a file path directly. You first load data into R, then pass the resulting object to `cocktail_cluster()`.
 
-## Synthetic data for cluster labeling
+Supported inputs:
 
-`generate_synthetic_vegetation_data()` creates a synthetic but human-readable vegetation dataset with real plant names. It is designed for testing the Cocktail workflow and for building supervised datasets for local LLM experiments where the model has to assign human-readable labels to Cocktail clusters.
+- **wide format**: a matrix or data frame with plots in rows and species in columns
+- **long format**: a data frame with plot, species, and value columns, plus `input_format = "long"`
 
-The generator always uses four predefined community templates:
+For exact loading examples from CSV and for custom long-format column mappings, see [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
 
-- `dry_meadow`
-- `wet_meadow`
-- `woodland`
-- `ruderal_edge`
+## Default Labeling Workflow
 
-Each template has its own diagnostic species set. The function then adds shared generalists, rare/noise species, and optional transition plots between community pairs. Species names are real, but co-occurrence probabilities and cover values are artificial.
+The default labeling path is:
 
-Useful arguments:
+1. create or load a dataset
+2. run `cocktail_cluster()`
+3. run `label_clusters()`
+4. inspect the saved markdown review card and the returned summary table
 
-- `n_plots_per_community`: one number for all four communities, or a length-4 vector for `dry_meadow`, `wet_meadow`, `woodland`, and `ruderal_edge`
-- `n_transition_plots`: number of mixed plots split across predefined transition pairs
-- `seed`: random seed for reproducibility
-- `use_underscores`: convert species names such as `Festuca ovina` to `Festuca_ovina`
-- `keep_absences_in_long`: if `TRUE`, keep zero-valued rows in `long_table`; by default only present species are stored
+Recommended defaults for labeling:
 
-```{r synthetic-data, eval=FALSE}
-syn <- generate_synthetic_vegetation_data(
-  n_plots_per_community = 30,
-  n_transition_plots = 16,
-  seed = 42
-)
-```
+- `plot_values = "rel_cover"`
+- `species_cluster_phi = TRUE`
+- `save_vegmatrix = TRUE`
+- `model = "gemma4:12b"`
+- `variant = "strict_abstention_gate_v1"`
+- `workflow_steps = 1`
 
-The returned list contains:
+Minimal end-to-end example:
 
-- `wide_matrix`: plot x species cover matrix, ready for `cocktail_cluster()`
-- `long_table`: long-format version of the same data with columns `plot`, `species`, `value`
-- `plot_truth`: gold-standard plot labels, including transition flags and source communities
-- `species_truth`: expected ecological role of each species plus per-community occurrence probabilities
-- `community_profiles`: human-readable labels, ecological hints, and diagnostic species lists
-- `metadata`: generation settings and summary counts
-
-For cluster labeling tasks, a practical workflow is:
-
-1. Run `cocktail_cluster()` on `syn$wide_matrix` or `syn$long_table`.
-2. Use `species_in_clusters()` to extract diagnostic species for selected clusters.
-3. Feed those species lists to your local LLM and ask it for a community label or short description.
-4. Compare the predicted labels against `syn$community_profiles`, and use `syn$plot_truth` / `syn$species_truth` as ground truth for evaluation.
-
-If you want CSV exports like the examples shipped with the package:
-
-```{r synthetic-export, eval=FALSE}
-wide_df <- data.frame(
-  plot = rownames(syn$wide_matrix),
-  syn$wide_matrix,
-  check.names = FALSE
-)
-
-write.csv(wide_df, "synthetic_vegetation_wide.csv", row.names = FALSE)
-write.csv(syn$long_table, "synthetic_vegetation_long.csv", row.names = FALSE)
-write.csv(syn$plot_truth, "synthetic_plot_truth.csv", row.names = FALSE)
-write.csv(syn$species_truth, "synthetic_species_truth.csv", row.names = FALSE)
-write.csv(syn$community_profiles, "synthetic_community_profiles.csv", row.names = FALSE)
-```
-
-The package also ships with example exports produced by this function in `inst/extdata`. After installation, you can load them with:
-
-```{r synthetic-extdata, eval=FALSE}
-extdir <- system.file("extdata", package = "cocktailr")
-
-veg_long <- read.csv(file.path(extdir, "synthetic_vegetation_long.csv"))
-plot_truth <- read.csv(file.path(extdir, "synthetic_plot_truth.csv"))
-species_truth <- read.csv(file.path(extdir, "synthetic_species_truth.csv"))
-community_profiles <- read.csv(file.path(extdir, "synthetic_community_profiles.csv"))
-```
-
-***
-
-## Typical workflow
-
-`cocktail_cluster()` supports both **wide** (plots × species) and **long** (plot–species–value) input formats. The main example below uses a wide matrix; a compact long-format example is provided afterward.
-
-A small end-to-end example on a toy **plots × species** matrix, showing:
-
-1. Cocktail clustering  
-2. Dendrogram plotting  
-3. Selection of clusters at a φ cut **or** selection of strongest clusters by score  
-4. Cluster inspection utilities  
-5. Species lists  
-6. Distances between clusters  
-7. Plot assignment to candidate vegetation units  
-
-If you are copying commands into a fresh R session, run the whole chunk below: it first creates the toy matrix `vm`, then builds the Cocktail object `res`.
-
-```{r typical-workflow}
+```{r}
 library(cocktailr)
 
-# Toy plots × species matrix with percentage cover
-vm <- matrix(
-  c(
-    60,50,40,30,  5, 0,10, 0,
-    55,45,35,25, 10, 5, 0, 0,
-    50,40,30,20,  5,10, 0, 5,
-    45,35,25,15,  0, 5, 5, 0,
-    10, 5, 0, 0, 60,50,40,30,
-     5,10, 0, 0, 55,45,35,25,
-     0, 5,10, 0, 50,40,30,20,
-     0, 0, 5,10, 45,35,25,15
-  ),
-  nrow = 8, byrow = TRUE,
-  dimnames = list(
-    paste0("plot", 1:8),
-    paste0("sp",   1:8)
-  )
-)
+syn <- generate_synthetic_vegetation_data(seed = 42)
 
-# 1) Cocktail clustering, keeping relative cover and species-cluster phi
 res <- cocktail_cluster(
-  vegmatrix           = vm,
-  progress            = FALSE,
-  plot_values         = "rel_cover",
+  vegmatrix = syn$wide_matrix,
+  progress = FALSE,
+  plot_values = "rel_cover",
   species_cluster_phi = TRUE,
-  save_vegmatrix      = TRUE   # default; needed later by assign_releves()
+  save_vegmatrix = TRUE
 )
 
-names(res)
-```
-
-`assign_releves()` reads the vegetation matrix from `res$vegmatrix`, so keep `save_vegmatrix = TRUE` (default) if you plan to use assignment later.
-
-For very large datasets, you can reduce memory usage by setting `save_vegmatrix = FALSE` in `cocktail_cluster()`. In that case, however, `assign_releves()` will not work unless you recompute the Cocktail object with `save_vegmatrix = TRUE`.
-
-### Evidence for LLM-assisted labeling (experimental)
-
-`cluster_evidence()` does not call an LLM. Instead, it collects a deterministic fact bundle for one cluster: merge metrics, topological species, φ-ranked species (if available), member plots, prototype/borderline plots, optional cover summaries, topology, and explicit limitations.
-
-This object is intended as the handoff layer between `cocktailr` and a later `llm_label_cluster()`-style workflow, but it is also useful on its own for inspection and debugging.
-
-This example assumes that `res` already exists from the toy workflow chunk above. In a fresh session, run the `vm <- matrix(...)` and `res <- cocktail_cluster(...)` example first.
-
-```{r cluster-evidence-example}
-ev <- cluster_evidence(
-  x                  = res,
-  cluster            = "c_1",
-  top_n_phi          = 5,
-  n_prototype_plots  = 3,
-  n_borderline_plots = 2
+run <- label_clusters(
+  x = res,
+  clusters = "c_1",
+  model = "gemma4:12b",
+  variant = "strict_abstention_gate_v1",
+  workflow_steps = 1,
+  timeout_sec = 600,
+  num_predict = 600
 )
 
-names(ev)
-ev$context$cluster_metrics
-ev$summaries$species_phi
-ev$summaries$plots_prototype[, c("plot", "support_score")]
-head(names(ev$evidence$items))
-
-print(ev)
+run$summary
+run$results$c_1$review$file
 ```
 
-What to inspect first:
+Note: `syn` is a list returned by `generate_synthetic_vegetation_data()`. Pass `syn$wide_matrix` or `syn$long_table` to `cocktail_cluster()`, not `syn` itself.
 
-- `ev$context$cluster_metrics` for `h`, `k`, and `m`
-- `ev$summaries$species_topological` for the cluster-constituting species
-- `ev$summaries$species_phi` for ranked fidelity evidence when `Species.cluster.phi` is available
-- `ev$summaries$plots_prototype` for the strongest example plots
-- `ev$limitations` for missing components or explicit caution notes
-- `ev$evidence$items` for machine-addressable fact records (`E1`, `E2`, ...)
+If you omit `clusters`, `label_clusters()` processes up to the first 10 clusters selected by score.
 
-If the Cocktail object was built with `species_cluster_phi = FALSE`, the φ summary is omitted and the limitation is recorded explicitly. If it was built with `save_vegmatrix = FALSE`, cover summaries are omitted and prototype/borderline support falls back to `Plot.cluster` values only.
+If you are working from a local source checkout, relative review-card paths such as `temp/reports/cluster_reviews/` are resolved against the `cocktailr` package root automatically, even if R was started one level higher. The same source-root resolution is now used for relative `log_dir` paths such as `temp/llm_logs/`.
 
-### Long-format input
+The default saved artifact is a compact markdown review card. If dataset provenance is known, `render_cluster_review()` places the card in a dataset-specific subfolder under `temp/reports/cluster_reviews/`; otherwise it falls back to a timestamped folder. Use `full = TRUE` if you also want the expanded card plus the `.meta.json` sidecar. Intermediate raw model logs through `log_dir` are optional and are not part of the default workflow.
 
-`cocktail_cluster()` also supports **long-format** vegetation tables when `input_format = "long"`.
+The `temp/` workspace is created on demand. It is safe to delete it, and a fresh clone of the repository works without any pre-existing `temp/` folder.
 
-The default long-format column names are:
+For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 600` are usually safer than the package defaults. More detail is in [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
 
-- `plot` — plot / relevé ID
-- `species` — species name
-- `value` — numeric cover / abundance value
+If you want the low-level manual chain `cluster_evidence() -> llm_label_cluster() -> validate_cluster_label() -> render_cluster_review()`, see [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
 
-Below, we convert the same toy matrix `vm` to long format and run `cocktail_cluster()`.
+## More Details
 
-```{r toy-long-example}
-library(dplyr)
-library(tidyr)
-library(tibble)
+Use these documents depending on what you need:
 
-# Convert the toy wide matrix to long format
-vm_long <- as.data.frame(vm) %>%
-  rownames_to_column(var = "plot") %>%
-  pivot_longer(
-    cols = -plot,
-    names_to = "species",
-    values_to = "value"
-  )
+- [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md)
+  Full English step-by-step procedure for dataset loading, clustering, labeling, validation, and saved review cards.
+- [llm_operation.md](llm_operation.md)
+  Local Ollama setup, model recommendations, and troubleshooting.
 
-vm_long
+## Function Help
 
-# Run Cocktail clustering on long-format input
-res_long <- cocktail_cluster(
-  vegmatrix    = vm_long,
-  input_format = "long",
-  progress     = FALSE
-)
+Useful help pages:
 
-# Same output structure as for wide input
-names(res_long)
-```
-
-The returned Cocktail object also stores the internally used, aligned vegetation matrix in
-`res_long$vegmatrix` (as a sparse `dgCMatrix`) by default (`save_vegmatrix = TRUE`).
-
-When using long-format input, always set `input_format = "long"` explicitly.
-
-If your long-format table uses different column names, provide a mapping via `long = list(...)`:
-
-```{r toy-long-custom-cols, eval=FALSE}
-res_long2 <- cocktail_cluster(
-  vegmatrix    = my_long_table,
-  input_format = "long",
-  long = list(
-    plot    = "PlotObservationID",
-    species = "Harmonized_name_wfo",
-    value   = "Relative_cover"
-  ),
-  progress     = FALSE
-)
-```
-
-### Notes on long-format input
-
-- Duplicate plot–species rows are aggregated using `sum()` and capped at 100.
-- Empty plots (all zero after parsing and aggregation) are dropped automatically.
-- The function issues warnings when duplicates are detected or empty plots are removed.
-
-***
-
-### 1) Visualize the dendrogram
-
-```{r typical-plot}
-cocktail_plot(
-  x              = res,
-  file           = NULL,       # plot to device
-  phi_cut        = 0.25,
-  label_clusters = TRUE,
-  cex_species    = 0.9
-)
-```
-
-***
-
-### 2) Select clusters at a φ cut **or** select strongest clusters by score
-
-#### Option A: Parent clusters at a φ cut
-
-```{r typical-clusters-at-cut}
-phi_cut <- 0.25
-
-parent_labels <- clusters_at_cut(
-  x         = res,
-  phi_cut   = phi_cut,
-  as_labels = TRUE
-)
-
-parent_labels
-```
-
-#### Option B: Strong clusters by score (merge φ × log(k) × log(m))
-
-```{r typical-select-clusters}
-strong_labels <- select_clusters(
-  x         = res,
-  min_phi   = 0.20,
-  min_k     = 1,
-  min_score = 0.3,
-  mode      = "strict",
-  return    = "labels"
-)
-
-strong_labels
-```
-
-(If you want the full score table:)
-
-```{r typical-select-clusters-table}
-strong_table <- select_clusters(
-  x         = res,
-  min_phi   = 0.20,
-  min_k     = 1,
-  min_score = 0.3,
-  mode      = "strict",
-  return    = "table"
-)
-
-strong_table
-```
-
-***
-
-### 3) Cluster diagnostics (helper functions)
-
-These two helpers allow quick inspection of clusters and combinations of clusters.
-
-#### (a) List plots belonging to clusters or combinations of clusters
-
-```{r typical-releves-in-clusters}
-# Example: plots belonging to the first and third parent clusters
-releves_A <- releves_in_clusters(res, clusters = parent_labels[1])
-releves_B <- releves_in_clusters(res, clusters = parent_labels[3])
-
-releves_A
-releves_B
-```
-
-Combinations of clusters (list input): plots belonging to *any cluster in the set*:
-
-```{r typical-releves-in-clusters-combinations}
-cluster_set_example <- list(
-  set1 = parent_labels[1:2]
-)
-
-releves_combined <- releves_in_clusters(res, clusters = cluster_set_example)
-releves_combined
-```
-
-#### (b) Find clusters that contain a given species (or set of species)
-
-```{r typical-clusters-with-species}
-# Clusters that contain sp1 (default: only clusters with merge phi >= 0 are returned)
-clusters_with_species(res, species = "sp1")
-
-# Clusters that contain both sp1 and sp2,
-# restricted to clusters with merge phi >= 0.2
-cl <- clusters_with_species(
-  res,
-  species = c("sp1", "sp2"),
-  match   = "all",
-  min_phi = 0.2
-)
-
-cl
-
-# Highlight clusters that contain both sp1 and sp2
-cocktail_plot(
-  x              = res,
-  file           = NULL,
-  clusters       = cl,
-  label_clusters = TRUE,
-  cex_species    = 0.9
-)
-```
-
-***
-
-### 4) Diagnostic species for selected clusters
-
-Cluster-constituting species sets:
-
-```{r typical-species-member}
-diag_sp_member <- species_in_clusters(
-  x      = res,
-  labels = parent_labels
-)
-
-diag_sp_member
-```
-
-With φ-based filtering/ranking (uses `Species.cluster.phi`):
-
-```{r typical-species-phi}
-diag_sp_phi <- species_in_clusters(
-  x                   = res,
-  labels              = parent_labels,
-  species_cluster_phi = TRUE,
-  min_phi             = 0.20
-)
-
-diag_sp_phi
-```
-
-***
-
-### 5) Distances between clusters (direct plot co-membership φ)
-
-`cluster_phi_dist()` computes distances between clusters using the φ coefficient
-between their **binary plot-membership vectors** (membership = `Plot.cluster > 0`).
-Distance is always: `d(A,B) = 1 - phi(A,B)`.
-
-We must specify which clusters to compare (e.g. selected strong clusters):
-
-```{r typical-phi-dist}
-clusters_for_dist <- select_clusters(
-  x         = res,
-  min_score = 0,
-  mode      = "strict",
-  return    = "labels"
-)
-
-
-D <- cluster_phi_dist(
-  x        = res,
-  clusters = clusters_for_dist
-)
-
-D
-```
-
-Hierarchical clustering of clusters:
-
-```{r typical-phi-dist-hclust}
-hc_clusters <- hclust(D, method = "average")
-
-plot(hc_clusters, main = "Cluster dendrogram (co-membership phi distance)", cex = 0.7)
-
-grp_clusters <- cutree(hc_clusters, k = 2)
-table(grp_clusters)
-
-# Cluster combinations: group -> vector of cluster labels ("c_12", ...)
-cluster_groups <- split(names(grp_clusters), grp_clusters)
-cluster_groups
-```
-
-***
-
-### 6) Visualize grouped clusters on the Cocktail dendrogram
-
-You can pass combinations of clusters (`cluster_groups`) to `cocktail_plot()`:
-
-```{r typical-cocktail-groups}
-cocktail_plot(
-  x              = res,
-  clusters       = cluster_groups,
-  label_clusters = TRUE,
-  cex_species    = 0.9
-)
-```
-
-***
-
-### 7) Assign plots (relevés) to candidate vegetation units
-
-`assign_releves()` assigns each plot to one of the provided candidate vegetation units using the vegetation matrix stored inside the Cocktail object (`x$vegmatrix`). This matrix is created by `cocktail_cluster()` when `save_vegmatrix = TRUE` (default). If the Cocktail object was created with `save_vegmatrix = FALSE`, `assign_releves()` will stop with an error.
-
-Strategies:
-
-- `"count"`     – number of candidate species present
-- `"cover"`     – summed cover of candidate species
-- `"phi"`       – sum of φ weights over candidate species
-- `"phi_cover"` – sum of cover × φ over candidate species
-
-Candidate species logic:
-
-- Candidate species are the cluster-constituting species from `Cluster.species`.
-- For `"phi"` and `"phi_cover"`:
-  - `min_phi = NULL` (default): candidate species are the cluster-constituting species.
-  - `min_phi = 0.2` (example): candidate species are taken from the **full fidelity profiles**
-    (`Species.cluster.phi`), using species with φ ≥ `min_phi`.
-
-Membership restriction:
-
-- `plot_membership = TRUE` (default): only candidate vegetation units for which the plot is already a Cocktail member compete.
-- `plot_membership = FALSE`: all candidate vegetation units compete for all plots.
-
-Example: assign plots to the parent clusters at `phi_cut = 0.25`.  
-The assignment `"+"` appears when a plot has an unresolved tie (two or more candidate vegetation units share the same best score):
-
-```{r typical-assign}
-assign_count <- assign_releves(
-  x               = res,
-  strategy        = "count",
-  clusters        = parent_labels,
-  plot_membership = TRUE,
-  min_group_size  = 1L
-)
-
-table(assign_count)
-```
-
-Example: assign to candidate vegetation units represented by cluster combinations defined from cluster-distance grouping:
-
-```{r typical-assign-combined}
-assign_combined <- assign_releves(
-  x               = res,
-  strategy        = "phi_cover",
-  clusters        = cluster_groups,
-  plot_membership = TRUE,
-  min_phi         = 0.20,
-  min_group_size  = 1L
-)
-
-table(assign_combined)
-```
-The returned object is a named character vector (names = plot IDs). Each value is:
-
-- a candidate vegetation unit label such as `"u_5"` for a unit defined by a single cluster, or `"u_5_12"` for a unit represented by several clusters;
-- `"+"` when there is an unresolved tie between candidate vegetation units;
-- `"-"` for candidate vegetation units that were collapsed because they contain fewer plots than `min_group_size`;
-- `NA` when no candidate vegetation unit wins for that plot (all scores are 0 or no eligible unit exists).
-
-***
-
-### (Optional) Attach assignments to a header data frame
-
-The following example creates a simple header table with plot IDs and adds multiple assignment strategies as new columns:
-
-```{r attach-assignments, eval=TRUE}
-library(dplyr)
-
-# Example header table with plot IDs matching the names of rel_assigned
-hea <- data.frame(
-  releve_number = rownames(vm)
-)
-
-strategies <- c("count", "cover", "phi", "phi_cover")
-
-hea2 <- hea
-
-# Choose one candidate-unit definition:
-# parent_labels <- clusters_at_cut(res, phi_cut = 0.25, as_labels = TRUE)
-
-for (s in strategies) {
-  rel_assigned <- assign_releves(
-    x               = res,
-    strategy        = s,
-    clusters        = parent_labels,
-    plot_membership = TRUE,
-    min_phi         = 0.20,
-    min_group_size  = 2
-  )
-
-  # Align by releve_number using the names of rel_assigned
-  idx <- match(as.character(hea2$releve_number), names(rel_assigned))
-
-  colname <- paste0("unit_", s)
-  hea2[[colname]] <- rel_assigned[idx]
-}
-
-dplyr::glimpse(hea2)
-```
-
-***
-
-## Function help
-
-See function help for details:
-
-- `?cocktail_cluster` – build the Cocktail tree, optionally with species–cluster phi
-- `?cocktail_plot` – draw dendrograms (PDF/PNG or current device)
-- `?clusters_at_cut` – parent clusters at a phi cut
-- `?select_clusters` – select strong clusters by score
-- `?species_in_clusters` – diagnostic species for clusters or combinations of clusters
-- `?releves_in_clusters` – list plots belonging to clusters or combinations of clusters
-- `?clusters_with_species` – find clusters containing species
-- `?cluster_phi_dist` – distances between clusters (direct co-membership φ)
-- `?assign_releves` – assign plots to candidate vegetation units using covers and φ
-
-- `?generate_synthetic_vegetation_data` - create synthetic vegetation datasets and matching truth tables for labeling experiments
-- `?cluster_evidence` - collect deterministic evidence for one cluster before LLM labeling or interpretation
-
-***
-
-© 2026 Denys Vynokurov & Helge Bruelheide. Licensed under MIT.
+- `?cocktail_cluster`
+- `?clusters_at_cut`
+- `?select_clusters`
+- `?generate_synthetic_vegetation_data`
+- `?cluster_evidence`
+- `?label_clusters`
+- `?llm_label_cluster`
+- `?validate_cluster_label`
+- `?render_cluster_review`

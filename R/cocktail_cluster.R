@@ -84,6 +84,17 @@
 #'   cleaned and aligned vegetation matrix as a sparse `dgCMatrix` in the returned
 #'   object (`$vegmatrix`). Set to `FALSE` to reduce memory usage for large datasets.
 #'
+#' @param dataset_path Optional character path to the input dataset on disk.
+#'   This does not affect clustering itself, but is stored as provenance in the
+#'   returned object and can later be used by downstream reporting helpers.
+#'
+#' @param dataset_label Optional short human-readable dataset label. Useful when
+#'   one dataset is known by a project name rather than a file path.
+#'
+#' @param dataset_type Optional dataset type such as `"synthetic"` or `"real"`.
+#'   If omitted, `cocktail_cluster()` tries to reuse provenance attached to the
+#'   input object (for example from `generate_synthetic_vegetation_data()`).
+#'
 #' @return
 #' A list of class `"cocktail"` with:
 #' \itemize{
@@ -105,6 +116,9 @@
 #'                                   columns correspond to `species`. `NULL` if `save_vegmatrix = FALSE`.
 #'   \item `species`               — character vector of species names kept after cleaning.
 #'   \item `plots`                 — character vector of plot names kept after cleaning.
+#'   \item `input_format`          — character scalar, either `"wide"` or `"long"`.
+#'   \item `dataset`               — list with optional dataset provenance fields such as
+#'                                   `type`, `label`, and `path`.
 #' }
 #'
 #' @details
@@ -148,7 +162,10 @@ cocktail_cluster <- function(
     species_cluster_phi = TRUE,
     input_format = c("wide", "long"),
     long = list(plot = "plot", species = "species", value = "value"),
-    save_vegmatrix = TRUE
+    save_vegmatrix = TRUE,
+    dataset_path = NULL,
+    dataset_label = NULL,
+    dataset_type = NULL
 ) {
   plot_values <- match.arg(plot_values)
   input_format <- match.arg(input_format)
@@ -157,6 +174,64 @@ cocktail_cluster <- function(
   if (!is.matrix(vegmatrix) && !is.data.frame(vegmatrix)) {
     stop("vegmatrix must be a matrix or data.frame.")
   }
+
+  .scalar_or_null <- function(x, name) {
+    if (is.null(x)) {
+      return(NULL)
+    }
+    if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
+      stop("`", name, "` must be NULL or one non-empty character string.")
+    }
+    x
+  }
+
+  .normalize_optional_path <- function(path) {
+    if (is.null(path)) {
+      return(NULL)
+    }
+    normalizePath(path, winslash = "/", mustWork = FALSE)
+  }
+
+  .dataset_info_from_input <- function(
+      vegmatrix,
+      input_format,
+      dataset_path,
+      dataset_label,
+      dataset_type
+  ) {
+    attr_info <- attr(vegmatrix, "cocktailr_dataset_info", exact = TRUE)
+    if (!is.list(attr_info)) {
+      attr_info <- list()
+    }
+
+    path <- .scalar_or_null(dataset_path, "dataset_path") %||%
+      .scalar_or_null(attr_info$path %||% NULL, "attr(vegmatrix, 'cocktailr_dataset_info')$path")
+    label <- .scalar_or_null(dataset_label, "dataset_label") %||%
+      .scalar_or_null(attr_info$label %||% NULL, "attr(vegmatrix, 'cocktailr_dataset_info')$label")
+    type <- .scalar_or_null(dataset_type, "dataset_type") %||%
+      .scalar_or_null(attr_info$type %||% NULL, "attr(vegmatrix, 'cocktailr_dataset_info')$type")
+
+    if (is.null(label) && !is.null(path)) {
+      label <- tools::file_path_sans_ext(basename(path))
+    }
+
+    list(
+      type = type,
+      label = label,
+      path = .normalize_optional_path(path),
+      input_format = input_format,
+      source = attr_info$source %||% NULL,
+      representation = attr_info$representation %||% NULL
+    )
+  }
+
+  dataset_info <- .dataset_info_from_input(
+    vegmatrix = vegmatrix,
+    input_format = input_format,
+    dataset_path = dataset_path,
+    dataset_label = dataset_label,
+    dataset_type = dataset_type
+  )
 
   .looks_like_long_input <- function(dat, long) {
     is.data.frame(dat) &&
@@ -758,7 +833,9 @@ cocktail_cluster <- function(
     Species.cluster.phi  = Species.cluster.phi,
     species              = species,
     plots                = plots,
-    vegmatrix            = vegmatrix_out
+    vegmatrix            = vegmatrix_out,
+    input_format         = input_format,
+    dataset              = dataset_info
   )
   class(res) <- c("cocktail", class(res))
   res

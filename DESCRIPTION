@@ -17,8 +17,10 @@ BugReports: https://github.com/dvynokur/cocktailr/issues
 Roxygen: list(markdown = TRUE)
 Depends: R (>= 4.0)
 Imports:
+    curl,
     graphics,
     grDevices,
+    jsonlite,
     Matrix,
     methods,
     stats,
