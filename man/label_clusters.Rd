@@ -30,6 +30,7 @@ label_clusters(
   max_iterations = 2L,
   review_dir = file.path("temp", "reports", "cluster_reviews"),
   verbose = TRUE,
+  labels_for_imgs = FALSE,
   full = FALSE,
   include_front_matter = full,
   write_metadata = full,
@@ -70,6 +71,11 @@ resolved against that package root.}
 messages for cluster-level workflow stages, retries, and saved review
 artifacts.}
 
+\item{labels_for_imgs}{Logical. If \code{TRUE}, build a plotting-oriented
+registry table with \code{\link{cluster_label_registry}} after all review
+cards are generated and return it as \code{$label_registry}. Default
+\code{FALSE}.}
+
 \item{full}{Logical. Forwarded to \code{\link{render_cluster_review}}.}
 
 \item{include_front_matter, write_metadata}{Forwarded to
@@ -82,6 +88,8 @@ A list of class \code{"cluster_label_batch_result"} with:
   \item \code{results}: named list with evidence, llm result, validation, and
   review artifact for each cluster
   \item \code{selection}: the resolved cluster table used for the run
+  \item \code{label_registry}: optional flat registry table for downstream
+  plotting, present when \code{labels_for_imgs = TRUE}
 }
 }
 \description{

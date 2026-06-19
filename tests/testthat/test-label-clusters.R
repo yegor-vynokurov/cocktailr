@@ -130,6 +130,7 @@ test_that("label_clusters runs a one-cluster workflow and writes a review card",
 
   expect_s3_class(res, "cluster_label_batch_result")
   expect_equal(nrow(res$summary), 1L)
+  expect_null(res$label_registry)
   expect_equal(res$summary$cluster[[1]], "c_1")
   expect_equal(res$summary$run_status[[1]], "success")
   expect_equal(res$summary$validation_status[[1]], "valid")
@@ -365,4 +366,45 @@ test_that("label_clusters resolves a relative review_dir against the package sou
 
   expect_true(file.exists(res$summary$review_file[[1]]))
   expect_true(startsWith(res$summary$review_file[[1]], expected_root))
+})
+
+test_that("label_clusters can build a plotting registry when labels_for_imgs = TRUE", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_valid <- .build_label_clusters_valid_output(ev)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(
+        payload,
+        jsonlite::toJSON(out_valid, auto_unbox = TRUE, null = "null")
+      ),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-registry")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    labels_for_imgs = TRUE,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_s3_class(res, "cluster_label_batch_result")
+  expect_s3_class(res$label_registry, "cluster_label_registry")
+  expect_equal(nrow(res$label_registry), 1L)
+  expect_equal(res$label_registry$cluster[[1]], "c_1")
+  expect_equal(res$label_registry$plot_label_id[[1]], "c_1")
+  expect_equal(res$label_registry$plot_label_short[[1]], "sp1-sp2 cluster")
+  expect_equal(res$label_registry$legend_label[[1]], "c_1: sp1-sp2 cluster")
+  expect_true(file.exists(res$label_registry$review_file[[1]]))
 })

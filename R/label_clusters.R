@@ -51,6 +51,10 @@
 #' @param verbose Logical. If \code{TRUE} (default), print short progress
 #'   messages for cluster-level workflow stages, retries, and saved review
 #'   artifacts.
+#' @param labels_for_imgs Logical. If \code{TRUE}, build a plotting-oriented
+#'   registry table with \code{\link{cluster_label_registry}} after all review
+#'   cards are generated and return it as \code{$label_registry}. Default
+#'   \code{FALSE}.
 #' @param full Logical. Forwarded to \code{\link{render_cluster_review}}.
 #' @param include_front_matter,write_metadata Forwarded to
 #'   \code{\link{render_cluster_review}}.
@@ -61,6 +65,8 @@
 #'   \item \code{results}: named list with evidence, llm result, validation, and
 #'     review artifact for each cluster
 #'   \item \code{selection}: the resolved cluster table used for the run
+#'   \item \code{label_registry}: optional flat registry table for downstream
+#'     plotting, present when \code{labels_for_imgs = TRUE}
 #' }
 #'
 #' @examples
@@ -117,6 +123,7 @@ label_clusters <- function(
     max_iterations = 2L,
     review_dir = file.path("temp", "reports", "cluster_reviews"),
     verbose = TRUE,
+    labels_for_imgs = FALSE,
     full = FALSE,
     include_front_matter = full,
     write_metadata = full,
@@ -130,6 +137,7 @@ label_clusters <- function(
   max_retries <- .arg_non_negative_integer(max_retries, "max_retries")
   max_iterations <- .arg_cluster_label_max_iterations(max_iterations)
   verbose <- .arg_single_flag(verbose, "verbose")
+  labels_for_imgs <- .arg_single_flag(labels_for_imgs, "labels_for_imgs")
   select_mode <- match.arg(select_mode)
 
   selection <- .resolve_label_clusters_selection(
@@ -252,9 +260,21 @@ label_clusters <- function(
   out <- list(
     summary = do.call(rbind, summary_rows),
     results = results,
-    selection = selection
+    selection = selection,
+    label_registry = NULL
   )
   class(out) <- c("cluster_label_batch_result", "list")
+
+  if (isTRUE(labels_for_imgs)) {
+    out$label_registry <- cluster_label_registry(out)
+    .label_clusters_log(
+      verbose,
+      "Built label registry for downstream plotting with ",
+      nrow(out$label_registry),
+      " row(s)."
+    )
+  }
+
   out
 }
 
