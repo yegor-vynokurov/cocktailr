@@ -1,43 +1,38 @@
 # Работа с локальной LLM через Ollama и `cocktailr`
 
-Этот документ описывает верхнеуровневый сценарий работы с локальной LLM
-в `cocktailr`.
+Этот документ описывает только верхнеуровневый сценарий работы с
+локальной LLM в `cocktailr`.
 
-Главная идея сейчас такая:
+Текущий основной пользовательский вход для labeling:
 
-- Ollama запускает локальную модель
-- `cocktailr` обращается к ней из R
-- основной пользовательский вход для labeling теперь:
-  `label_clusters()`
+- `label_clusters()`
 
-Подробные пошаговые сценарии, ручной low-level pipeline и расширенные
-аргументы вынесены в
+Детальный manual pipeline, расширенные аргументы и пошаговые примеры
+вынесены в
 [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
 
-## Что делает LLM-слой в проекте
+## Что делает LLM-слой
 
-На текущем MVP-этапе локальная LLM используется для того, чтобы:
+На текущем MVP-этапе локальная LLM нужна, чтобы:
 
 - предложить название кластера
-- дать краткую интерпретацию
-- вернуть структурированный результат, пригодный для проверки и
-  сохранения в markdown card
+- дать короткую интерпретацию
+- вернуть структурированный результат, который можно валидировать и
+  сохранить как review card
 
-Рекомендуемый путь сейчас не вручную собирать цепочку из
-`cluster_evidence()`, `llm_label_cluster()`,
-`validate_cluster_label()` и `render_cluster_review()`,
-а вызывать `label_clusters()`, которая делает это сама.
+Практически это значит: обычному пользователю не нужно вручную
+вызывать цепочку
+`cluster_evidence() -> llm_label_cluster() -> validate_cluster_label() -> render_cluster_review()`.
+Основной сценарий должен идти через `label_clusters()`.
 
 ## Быстрый старт
 
 ### 1. Установите Ollama
 
-Скачать:
-
 - Windows: <https://ollama.com/download>
-- macOS / Linux: там же на официальной странице
+- macOS / Linux: та же официальная страница
 
-Проверьте, что команда доступна:
+Проверьте установку:
 
 ```powershell
 ollama --version
@@ -45,23 +40,30 @@ ollama --version
 
 ### 2. Загрузите модель
 
-Рекомендуемая стартовая модель для текущего workflow:
+Текущая рекомендуемая стартовая модель:
 
 ```powershell
 ollama pull gemma4:12b
 ```
 
-Проверьте, что она запускается:
+При желании проверьте, что модель запускается:
 
 ```powershell
 ollama run gemma4:12b
 ```
 
 ### 3. Запустите labeling из R
-указывайте ваш путь на вашем локальном компьютере, например D:/documents/coctrailr/cocktailr
-```r
-pkgload::load_all("path/to/dir")
 
+Если вы работаете из локального dev-checkout, сначала загрузите свежую
+версию пакета:
+
+```r
+pkgload::load_all("D:/documents/coctrailr/cocktailr")
+```
+
+Минимальный рекомендуемый пример:
+
+```r
 syn <- generate_synthetic_vegetation_data(seed = 42)
 
 res <- cocktail_cluster(
@@ -86,7 +88,7 @@ run$summary$review_file
 ```
 
 Если аргумент `clusters` не указан, `label_clusters()` по умолчанию
-берёт первые top-10 кластеров, ранжированных по score.
+обрабатывает до 10 score-ranked кластеров.
 
 ## Текущая рекомендуемая комбинация
 
@@ -98,8 +100,8 @@ run$summary$review_file
 - safer first-run settings:
   `timeout_sec = 600`, `num_predict = 600`
 
-Если при `num_predict = 600` получаете ошибку с `EOF` или
-недогенерацией, увеличьте до `1200`.
+Если при `num_predict = 600` появляется ошибка с `EOF` или обрезанный
+JSON-ответ, увеличьте `num_predict` до `1200`.
 
 ## Как сменить модель
 
@@ -109,7 +111,7 @@ run$summary$review_file
 ollama pull qwen3.5:9b-q4_K_M
 ```
 
-Потом просто поменяйте аргумент `model =` в R:
+Потом просто поменяйте аргумент `model =`:
 
 ```r
 run <- label_clusters(
@@ -122,25 +124,20 @@ run <- label_clusters(
 )
 ```
 
-Практический смысл:
+Текущий практический смысл:
 
-- `gemma4:12b` сейчас основной рекомендованный baseline
-- `qwen3.5:9b-q4_K_M` можно использовать как альтернативу для
-  экспериментов и сравнений. Её вес немного меньше, чем гемма4 12 б.
-
-## Альтернативные модели
-Если нужны меньшие или большие модели, то любые, которые есть на сайте оллама, 
-можно загрузить и использовать. Главное, чтобы они поддерживали 
-структурированный оутпут. 
+- `gemma4:12b` — основной рекомендованный baseline
+- `qwen3.5:9b-q4_K_M` — полезная вторичная альтернатива для сравнений и
+  экспериментов
 
 ## Куда сохраняются результаты
 
-По умолчанию финальные review cards идут в:
+По умолчанию финальные review cards сохраняются в:
 
 - `temp/reports/cluster_reviews/`
 
-Если включить raw LLM logging через `log_dir`, логи можно писать,
-например, в:
+Raw LLM logging через `log_dir` опционален. Если он включён, логи можно
+писать, например, в:
 
 - `temp/llm_logs/`
 
@@ -152,8 +149,8 @@ run <- label_clusters(
 - свежий clone репозитория без `temp/` работает нормально
 
 Если проект запущен из локального source checkout, относительные пути
-вроде `temp/reports/cluster_reviews/` и `temp/llm_logs/` автоматически
-разрешаются относительно корня пакета `cocktailr`.
+вроде `temp/reports/cluster_reviews/` и `temp/llm_logs/`
+автоматически разрешаются относительно корня пакета `cocktailr`.
 
 ## Когда нужен `LABELING_STEP_BY_STEP.md`
 
@@ -163,14 +160,14 @@ run <- label_clusters(
 
 - загрузить реальный CSV или long-format dataset
 - выбрать конкретные cluster IDs вручную
-- запустить low-level pipeline по шагам
+- разобрать manual pipeline по шагам
 - использовать `llm_label_cluster()` напрямую
 - включить `full = TRUE`
 - сохранить raw `log_dir`
-- разбираться с prompt variants подробнее
+- детально разбираться с prompt variants
 - менять `workflow_steps`
 
-## Короткий troubleshooting
+## Короткий Troubleshooting
 
 ### `could not find function "label_clusters"`
 
@@ -193,7 +190,7 @@ timeout_sec = 600
 num_predict = 600
 ```
 
-Если всё равно мало, увеличьте `num_predict` до `1200`.
+Если этого мало, увеличьте `num_predict` до `1200`.
 
 ### Не удаётся подключиться к Ollama
 
@@ -203,7 +200,7 @@ num_predict = 600
 ollama ls
 ```
 
-Если команда не отвечает, сначала поднимите или перезапустите Ollama.
+Если команда не отвечает, сначала запустите или перезапустите Ollama.
 
 ### Модель слишком часто abstain'ится
 
@@ -215,14 +212,5 @@ ollama ls
 - не слишком ли он смешанный
 - не нужен ли другой cluster ID
 
-Если хотите разбираться глубже, смотрите
+Если нужен более глубокий разбор, переходите в
 [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
-
-## Что дальше читать
-
-- [README.md](README.md)
-  Краткий обзор package workflow
-- [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md)
-  Полный пошаговый сценарий
-- [inst/prompts/cluster_labeling/README.md](inst/prompts/cluster_labeling/README.md)
-  Краткие рекомендации по prompt variants

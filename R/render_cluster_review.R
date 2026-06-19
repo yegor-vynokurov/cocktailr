@@ -136,19 +136,16 @@ render_cluster_review <- function(
   if (!inherits(evidence, "cluster_evidence")) {
     stop("`evidence` must be a `cluster_evidence` object.", call. = FALSE)
   }
-  if (!is.logical(full) || length(full) != 1L || is.na(full)) {
-    stop("`full` must be TRUE or FALSE.", call. = FALSE)
-  }
-  if (!is.logical(include_front_matter) ||
-      length(include_front_matter) != 1L ||
-      is.na(include_front_matter)) {
-    stop("`include_front_matter` must be TRUE or FALSE.", call. = FALSE)
-  }
-  if (!is.logical(write_metadata) ||
-      length(write_metadata) != 1L ||
-      is.na(write_metadata)) {
-    stop("`write_metadata` must be TRUE or FALSE.", call. = FALSE)
-  }
+  full <- .arg_single_flag(full, "full")
+  include_front_matter <- .arg_single_flag(
+    include_front_matter,
+    "include_front_matter"
+  )
+  write_metadata <- .arg_single_flag(write_metadata, "write_metadata")
+  file <- .arg_nullable_scalar_character(file, "file")
+  review_dir <- .arg_nullable_scalar_character(review_dir, "review_dir")
+  metadata_file <- .arg_nullable_scalar_character(metadata_file, "metadata_file")
+  title <- .arg_nullable_scalar_character(title, "title")
 
   output <- .extract_cluster_label_output(x)
   if (!is.list(output) || is.null(names(output))) {
@@ -392,103 +389,24 @@ print.cluster_review_artifact <- function(x, ...) {
   x
 }
 
-.is_absolute_output_path <- function(path) {
-  path <- .as_scalar_character(path)
-  if (is.na(path) || !nzchar(path)) {
-    return(FALSE)
-  }
-
-  grepl("^([A-Za-z]:[/\\\\]|[/\\\\]{2}|/)", path, perl = TRUE)
-}
-
-.cocktailr_source_root_candidates <- function() {
-  wd <- tryCatch(getwd(), error = function(e) "")
-  ancestors <- character(0)
-
-  if (is.character(wd) && nzchar(wd)) {
-    current <- normalizePath(wd, winslash = "/", mustWork = FALSE)
-    repeat {
-      ancestors <- c(ancestors, current)
-      parent <- dirname(current)
-      if (!nzchar(parent) || identical(parent, current)) {
-        break
-      }
-      current <- parent
-    }
-  }
-
-  ns_path <- tryCatch(
-    getNamespaceInfo(asNamespace("cocktailr"), "path"),
-    error = function(e) ""
-  )
-
-  unique(c(
-    ancestors,
-    if (is.character(wd) && nzchar(wd)) file.path(wd, "cocktailr") else character(0),
-    ns_path
-  ))
-}
-
-.looks_like_cocktailr_source_root <- function(path) {
-  if (!is.character(path) || length(path) != 1L || !nzchar(path)) {
-    return(FALSE)
-  }
-
-  desc <- file.path(path, "DESCRIPTION")
-  if (!file.exists(desc) ||
-      !dir.exists(file.path(path, "R")) ||
-      !dir.exists(file.path(path, "man"))) {
-    return(FALSE)
-  }
-
-  desc_lines <- tryCatch(
-    readLines(desc, warn = FALSE, encoding = "UTF-8"),
-    error = function(e) character(0)
-  )
-
-  any(grepl("^Package:\\s*cocktailr\\s*$", desc_lines, ignore.case = TRUE))
-}
-
-.cocktailr_source_root <- function() {
-  candidates <- .cocktailr_source_root_candidates()
-  matches <- vapply(candidates, .looks_like_cocktailr_source_root, logical(1))
-
-  if (!any(matches)) {
-    return(NULL)
-  }
-
-  normalizePath(candidates[which(matches)[1L]], winslash = "/", mustWork = FALSE)
-}
-
-.resolve_review_output_path <- function(path) {
-  path <- .as_scalar_character(path)
-  if (is.na(path) || !nzchar(path) || .is_absolute_output_path(path)) {
-    return(path)
-  }
-
-  root <- .cocktailr_source_root()
-  if (is.null(root) || !nzchar(root)) {
-    return(path)
-  }
-
-  file.path(root, path)
-}
-
 .resolve_cluster_review_paths <- function(evidence, file, review_dir, metadata_file) {
   if (!is.null(file) && !is.null(review_dir)) {
     stop("Use either `file` or `review_dir`, not both.", call. = FALSE)
   }
 
-  file_target <- if (!is.null(file)) .resolve_review_output_path(file) else NULL
+  # Resolve relative output paths against the package source root when we can
+  # detect a local checkout. This keeps review artifacts in one predictable
+  # workspace across interactive sessions.
+  file_target <- if (!is.null(file)) .resolve_cocktailr_output_path(file) else NULL
   if (is.null(file_target) && !is.null(review_dir)) {
     file_target <- .default_cluster_review_file(
       evidence = evidence,
-      root_dir = .resolve_review_output_path(review_dir)
+      root_dir = .resolve_cocktailr_output_path(review_dir)
     )
   }
 
   metadata_target <- if (!is.null(metadata_file)) {
-    .resolve_review_output_path(metadata_file)
+    .resolve_cocktailr_output_path(metadata_file)
   } else {
     NULL
   }

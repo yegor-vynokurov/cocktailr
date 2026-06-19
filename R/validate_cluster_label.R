@@ -546,32 +546,6 @@ print.cluster_label_validation <- function(x, ...) {
   invisible(x)
 }
 
-.extract_cluster_label_output <- function(x) {
-  if (inherits(x, "cluster_label_result")) {
-    return(x$output)
-  }
-  x
-}
-
-.new_cluster_label_issue_table <- function() {
-  data.frame(
-    severity = character(),
-    category = character(),
-    code = character(),
-    message = character(),
-    location = character(),
-    stringsAsFactors = FALSE
-  )
-}
-
-.cluster_evidence_cluster_id <- function(evidence) {
-  meta <- evidence$meta
-  if (!is.list(meta) || is.null(meta$cluster_id)) {
-    return(NA_character_)
-  }
-  .as_scalar_character(meta$cluster_id)
-}
-
 .cluster_evidence_index <- function(evidence) {
   items <- evidence$evidence$items
   if (!is.list(items) || length(items) == 0L) {
@@ -1142,39 +1116,4 @@ print.cluster_label_validation <- function(x, ...) {
     return(TRUE)
   }
   any(issues$severity == "warning")
-}
-
-.as_scalar_character <- function(x) {
-  if (is.list(x) && length(x) == 1L) {
-    return(.as_scalar_character(x[[1L]]))
-  }
-  if (!is.character(x) || length(x) != 1L) {
-    return(NA_character_)
-  }
-  x
-}
-
-.as_character_vector <- function(x) {
-  if (is.null(x)) {
-    return(character())
-  }
-  if (is.list(x)) {
-    x <- unlist(x, recursive = TRUE, use.names = FALSE)
-  }
-  if (!is.character(x)) {
-    return(character())
-  }
-  x <- trimws(x)
-  unique(x[!is.na(x) & nzchar(x)])
-}
-
-.is_non_empty_scalar_character <- function(x) {
-  is.character(x) && length(x) == 1L && nzchar(trimws(x))
-}
-
-.null_default <- function(x, default) {
-  if (is.null(x)) {
-    return(default)
-  }
-  x
 }

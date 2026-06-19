@@ -12,14 +12,23 @@ English:
 7. validate the result
 8. save the final human-review markdown card to disk
 
+## Quick Flow Example
 
-### quick flow run example: 
-you run step by step and will get the markdow cards with labels of the clusters in the end. 
-model = "gemma4:12b" it is a model, and read llm_operations.md or README.md for install details
-output is in temp/reports/cluster_reviews folder. 
-The quick flow run example will explain top 10 most high score clusters. 
-For other variants read further.
-qwen3.5:9b-q4_K_M
+This is the shortest recommended end-to-end run.
+
+It:
+
+- loads the current development version of the package
+- generates a synthetic dataset
+- runs Cocktail clustering
+- labels the top score-ranked clusters with the current default
+  `gemma4:12b` + `strict_abstention_gate_v1` + `workflow_steps = 1`
+- saves compact markdown review cards under
+  `temp/reports/cluster_reviews/`
+
+For Ollama installation and model setup, see
+[llm_operation.md](llm_operation.md).
+
 ```r
 pkgload::load_all("D:/documents/coctrailr/cocktailr")
 syn <- generate_synthetic_vegetation_data(seed = 42)

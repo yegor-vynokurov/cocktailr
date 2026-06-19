@@ -1,0 +1,255 @@
+# Internal helpers for packaged prompt and schema assets.
+#
+# The public LLM API should read like workflow orchestration. Prompt catalog
+# lookup, template interpolation, and request assembly live here to keep the
+# main labeling file focused on control flow.
+
+.package_asset_path <- function(...) {
+  rel <- file.path(...)
+
+  packaged <- system.file(..., package = "cocktailr")
+  if (nzchar(packaged)) {
+    return(normalizePath(packaged, winslash = "/", mustWork = TRUE))
+  }
+
+  ns_path <- tryCatch(
+    getNamespaceInfo(asNamespace("cocktailr"), "path"),
+    error = function(e) ""
+  )
+
+  if (is.character(ns_path) && nzchar(ns_path)) {
+    candidates <- unique(c(
+      file.path(ns_path, rel),
+      file.path(ns_path, "inst", rel)
+    ))
+    existing <- candidates[file.exists(candidates)]
+    if (length(existing)) {
+      return(normalizePath(existing[[1L]], winslash = "/", mustWork = TRUE))
+    }
+  }
+
+  ""
+}
+
+.cluster_label_prompt_catalog_path <- function() {
+  path <- .package_asset_path("prompts", "cluster_labeling", "catalog.json")
+
+  if (!nzchar(path)) {
+    stop(
+      "Could not locate the packaged cluster label prompt catalog. ",
+      "Reinstall the package or use `pkgload::load_all()` from the package root."
+    )
+  }
+
+  path
+}
+
+.cluster_label_schema_path <- function(
+    schema_path = NULL,
+    default_schema_name = "cluster_label_output_schema.json"
+) {
+  if (!is.null(schema_path)) {
+    if (!file.exists(schema_path)) {
+      stop("`schema_path` does not exist: ", schema_path)
+    }
+    return(normalizePath(schema_path, winslash = "/", mustWork = TRUE))
+  }
+
+  path <- .package_asset_path("schemas", default_schema_name)
+
+  if (!nzchar(path)) {
+    stop(
+      "Could not locate the packaged schema asset '",
+      default_schema_name,
+      "'. ",
+      "Reinstall the package or use `pkgload::load_all()` from the package root."
+    )
+  }
+
+  normalizePath(path, winslash = "/", mustWork = TRUE)
+}
+
+.cluster_label_gate_schema_path <- function(schema_path = NULL) {
+  .cluster_label_schema_path(
+    schema_path = schema_path,
+    default_schema_name = "cluster_label_gate_schema.json"
+  )
+}
+
+.read_text_file <- function(path) {
+  paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+}
+
+.replace_fixed_scalar <- function(x, pattern, replacement) {
+  gsub(pattern, replacement, x, fixed = TRUE)
+}
+
+.interpolate_prompt_template <- function(template, values) {
+  out <- template
+  for (nm in names(values)) {
+    out <- .replace_fixed_scalar(out, nm, values[[nm]])
+  }
+  out
+}
+
+.read_cluster_label_schema <- function(schema_path = NULL) {
+  path <- .cluster_label_schema_path(schema_path)
+  text <- .read_text_file(path)
+  parsed <- jsonlite::fromJSON(text, simplifyVector = FALSE)
+
+  list(
+    path = path,
+    text = text,
+    parsed = parsed,
+    required = parsed$required %||% character(0)
+  )
+}
+
+.read_cluster_label_prompt_catalog <- function() {
+  path <- .cluster_label_prompt_catalog_path()
+  text <- .read_text_file(path)
+  parsed <- jsonlite::fromJSON(text, simplifyVector = FALSE)
+
+  if (!is.list(parsed) ||
+      is.null(parsed$system_prompt_path) ||
+      is.null(parsed$variants)) {
+    stop("The packaged cluster label prompt catalog is malformed.")
+  }
+
+  if (!length(parsed$variants) || is.null(names(parsed$variants))) {
+    stop("The packaged cluster label prompt catalog must define named variants.")
+  }
+
+  list(
+    path = path,
+    dir = dirname(path),
+    text = text,
+    parsed = parsed
+  )
+}
+
+.cluster_label_prompt_asset_path <- function(catalog, rel_path) {
+  rel_path <- .arg_scalar_character(rel_path, "rel_path")
+  path <- file.path(catalog$dir, rel_path)
+
+  if (!file.exists(path)) {
+    stop("Prompt asset referenced by the catalog does not exist: ", rel_path)
+  }
+
+  normalizePath(path, winslash = "/", mustWork = TRUE)
+}
+
+.build_cluster_label_prompt <- function(
+    evidence,
+    variant,
+    schema_path = NULL,
+    temperature = NULL,
+    top_p = NULL,
+    seed = NULL,
+    num_predict = NULL
+) {
+  catalog <- .read_cluster_label_prompt_catalog()
+  catalog_def <- catalog$parsed
+  variant_def <- catalog_def$variants[[variant]]
+
+  if (is.null(variant_def)) {
+    stop(
+      "`variant` must be one of: ",
+      paste(names(catalog_def$variants), collapse = ", "),
+      "."
+    )
+  }
+
+  schema <- .read_cluster_label_schema(schema_path)
+  evidence_text <- .format_cluster_evidence_prompt(evidence)
+  system_prompt_path <- .cluster_label_prompt_asset_path(
+    catalog,
+    catalog_def$system_prompt_path
+  )
+  user_prompt_path <- .cluster_label_prompt_asset_path(
+    catalog,
+    variant_def$user_prompt_path
+  )
+
+  template_values <- list(
+    "{{CLUSTER_ID}}" = evidence$meta$cluster_id,
+    "{{OUTPUT_SCHEMA_JSON}}" = schema$text,
+    "{{CLUSTER_EVIDENCE_TEXT}}" = evidence_text
+  )
+
+  system_content <- .interpolate_prompt_template(
+    .read_text_file(system_prompt_path),
+    template_values
+  )
+  user_content <- .interpolate_prompt_template(
+    .read_text_file(user_prompt_path),
+    template_values
+  )
+
+  generation <- catalog_def$default_generation
+  generation$temperature <- temperature %||% variant_def$temperature %||% generation$temperature
+  generation$top_p <- top_p %||% variant_def$top_p %||% generation$top_p
+  generation$seed <- as.integer(seed %||% generation$seed)
+  generation$num_predict <- as.integer(num_predict %||% generation$num_predict)
+
+  list(
+    cluster_id = evidence$meta$cluster_id,
+    variant = variant,
+    task_type = variant_def$task_type %||% "label",
+    catalog_path = catalog$path,
+    schema_path = schema$path,
+    schema_text = schema$text,
+    schema_required = schema$required,
+    schema_object = schema$parsed,
+    evidence_text = evidence_text,
+    system_path = system_prompt_path,
+    user_path = user_prompt_path,
+    system = system_content,
+    user = user_content,
+    messages = list(
+      list(role = "system", content = system_content),
+      list(role = "user", content = user_content)
+    ),
+    generation = generation
+  )
+}
+
+.build_ollama_label_request <- function(model, prompt_bundle, keep_alive = NULL) {
+  options <- Filter(
+    Negate(is.null),
+    list(
+      temperature = prompt_bundle$generation$temperature,
+      top_p = prompt_bundle$generation$top_p,
+      seed = prompt_bundle$generation$seed,
+      num_predict = prompt_bundle$generation$num_predict
+    )
+  )
+
+  Filter(
+    function(x) !is.null(x),
+    list(
+      model = model,
+      messages = prompt_bundle$messages,
+      stream = FALSE,
+      think = FALSE,
+      format = prompt_bundle$schema_object,
+      options = options,
+      keep_alive = keep_alive
+    )
+  )
+}
+
+.default_cluster_label_gate_variant <- function() {
+  "gate_abstain_examples_v1"
+}
+
+.expect_prompt_task_type <- function(prompt_bundle, expected_task_type, variant) {
+  actual_task_type <- prompt_bundle$task_type %||% "label"
+  if (!identical(actual_task_type, expected_task_type)) {
+    stop(
+      "Prompt variant '", variant, "' is registered as task_type = '",
+      actual_task_type, "' but this workflow requires task_type = '",
+      expected_task_type, "'."
+    )
+  }
+}

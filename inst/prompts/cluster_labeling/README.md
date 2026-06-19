@@ -3,6 +3,9 @@
 This directory is the canonical source of truth for the cluster-labeling
 prompts used by `llm_label_cluster()`.
 
+For ordinary package use, these prompt assets are consumed indirectly by
+`label_clusters()`, which is the current high-level entry point.
+
 ## Why prompts are stored as Markdown
 
 Prompt text is stored as plain `.md` files instead of hard-coded R
@@ -30,7 +33,8 @@ documentation during runtime.
 
 `llm_label_cluster()` loads `catalog.json`, resolves the referenced
 prompt files, substitutes placeholders, and builds the final structured
-input sent to Ollama.
+input sent to Ollama. `label_clusters()` reuses the same prompt catalog
+through that lower-level API.
 
 ## How structured input is assembled
 
@@ -76,6 +80,9 @@ Prefer names that encode both intent and version:
 - avoid: `better_version.md`
 
 Stable variant IDs are important for reproducible experiments.
+
+If an existing variant already has benchmark history, prefer copying it
+to a new versioned file instead of editing the old file in place.
 
 ## What to change carefully
 
@@ -141,24 +148,26 @@ more selective in `gray_zone` cases.
 
 ## Current recommended combinations
 
-These are practical recommendations from the cleaned local `pilot`
-benchmark. They are not universal truths, but they are the current best
-starting points.
+These are the current handoff-level recommendations for ordinary use.
+They are based on the cleaned local pilot plus the later project choice
+to keep the default workflow simple, reproducible, and easy to support.
 
-### Keep as primary candidates
+### Current project default
+
+- `gemma4:12b` + `strict_abstention_gate_v1` + `workflow_steps = 1`
+  This is the current default for the project. It is the easiest
+  combination to explain, the easiest to run, and the safest simple
+  baseline for cautious one-step labeling.
+
+### Keep as secondary alternatives
 
 - `qwen3.5:9b-q4_K_M` + `concise_label_v1` + `workflow_steps = 2`
-  Best current cautious labeling candidate. It still labels all
-  `easy_positive` pilot cases, stays usable in `gray_zone`, and is more
-  selective than its own `w1` version.
+  Useful as a more selective experimental alternative when you are
+  willing to use the gate-then-label workflow.
 - `qwen3.5:9b-q4_K_M` + `conservative_interpretation_v1` +
   `workflow_steps = 2`
-  Very similar to the previous combination, but with slightly richer
-  summaries. Keep this when interpretation text matters more than the
-  shortest possible label.
-- `gemma4:12b` + `strict_abstention_gate_v1` + `workflow_steps = 1`
-  Best simple baseline. It is easy to run, easy to reason about, and
-  slightly less label-happy than the looser Gemma prompt variants.
+  Similar to the previous option, but with slightly richer
+  interpretation text.
 
 ### Deprioritize for now
 
@@ -171,8 +180,8 @@ starting points.
   over the stricter Gemma baseline.
 - `gemma4:12b` + `concise_label_v1` or
   `conservative_interpretation_v1` + `w1`
-  Useful for exploratory labeling, but still label-happy and not the
-  first choice for cautious runs.
+  Still useful for exploratory labeling, but not the preferred
+  customer-facing default.
 
 ## What the current pilot still does not solve
 

@@ -35,6 +35,7 @@ original Cocktail method papers listed in the package documentation.
 
 Current MVP workflow recommendation:
 
+- main user-facing entry point: `label_clusters()`
 - stable building blocks:
   `generate_synthetic_vegetation_data()`, `cluster_evidence()`,
   `validate_cluster_label()`, `render_cluster_review()`,
@@ -158,7 +159,8 @@ and a fresh clone of the repository works without any pre-existing
 For a first real run on unknown local hardware, `timeout_sec = 600` and
 `num_predict = 600` are usually safer than the package defaults. More
 detail is in [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
-If num_predict = 600 causes an error like EOF then increase to 1200 or more
+If `num_predict = 600` causes an EOF-like truncation error, increase it
+to `1200` or higher.
 
 If you want the low-level manual chain
 `cluster_evidence() -> llm_label_cluster() -> validate_cluster_label() -> render_cluster_review()`,

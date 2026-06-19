@@ -266,13 +266,6 @@ label_clusters <- function(
   x
 }
 
-.arg_single_flag <- function(x, name) {
-  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
-    stop("`", name, "` must be TRUE or FALSE.")
-  }
-  x
-}
-
 .label_clusters_log <- function(verbose, ...) {
   if (!isTRUE(verbose)) {
     return(invisible(NULL))
@@ -412,6 +405,9 @@ label_clusters <- function(
   next_mode <- "initial"
   next_num_predict <- effective_num_predict
 
+  # This outer loop is intentionally bounded. We allow at most one follow-up
+  # iteration, either as a validator-guided repair pass or as a fresh retry
+  # after transport / truncation failure.
   for (iter in seq_len(max_iterations)) {
     iter_mode <- next_mode
 
@@ -610,6 +606,9 @@ label_clusters <- function(
   }
 
   used_placeholder <- TRUE
+  # Never fail silently at the batch level: if we cannot obtain a valid
+  # structured result, we still emit a minimal abstaining artifact so the
+  # review workflow remains auditable.
   placeholder_result <- .cluster_label_placeholder_result(
     evidence = evidence,
     template = .cluster_label_placeholder_template(llm_result, template),

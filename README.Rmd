@@ -43,6 +43,7 @@ If you use `cocktailr`, please cite the GitHub repository and the original Cockt
 
 Current MVP workflow recommendation:
 
+- main user-facing entry point: `label_clusters()`
 - stable building blocks: `generate_synthetic_vegetation_data()`, `cluster_evidence()`, `validate_cluster_label()`, `render_cluster_review()`, `label_clusters()`
 - experimental boundary: `llm_label_cluster()` and concrete `model + prompt` combinations
 
@@ -126,11 +127,11 @@ If you omit `clusters`, `label_clusters()` processes up to the first 10 clusters
 
 If you are working from a local source checkout, relative review-card paths such as `temp/reports/cluster_reviews/` are resolved against the `cocktailr` package root automatically, even if R was started one level higher. The same source-root resolution is now used for relative `log_dir` paths such as `temp/llm_logs/`.
 
-The default saved artifact is a compact markdown review card. If dataset provenance is known, `render_cluster_review()` places the card in a dataset-specific subfolder under `temp/reports/cluster_reviews/`; otherwise it falls back to a timestamped folder. Use `full = TRUE` if you also want the expanded card plus the `.meta.json` sidecar. Intermediate raw model logs through `log_dir` are optional and are not part of the default workflow.
+The default saved artifact is a compact markdown review card. If dataset provenance is known, `render_cluster_review()` places the card in a dataset-specific subfolder under `temp/reports/cluster_reviews/`; otherwise it falls back to a timestamped folder. Use `full = TRUE` if you also want the expanded card plus the `.meta.json` sidecar. The compact card also records the model and prompt file paths used for that answer, which helps compare runs across models or prompt variants. Intermediate raw model logs through `log_dir` are optional and are not part of the default workflow.
 
 The `temp/` workspace is created on demand. It is safe to delete it, and a fresh clone of the repository works without any pre-existing `temp/` folder.
 
-For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 600` are usually safer than the package defaults. More detail is in [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
+For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 600` are usually safer than the package defaults. If `num_predict = 600` causes an EOF-like truncation error, increase it to `1200` or higher. More detail is in [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
 
 If you want the low-level manual chain `cluster_evidence() -> llm_label_cluster() -> validate_cluster_label() -> render_cluster_review()`, see [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
 
