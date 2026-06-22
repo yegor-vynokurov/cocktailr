@@ -103,6 +103,11 @@ test_that("validate_cluster_label accepts parsed output and cluster_label_result
   expect_equal(val$output_status, "labeled")
   expect_equal(val$validation_status, "valid")
   expect_false(val$needs_human_review)
+  expect_equal(val$label_tier, "accepted")
+  expect_false(val$is_speculative)
+  expect_equal(val$plot_marker, "")
+  expect_equal(val$strict_outcome, "accepted")
+  expect_equal(val$strict_validation_status, "valid")
   expect_equal(val$evidence_coverage$score, 1)
   expect_equal(nrow(val$issues), 0L)
 })
@@ -226,5 +231,39 @@ test_that("validate_cluster_label recognizes a clean abstention output", {
   expect_equal(val$output_status, "abstain")
   expect_equal(val$validation_status, "abstained")
   expect_false(val$needs_human_review)
+  expect_true(is.na(val$label_tier))
+  expect_false(val$is_speculative)
+  expect_equal(val$plot_marker, "")
+  expect_equal(val$strict_outcome, "abstained")
   expect_equal(val$evidence_coverage$score, 1)
+})
+
+test_that("speculative fallback validation remains distinct from accepted labels", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$confidence$score <- 0
+  output$confidence$rationale <- "Tentative only; the direction is visible but not stable."
+  output$not_confirmed_by_data <- list(
+    list(
+      statement = "A habitat-level label is not confirmed.",
+      reason = "The evidence bundle does not resolve contrast against nearby alternatives."
+    )
+  )
+
+  val <- validate_cluster_label(output, ev)
+  spec_val <- cocktailr:::.mark_speculative_validation(
+    val,
+    strict_validation_status = "unsupported_claims"
+  )
+
+  expect_equal(spec_val$validation_status, "valid_with_warnings")
+  expect_true(spec_val$is_valid)
+  expect_true(spec_val$needs_human_review)
+  expect_equal(spec_val$label_tier, "speculative")
+  expect_true(spec_val$is_speculative)
+  expect_equal(spec_val$plot_marker, "*")
+  expect_equal(spec_val$strict_outcome, "placeholder")
+  expect_equal(spec_val$strict_validation_status, "unsupported_claims")
+  expect_match(spec_val$missing_for_confidence_text, "not confirmed", ignore.case = TRUE)
+  expect_true(any(spec_val$issues$code == "speculative_fallback_label"))
 })

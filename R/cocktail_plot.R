@@ -77,6 +77,15 @@
 #' @param png_res Resolution in dpi for PNG output (default 300).
 #' @param main Optional plot title for each page. If NULL (default), a standard
 #'   header of the form "Species a-b of n" is drawn.
+#' @param label_registry Optional plotting registry produced by
+#'   \code{\link{cluster_label_registry}} or returned as
+#'   \code{label_clusters(..., labels_for_imgs = TRUE)$label_registry}. When
+#'   supplied, \code{cocktail_plot()} keeps numeric cluster IDs on the
+#'   dendrogram, but adds a compact legend/caption block with human-readable
+#'   label decodings and review-card filenames for the clusters actually shown
+#'   on each page. Use \code{"auto"} to load the most relevant saved
+#'   \code{"cluster_label_registry.csv"} from the default review-artifact
+#'   location.
 #' @param ... Additional graphical arguments passed to the underlying plotting
 #'   functions (e.g. \code{plot()}, \code{par()}), allowing fine-tuning of
 #'   appearance.
@@ -104,6 +113,7 @@ cocktail_plot <- function(
     palette        = "rainbow",
     png_res        = 300,
     main           = NULL,
+    label_registry = NULL,
     ...
 ) {
   ## ---- helpers ------------------------------------------------------------
@@ -216,6 +226,49 @@ cocktail_plot <- function(
     }
   }
 
+  .page_caption_lines <- function(page_label_ids) {
+    if (is.null(label_registry_plot) || !length(page_label_ids)) {
+      return(character(0))
+    }
+
+    reg_page <- .cocktail_plot_registry_page_subset(
+      label_registry = label_registry_plot,
+      label_ids = page_label_ids
+    )
+    .cocktail_plot_legend_lines(
+      label_registry_page = reg_page,
+      max_entries = 5L
+    )
+  }
+
+  .draw_page_header <- function(page_index, page_label_ids) {
+    caption_lines <- .page_caption_lines(page_label_ids)
+    title_line <- if (length(caption_lines)) length(caption_lines) + 0.4 else 0.2
+
+    graphics::mtext(
+      .page_title(page_index, starts, ends, n, main),
+      side = 3,
+      line = title_line,
+      cex = 0.8
+    )
+
+    if (!length(caption_lines)) {
+      return(invisible(NULL))
+    }
+
+    for (j in seq_along(caption_lines)) {
+      graphics::mtext(
+        caption_lines[[j]],
+        side = 3,
+        line = length(caption_lines) - j + 0.2,
+        adj = 0,
+        cex = 0.62
+      )
+    }
+
+    invisible(NULL)
+  }
+
   ## ---- basic setup --------------------------------------------------------
   if (!is.null(clusters) && !is.null(phi_cut)) {
     warning("Both `clusters` and `phi_cut` supplied; using `clusters` for bands and labels.")
@@ -225,6 +278,7 @@ cocktail_plot <- function(
   CM <- x$Cluster.merged
   H  <- x$Cluster.height
   n  <- ncol(CS)
+  label_registry_plot <- .resolve_cocktail_plot_label_registry(label_registry, x)
 
   species_names <- if (!is.null(x$species)) x$species else colnames(CS)
 
@@ -462,7 +516,9 @@ cocktail_plot <- function(
     x_lim_left  <- x_left  - x_pad
     x_lim_right <- x_right + x_pad
 
-    graphics::par(mar = c(8, 5, 1, 1), xaxs = "i", yaxs = "i")
+    has_plot_label_legend <- !is.null(label_registry_plot) && isTRUE(label_clusters)
+    top_margin <- if (has_plot_label_legend) 8 else 1
+    graphics::par(mar = c(8, 5, top_margin, 1), xaxs = "i", yaxs = "i")
 
     ## adjusted y-limits so lines at y = -1 (phi = 1) are inside the plot
     y_top    <- 0.1
@@ -552,7 +608,9 @@ cocktail_plot <- function(
 
     ## ---- cluster / node labels -------------------------------------------
 
-    if (!isTRUE(label_clusters)) return(invisible(NULL))
+    page_label_ids <- integer(0)
+
+    if (!isTRUE(label_clusters)) return(invisible(page_label_ids))
 
     ## Case A: clusters supplied -> labels for those clusters
     if (!is.null(clusters_top_nodes) && length(clusters_top_nodes)) {
@@ -609,6 +667,7 @@ cocktail_plot <- function(
 
           if (nrow(df0_keep) > 0) {
             ids_crossing0_page <- unique(df0_keep$label)
+            page_label_ids <- c(page_label_ids, ids_crossing0_page)
 
             graphics::symbols(
               df0_keep$x, df0_keep$y,
@@ -678,6 +737,7 @@ cocktail_plot <- function(
           }
 
           if (nrow(df_keep) > 0) {
+            page_label_ids <- c(page_label_ids, df_keep$label)
             graphics::symbols(
               df_keep$x, df_keep$y,
               circles = rep(1, nrow(df_keep)),
@@ -693,7 +753,7 @@ cocktail_plot <- function(
         }
       }
 
-      return(invisible(NULL))
+      return(invisible(unique(page_label_ids)))
     }
 
     ## Case B: no clusters, but phi_cut present -> label φ-cut clusters
@@ -710,6 +770,7 @@ cocktail_plot <- function(
         }
 
         if (nrow(cross_keep) > 0) {
+          page_label_ids <- c(page_label_ids, cross_keep$label)
           graphics::symbols(
             cross_keep$x, cross_keep$y,
             circles = rep(1, nrow(cross_keep)),
@@ -724,12 +785,12 @@ cocktail_plot <- function(
         }
       }
 
-      return(invisible(NULL))
+      return(invisible(unique(page_label_ids)))
     }
 
     ## Case C: no clusters, no phi_cut -> label all internal nodes
     hit_nodes <- which(x1 >= x_from & x0 <= x_to)
-    if (!length(hit_nodes)) return(invisible(NULL))
+    if (!length(hit_nodes)) return(invisible(page_label_ids))
 
     ## C1: labels at y = 0 for nodes whose vertical branch crosses y = 0
     ids_crossing0_page <- integer(0)
@@ -780,6 +841,7 @@ cocktail_plot <- function(
 
       if (nrow(df0_keep) > 0) {
         ids_crossing0_page <- unique(df0_keep$label)
+        page_label_ids <- c(page_label_ids, ids_crossing0_page)
 
         graphics::symbols(
           df0_keep$x, df0_keep$y,
@@ -800,7 +862,7 @@ cocktail_plot <- function(
     if (length(ids_crossing0_page)) {
       node_ids <- setdiff(node_ids, ids_crossing0_page)
     }
-    if (!length(node_ids)) return(invisible(NULL))
+    if (!length(node_ids)) return(invisible(unique(page_label_ids)))
 
     xm <- numeric(length(node_ids))
     ym <- numeric(length(node_ids))
@@ -828,7 +890,7 @@ cocktail_plot <- function(
     }
 
     keep <- which(xm >= x_from & xm <= x_to & !is.na(xm) & !is.na(ym))
-    if (!length(keep)) return(invisible(NULL))
+    if (!length(keep)) return(invisible(unique(page_label_ids)))
 
     df <- data.frame(
       x = xm[keep],
@@ -846,6 +908,7 @@ cocktail_plot <- function(
     }
 
     if (nrow(df_keep) > 0) {
+      page_label_ids <- c(page_label_ids, df_keep$label)
       graphics::symbols(
         df_keep$x, df_keep$y,
         circles = rep(1, nrow(df_keep)),
@@ -859,17 +922,14 @@ cocktail_plot <- function(
       )
     }
 
-    invisible(NULL)
+    invisible(unique(page_label_ids))
   }
 
   ## ---- current device: only first page ------------------------------------
   if (use_current_dev) {
     p <- 1L
-    draw_page(starts[p], ends[p], page_index = p, ...)
-    graphics::mtext(
-      .page_title(p, starts, ends, n, main),
-      side = 3, line = 0.2, cex = 0.8
-    )
+    page_label_ids <- draw_page(starts[p], ends[p], page_index = p, ...)
+    .draw_page_header(p, page_label_ids)
     if (overlap_dropped) {
       warning(
         "Some cluster labels were omitted to avoid overlaps or clipping; ",
@@ -885,11 +945,8 @@ cocktail_plot <- function(
     on.exit(grDevices::dev.off(), add = TRUE)
 
     for (p in seq_along(starts)) {
-      draw_page(starts[p], ends[p], page_index = p, ...)
-      graphics::mtext(
-        .page_title(p, starts, ends, n, main),
-        side = 3, line = 0.2, cex = 0.8
-      )
+      page_label_ids <- draw_page(starts[p], ends[p], page_index = p, ...)
+      .draw_page_header(p, page_label_ids)
     }
 
     ## ---- PNG output ---------------------------------------------------------
@@ -911,11 +968,8 @@ cocktail_plot <- function(
         res    = png_res
       )
 
-      draw_page(starts[p], ends[p], page_index = p, ...)
-      graphics::mtext(
-        .page_title(p, starts, ends, n, main),
-        side = 3, line = 0.2, cex = 0.8
-      )
+      page_label_ids <- draw_page(starts[p], ends[p], page_index = p, ...)
+      .draw_page_header(p, page_label_ids)
 
       grDevices::dev.off()
     }

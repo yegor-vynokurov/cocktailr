@@ -21,6 +21,7 @@ cocktail_plot(
   palette = "rainbow",
   png_res = 300,
   main = NULL,
+  label_registry = NULL,
   ...
 )
 }
@@ -100,6 +101,16 @@ Default \code{"rainbow"}.}
 
 \item{main}{Optional plot title for each page. If NULL (default), a standard
 header of the form "Species a-b of n" is drawn.}
+
+\item{label_registry}{Optional plotting registry produced by
+\code{\link{cluster_label_registry}} or returned as
+\code{label_clusters(..., labels_for_imgs = TRUE)$label_registry}. When
+supplied, \code{cocktail_plot()} keeps numeric cluster IDs on the
+dendrogram, but adds a compact legend/caption block with human-readable
+label decodings and review-card filenames for the clusters actually shown
+on each page. Use \code{"auto"} to load the most relevant saved
+\code{"cluster_label_registry.csv"} from the default review-artifact
+location.}
 
 \item{...}{Additional graphical arguments passed to the underlying plotting
 functions (e.g. \code{plot()}, \code{par()}), allowing fine-tuning of

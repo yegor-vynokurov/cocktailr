@@ -15,6 +15,7 @@ llm_label_cluster(
   seed = NULL,
   num_predict = NULL,
   keep_alive = NULL,
+  ollama_options = NULL,
   timeout_sec = 120,
   max_retries = 1L,
   workflow_steps = 1L,
@@ -34,8 +35,8 @@ llm_label_cluster(
 \item{variant}{Character scalar naming the label-stage prompt variant.
 Currently supported label-stage values include
 \code{"concise_label_v1"}, \code{"conservative_interpretation_v1"},
-\code{"abstain_first_v1"}, and
-\code{"strict_abstention_gate_v1"}.}
+\code{"abstain_first_v1"}, \code{"strict_abstention_gate_v1"}, and
+the speculative fallback prompt \code{"speculative_fallback_v1"}.}
 
 \item{base_url}{Base URL of the Ollama server.}
 
@@ -51,6 +52,12 @@ schema in \code{inst/schemas/cluster_label_output_schema.json} is used.}
 \item{num_predict}{Optional integer override for the generation length cap.}
 
 \item{keep_alive}{Optional Ollama keep-alive value, for example \code{"5m"}.}
+
+\item{ollama_options}{Optional named list of additional Ollama generation
+options passed through under \code{request$options}. Use this for model-specific
+controls such as \code{num_ctx}. Explicit top-level arguments such as
+\code{temperature}, \code{top_p}, \code{seed}, and \code{num_predict} still take
+precedence over the same names inside \code{ollama_options}.}
 
 \item{timeout_sec}{Numeric request timeout in seconds.}
 

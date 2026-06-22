@@ -240,3 +240,97 @@ test_that("cluster_label_registry returns a typed empty registry for empty batch
   expect_equal(nrow(reg), 0L)
   expect_true(all(c("cluster", "legend_label", "review_file") %in% names(reg)))
 })
+
+test_that("cluster_label_registry carries speculative plotting metadata", {
+  x <- .build_registry_test_cocktail()
+  ev1 <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  ev2 <- cluster_evidence(x, "c_2", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+
+  out1 <- .build_registry_valid_output(ev1)
+  out2 <- .build_registry_valid_output(ev2)
+  out2$confidence$score <- 0
+  out2$confidence$rationale <- "Tentative only; the evidence gives direction but not stability."
+  out2$not_confirmed_by_data <- list(
+    list(
+      statement = "A habitat-level label is not confirmed.",
+      reason = "Contrast against nearby alternatives is still too weak."
+    )
+  )
+
+  val1 <- validate_cluster_label(out1, ev1)
+  val2 <- validate_cluster_label(out2, ev2)
+  val2 <- cocktailr:::.mark_speculative_validation(
+    val2,
+    strict_validation_status = "unsupported_claims"
+  )
+
+  llm1 <- list(
+    provider = "ollama",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    workflow_steps = 1L,
+    output = out1
+  )
+  class(llm1) <- c("cluster_label_result", "list")
+
+  llm2 <- list(
+    provider = "ollama",
+    model = "fake-model",
+    variant = "speculative_fallback_v1_after_rejection",
+    workflow_steps = 1L,
+    output = out2
+  )
+  class(llm2) <- c("cluster_label_result", "list")
+
+  batch <- list(
+    summary = data.frame(
+      cluster = c("c_1", "c_2"),
+      stringsAsFactors = FALSE
+    ),
+    results = list(
+      list(
+        evidence = ev1,
+        validation = val1,
+        llm_result = llm1,
+        review = list(file = "temp/reports/cluster_reviews/demo/c_1_review.md"),
+        run_status = "success",
+        used_placeholder = FALSE,
+        repair_used = FALSE,
+        iterations_used = 1L,
+        num_predict_used = 600L
+      ),
+      list(
+        evidence = ev2,
+        validation = val2,
+        llm_result = llm2,
+        review = list(file = "temp/reports/cluster_reviews/demo/c_2_review.md"),
+        run_status = "speculative",
+        label_tier = "speculative",
+        is_speculative = TRUE,
+        strict_outcome = "placeholder",
+        strict_validation_status = "unsupported_claims",
+        used_placeholder = FALSE,
+        repair_used = FALSE,
+        iterations_used = 1L,
+        num_predict_used = 600L
+      )
+    ),
+    selection = data.frame(stringsAsFactors = FALSE)
+  )
+  class(batch) <- c("cluster_label_batch_result", "list")
+
+  reg <- cluster_label_registry(batch)
+  row2 <- reg[reg$cluster == "c_2", , drop = FALSE]
+
+  expect_equal(row2$review_status[[1]], "speculative")
+  expect_equal(row2$label_tier[[1]], "speculative")
+  expect_true(row2$is_speculative[[1]])
+  expect_equal(row2$plot_marker[[1]], "*")
+  expect_true(row2$label_available[[1]])
+  expect_false(row2$accepted_label[[1]])
+  expect_equal(row2$plot_label_short[[1]], "sp1-sp2 cluster*")
+  expect_equal(row2$legend_label[[1]], "c_2: sp1-sp2 cluster*")
+  expect_equal(row2$strict_outcome[[1]], "placeholder")
+  expect_equal(row2$strict_validation_status[[1]], "unsupported_claims")
+  expect_match(row2$missing_for_confidence_text[[1]], "not confirmed", ignore.case = TRUE)
+})

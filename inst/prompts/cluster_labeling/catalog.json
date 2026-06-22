@@ -44,6 +44,41 @@
       "temperature": 0.0,
       "top_p": 0.8
     },
+    "speculative_fallback_v1": {
+      "user_prompt_path": "user_speculative_fallback_v1.md",
+      "description": "Soft fallback prompt for tentative, explicitly low-confidence orientation labels after strict rejection.",
+      "task_type": "label",
+      "temperature": 0.05,
+      "top_p": 0.9
+    },
+    "speculative_fallback_v2": {
+      "user_prompt_path": "user_speculative_fallback_v2.md",
+      "description": "Cleaned speculative fallback prompt that leaves confidence normalization to the R workflow.",
+      "task_type": "label",
+      "temperature": 0.05,
+      "top_p": 0.9
+    },
+    "speculative_fallback_v3": {
+      "user_prompt_path": "user_speculative_fallback_v3.md",
+      "description": "Softer best-effort fallback prompt that prefers broad orientation labels over abstention.",
+      "task_type": "label",
+      "temperature": 0.08,
+      "top_p": 0.92
+    },
+    "speculative_fallback_v4": {
+      "user_prompt_path": "user_speculative_fallback_v4.md",
+      "description": "Label-required fallback prompt that uses the least specific defensible label when evidence is mixed.",
+      "task_type": "label",
+      "temperature": 0.12,
+      "top_p": 0.95
+    },
+    "speculative_fallback_v5": {
+      "user_prompt_path": "user_speculative_fallback_v5.md",
+      "description": "Emergency rescue prompt that always returns a broad heuristic label, even for noisy clusters.",
+      "task_type": "label",
+      "temperature": 0.15,
+      "top_p": 0.95
+    },
     "gate_abstain_examples_v1": {
       "user_prompt_path": "user_gate_abstain_examples_v1.md",
       "description": "Gate-only decision prompt with explicit negative abstention examples for two-step workflows.",

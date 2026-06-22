@@ -269,3 +269,33 @@ test_that("render_cluster_review visibly flags risky outputs", {
   expect_match(art$markdown, "unsupported_habitat_overreach", fixed = TRUE)
   expect_match(art$markdown, "Review status: `review_required`", fixed = TRUE)
 })
+
+test_that("render_cluster_review makes speculative fallback cards visibly distinct", {
+  ev <- .build_review_test_cluster_evidence()
+  output <- .build_review_label_output(ev)
+  output$confidence$score <- 0
+  output$confidence$rationale <- "Tentative only; the cluster has direction but not enough stability."
+  output$not_confirmed_by_data <- list(
+    list(
+      statement = "A habitat-level label is not confirmed.",
+      reason = "The evidence bundle does not contain enough contrast against neighboring clusters."
+    )
+  )
+
+  validation <- validate_cluster_label(output, ev)
+  validation <- cocktailr:::.mark_speculative_validation(
+    validation,
+    strict_validation_status = "unsupported_claims"
+  )
+
+  art <- render_cluster_review(output, ev, validation = validation, full = TRUE)
+
+  expect_equal(art$metadata$review_status, "speculative")
+  expect_true(art$metadata$is_speculative)
+  expect_equal(art$metadata$label_tier, "speculative")
+  expect_match(art$markdown, "Label tier: `speculative`", fixed = TRUE)
+  expect_match(art$markdown, "Display label: `sp1-sp2 cluster\\*`")
+  expect_match(art$markdown, "## Why tentative", fixed = TRUE)
+  expect_match(art$markdown, "What prevents full confidence", fixed = TRUE)
+  expect_match(art$markdown, "Strict outcome before fallback", fixed = TRUE)
+})

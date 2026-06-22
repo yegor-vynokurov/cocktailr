@@ -41,13 +41,22 @@ res <- cocktail_cluster(
 )
 run <- label_clusters(
   x = res,
-  model = "gemma4:12b",
+  model = "phi4-mini-4k:latest",
   variant = "strict_abstention_gate_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 1200
+  num_predict = 1200,
+  labels_for_imgs = TRUE
 )
 ```
+
+If `labels_for_imgs = TRUE`, `label_clusters()` also saves
+`cluster_label_registry.csv` next to the review cards. You can then let
+`cocktail_plot()` pick it up automatically with `label_registry = "auto"`.
+The same saved registry can also relabel a base-R `hclust` object with
+`label_hclust_leaves(hc, label_registry = "auto", x = res)`.
+If you want the full `cluster_phi_dist() -> hclust() -> relabel -> plot`
+workflow in one call, use `cluster_hclust_plot()`.
 
 The current default recommendation is:
 
@@ -666,6 +675,113 @@ for (cluster_id in cluster_ids) {
 }
 ```
 
+## 13A. Optional speculative fallback after a non-accepted strict result
+
+The default workflow keeps:
+
+```r
+speculative_fallback_mode = "off"
+```
+
+If you want cautious orientation labels for clusters that either
+
+- end in the placeholder / no-valid-label branch, or
+- produce a strict valid `abstain`,
+
+enable:
+
+```r
+run_spec <- label_clusters(
+  x = res,
+  clusters = c("c_12", "c_26"),
+  model = "gemma4:12b",
+  variant = "strict_abstention_gate_v1",
+  workflow_steps = 1,
+  speculative_fallback_mode = "after_nonaccepted",
+  timeout_sec = 600,
+  num_predict = 1200,
+  labels_for_imgs = TRUE
+)
+
+run_spec$summary[, c("cluster", "run_status", "label_tier", "review_status")]
+```
+
+What this mode does:
+
+- accepted strict labels stay ordinary accepted labels
+- if the strict pass abstains or would otherwise fall into the placeholder
+  branch, `label_clusters()` starts a soft-label ladder automatically
+- the current soft-label ladder uses:
+  `phi4-mini:latest` + `ollama_options = list(num_ctx = 8192)` +
+  `num_predict = 2400`
+- the ladder tries `speculative_fallback_v3` first
+- if `v3` still abstains, it escalates to the more label-forcing
+  `speculative_fallback_v4`
+- successful fallback labels are marked as speculative and still require human review
+- the final review card and registry also record:
+  `label_origin`, `species_entropy_band`, `species_entropy_text`,
+  `chaoticity_score`, and `chaoticity_label`
+
+How the main controls are split:
+
+- `speculative_fallback_mode`
+  Controls whether the soft-label ladder is disabled (`"off"`), only used
+  after the placeholder/rejection path (`"after_rejection"`), or also used
+  after a valid strict abstain (`"after_nonaccepted"`).
+- `model`
+  Controls the strict first pass only. The current soft-label ladder was
+  developed and tuned primarily on `phi4-mini:latest`.
+- `variant`
+  Controls the strict first-pass prompt only. For the current recommended
+  strict path, keep `variant = "strict_abstention_gate_v1"`.
+- `timeout_sec`
+  Controls the request timeout for both the strict pass and the fallback
+  ladder.
+- `num_predict`
+  Controls the strict pass. The fallback ladder uses its own larger internal
+  default, currently `2400`.
+- `labels_for_imgs`
+  If `TRUE`, the resulting speculative or accepted labels are also exported
+  into `cluster_label_registry.csv` for plotting helpers.
+
+If you need to override the internal soft-ladder defaults, the current
+workflow also supports R options:
+
+```r
+options(cocktailr.speculative_fallback_model = "phi4-mini:latest")
+options(cocktailr.speculative_fallback_num_predict = 2400)
+options(cocktailr.speculative_fallback_ollama_options = list(num_ctx = 8192))
+```
+
+Those overrides are optional. If you do nothing, the default soft candidate is
+already:
+
+- `phi4-mini:latest`
+- `ollama_options = list(num_ctx = 8192)`
+- `num_predict = 2400`
+- `speculative_fallback_v3` first, then `speculative_fallback_v4`
+
+Typical display semantics:
+
+- accepted: `c_12: Mixed Deciduous Woodland`
+- speculative: `c_27: Woodland-transition assemblage*`
+- plot footnote: `* tentative / speculative label; strict validation did not accept a stable evidence-backed label`
+
+If you also saved a plotting registry:
+
+```r
+cocktail_plot(
+  x = res,
+  clusters = run_spec$summary$cluster,
+  label_clusters = TRUE,
+  label_registry = "auto"
+)
+```
+
+The dendrogram still keeps stable numeric IDs on the plot itself. The starred
+human-readable label is shown in the legend / caption layer or in relabeled
+`hclust` leaves.
+
 ## 14. Advanced Options
 
 These are **not** the default path, but you may need them later:
@@ -675,6 +791,8 @@ These are **not** the default path, but you may need them later:
   `abstain_first_v1`, `strict_abstention_gate_v1`
 - two-step workflow:
   `workflow_steps = 2`
+- speculative fallback ladder after strict abstain or rejection:
+  `speculative_fallback_mode = "after_nonaccepted"`
 - raw run logging for debugging:
   `log_dir = ...`
 

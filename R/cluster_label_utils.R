@@ -53,6 +53,23 @@
   .arg_scalar_character(x, name)
 }
 
+.arg_named_list_or_null <- function(x, name) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+
+  if (!is.list(x)) {
+    stop("`", name, "` must be NULL or a named list.")
+  }
+
+  nms <- names(x)
+  if (is.null(nms) || !length(x) || any(is.na(nms)) || any(!nzchar(nms))) {
+    stop("`", name, "` must be a named list with non-empty names.")
+  }
+
+  x
+}
+
 .extract_cluster_label_output <- function(x) {
   if (inherits(x, "cluster_label_result")) {
     return(x$output)

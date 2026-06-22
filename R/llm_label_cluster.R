@@ -24,8 +24,8 @@
 #' @param variant Character scalar naming the label-stage prompt variant from
 #'   the packaged prompt catalog. Current label-stage values include
 #'   \code{"concise_label_v1"}, \code{"conservative_interpretation_v1"},
-#'   \code{"abstain_first_v1"}, and
-#'   \code{"strict_abstention_gate_v1"}.
+#'   \code{"abstain_first_v1"}, \code{"strict_abstention_gate_v1"}, and
+#'   the speculative fallback prompt \code{"speculative_fallback_v1"}.
 #' @param base_url Character scalar. Base URL of the Ollama server. Default
 #'   reads \code{getOption("cocktailr.ollama_base_url", "http://localhost:11434")}.
 #' @param schema_path Optional path to a JSON schema file. By default the
@@ -40,6 +40,11 @@
 #' @param num_predict Optional integer override for the generation length cap.
 #'   Default \code{1200}.
 #' @param keep_alive Optional Ollama keep-alive value, for example \code{"5m"}.
+#' @param ollama_options Optional named list of additional Ollama generation
+#'   options passed through under \code{request$options}. Use this for model-
+#'   specific controls such as \code{num_ctx}. Explicit top-level arguments such
+#'   as \code{temperature}, \code{top_p}, \code{seed}, and \code{num_predict}
+#'   still take precedence over the same names inside \code{ollama_options}.
 #' @param timeout_sec Numeric request timeout in seconds. Default \code{120}.
 #' @param max_retries Integer >= 0. Number of repair retries after malformed
 #'   JSON or missing required top-level fields. Default \code{1}.
@@ -117,6 +122,7 @@ llm_label_cluster <- function(
     seed = NULL,
     num_predict = NULL,
     keep_alive = NULL,
+    ollama_options = NULL,
     timeout_sec = 120,
     max_retries = 1L,
     workflow_steps = 1L,
@@ -138,6 +144,7 @@ llm_label_cluster <- function(
 
   max_retries <- .arg_non_negative_integer(max_retries, "max_retries")
   workflow_steps <- .arg_workflow_steps(workflow_steps, "workflow_steps")
+  ollama_options <- .arg_named_list_or_null(ollama_options, "ollama_options")
   request_fn <- request_fn %||% .ollama_chat_request
 
   if (identical(workflow_steps, 1L)) {
@@ -153,6 +160,7 @@ llm_label_cluster <- function(
       seed = seed,
       num_predict = num_predict,
       keep_alive = keep_alive,
+      ollama_options = ollama_options,
       timeout_sec = timeout_sec,
       max_retries = max_retries,
       dry_run = dry_run,
@@ -173,6 +181,7 @@ llm_label_cluster <- function(
     seed = seed,
     num_predict = num_predict,
     keep_alive = keep_alive,
+    ollama_options = ollama_options,
     timeout_sec = timeout_sec,
     max_retries = max_retries,
     dry_run = dry_run,
@@ -188,6 +197,7 @@ llm_label_cluster <- function(
     variant,
     prompt_bundle,
     keep_alive,
+    ollama_options,
     endpoint,
     timeout_sec,
     max_retries,
@@ -199,7 +209,8 @@ llm_label_cluster <- function(
   request_payload <- .build_ollama_label_request(
     model = model,
     prompt_bundle = prompt_bundle,
-    keep_alive = keep_alive
+    keep_alive = keep_alive,
+    ollama_options = ollama_options
   )
 
   request_json <- jsonlite::toJSON(
@@ -450,6 +461,7 @@ llm_label_cluster <- function(
     seed,
     num_predict,
     keep_alive,
+    ollama_options,
     timeout_sec,
     max_retries,
     dry_run,
@@ -470,7 +482,8 @@ llm_label_cluster <- function(
   request_payload <- .build_ollama_label_request(
     model = model,
     prompt_bundle = prompt_bundle,
-    keep_alive = keep_alive
+    keep_alive = keep_alive,
+    ollama_options = ollama_options
   )
 
   dry_run_out <- list(
@@ -505,6 +518,7 @@ llm_label_cluster <- function(
     variant = variant,
     prompt_bundle = prompt_bundle,
     keep_alive = keep_alive,
+    ollama_options = ollama_options,
     endpoint = endpoint,
     timeout_sec = timeout_sec,
     max_retries = max_retries,
@@ -537,6 +551,7 @@ llm_label_cluster <- function(
     seed,
     num_predict,
     keep_alive,
+    ollama_options,
     timeout_sec,
     max_retries,
     dry_run,
@@ -570,12 +585,14 @@ llm_label_cluster <- function(
   gate_request_payload <- .build_ollama_label_request(
     model = model,
     prompt_bundle = gate_prompt_bundle,
-    keep_alive = keep_alive
+    keep_alive = keep_alive,
+    ollama_options = ollama_options
   )
   label_request_payload <- .build_ollama_label_request(
     model = model,
     prompt_bundle = label_prompt_bundle,
-    keep_alive = keep_alive
+    keep_alive = keep_alive,
+    ollama_options = ollama_options
   )
 
   dry_run_out <- list(
@@ -642,10 +659,11 @@ llm_label_cluster <- function(
       provider = provider,
       model = model,
       variant = gate_variant,
-      prompt_bundle = gate_prompt_bundle,
-      keep_alive = keep_alive,
-      endpoint = endpoint,
-      timeout_sec = timeout_sec,
+        prompt_bundle = gate_prompt_bundle,
+        keep_alive = keep_alive,
+        ollama_options = ollama_options,
+        endpoint = endpoint,
+        timeout_sec = timeout_sec,
       max_retries = max_retries,
       request_fn = request_fn,
       log_paths = workflow_logs$stages$gate,
@@ -676,6 +694,7 @@ llm_label_cluster <- function(
         variant = variant,
         prompt_bundle = label_prompt_bundle,
         keep_alive = keep_alive,
+        ollama_options = ollama_options,
         endpoint = endpoint,
         timeout_sec = timeout_sec,
         max_retries = max_retries,

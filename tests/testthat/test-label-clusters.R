@@ -81,6 +81,81 @@
   )
 }
 
+.build_label_clusters_speculative_output <- function(ev) {
+  out <- .build_label_clusters_valid_output(ev)
+  out$canonical_label <- "possible_sp1_sp2_cluster"
+  out$display_label <- "possible sp1-sp2 cluster"
+  out$interpretation_summary <- paste(
+    "The cluster shows a recurring species core that points in one direction,",
+    "but the evidence is still too weak for a stable accepted label."
+  )
+  out$not_confirmed_by_data <- list(
+    list(
+      statement = "A stable habitat-level name is not confirmed.",
+      reason = "The evidence bundle supports a directional compositional hypothesis, but not a strong ecological diagnosis."
+    )
+  )
+  out$confidence <- list(
+    score = 0,
+    rationale = "This is a tentative orientation label produced after the strict workflow failed."
+  )
+  out$checks_to_run <- list(
+    list(
+      check = "Compare with neighboring clusters and plot-level context.",
+      priority = "high",
+      reason = "Additional contrastive information is needed before accepting a stable label."
+    )
+  )
+  out
+}
+
+.build_label_clusters_abstain_output <- function(ev) {
+  topo <- ev$summaries$species_topological
+
+  list(
+    schema_version = "0.1.0",
+    cluster_id = ev$meta$cluster_id,
+    status = "abstain",
+    canonical_label = NULL,
+    display_label = NULL,
+    interpretation_summary = "The cluster has some internal structure, but the available evidence is not distinctive enough for a stable label.",
+    basis_in_data = list(
+      list(
+        claim_id = "C1",
+        statement = "A recurring species core is visible, but it does not justify a stable label.",
+        evidence_ids = c(topo$evidence_id[[1]]),
+        support_strength = "weak"
+      )
+    ),
+    key_species = list(
+      list(
+        species = topo$species[[1]],
+        role = "topological",
+        evidence_ids = c(topo$evidence_id[[1]])
+      )
+    ),
+    external_knowledge = list(),
+    not_confirmed_by_data = list(
+      list(
+        statement = "A habitat-level label cannot be confirmed.",
+        reason = "The evidence bundle does not separate this cluster strongly enough from nearby alternatives."
+      )
+    ),
+    confidence = list(
+      score = 0.33,
+      rationale = "The evidence supports coherence, but not enough distinctiveness for a stable label."
+    ),
+    checks_to_run = list(
+      list(
+        check = "Compare with neighboring clusters.",
+        priority = "high",
+        reason = "Contrastive evidence would be needed before naming the cluster."
+      )
+    ),
+    abstain_reason = "Distinctiveness is insufficient for a stable label."
+  )
+}
+
 .llm_outer <- function(payload, content) {
   jsonlite::toJSON(
     list(
@@ -282,6 +357,317 @@ test_that("label_clusters writes a placeholder review card after bounded failure
   expect_match(review_text, "No data: no valid structured cluster label could be obtained", fixed = TRUE)
 })
 
+test_that("label_clusters can produce a speculative fallback label after strict rejection", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_speculative <- .build_label_clusters_speculative_output(ev)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    is_speculative <- identical(payload$model %||% NA_character_, "phi4-mini:latest")
+
+    content <- if (is_speculative) {
+      jsonlite::toJSON(out_speculative, auto_unbox = TRUE, null = "null")
+    } else {
+      "{\"status\":\"bad\"}"
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-speculative")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    speculative_fallback_mode = "after_rejection",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$summary$run_status[[1]], "speculative")
+  expect_equal(res$summary$output_status[[1]], "labeled")
+  expect_equal(res$summary$validation_status[[1]], "valid_with_warnings")
+  expect_equal(res$summary$label_tier[[1]], "speculative")
+  expect_true(res$summary$is_speculative[[1]])
+  expect_true(res$summary$speculative_fallback_used[[1]])
+  expect_equal(res$summary$strict_outcome[[1]], "placeholder")
+  expect_false(res$summary$used_placeholder[[1]])
+  expect_true(file.exists(res$summary$review_file[[1]]))
+  expect_equal(res$results$c_1$validation$label_tier, "speculative")
+  expect_equal(res$results$c_1$llm_result$speculative$plot_marker, "*")
+})
+
+test_that("speculative fallback normalizes confidence score programmatically", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_speculative <- .build_label_clusters_speculative_output(ev)
+  out_speculative$confidence$score <- 0.41
+  out_speculative$confidence$rationale <- "Model returned a non-zero score, but the workflow should normalize it."
+
+  fake_request <- function(url, payload, timeout_sec) {
+    is_speculative <- identical(payload$model %||% NA_character_, "phi4-mini:latest")
+
+    content <- if (is_speculative) {
+      jsonlite::toJSON(out_speculative, auto_unbox = TRUE, null = "null")
+    } else {
+      "{\"status\":\"bad\"}"
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-speculative-normalized")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    speculative_fallback_mode = "after_rejection",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$summary$run_status[[1]], "speculative")
+  expect_equal(res$results$c_1$llm_result$output$confidence$score, 0)
+  expect_equal(res$results$c_1$validation$output$confidence$score, 0)
+})
+
+test_that("label_clusters falls back to placeholder when speculative fallback also fails", {
+  x <- .build_label_clusters_test_cocktail()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    is_speculative <- identical(payload$model %||% NA_character_, "phi4-mini:latest")
+
+    content <- if (is_speculative) {
+      jsonlite::toJSON(
+        list(
+          schema_version = "0.1.0",
+          cluster_id = "c_1",
+          status = "labeled",
+          canonical_label = "bad_guess",
+          display_label = "bad guess",
+          interpretation_summary = "Still too strong and not compliant.",
+          basis_in_data = list(),
+          key_species = list(),
+          external_knowledge = list(),
+          not_confirmed_by_data = list(),
+          confidence = list(score = 0.4, rationale = "Not really tentative."),
+          checks_to_run = list(),
+          abstain_reason = NULL
+        ),
+        auto_unbox = TRUE,
+        null = "null"
+      )
+    } else {
+      "{\"status\":\"bad\"}"
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-speculative-failure")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    speculative_fallback_mode = "after_rejection",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  review_text <- paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n")
+
+  expect_equal(res$summary$run_status[[1]], "placeholder")
+  expect_true(res$summary$used_placeholder[[1]])
+  expect_true(res$summary$speculative_fallback_used[[1]])
+  expect_false(res$summary$is_speculative[[1]])
+  expect_equal(res$summary$strict_outcome[[1]], "placeholder")
+  expect_true(file.exists(res$summary$review_file[[1]]))
+  expect_match(review_text, "No data: no valid structured cluster label could be obtained", fixed = TRUE)
+})
+
+test_that("label_clusters does not trigger speculative fallback after a valid strict abstain", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_abstain <- .build_label_clusters_abstain_output(ev)
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$n <- state$n + 1L
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(
+        payload,
+        jsonlite::toJSON(out_abstain, auto_unbox = TRUE, null = "null")
+      ),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-abstain-no-speculative")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    speculative_fallback_mode = "after_rejection",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$n, 1L)
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_equal(res$summary$output_status[[1]], "abstain")
+  expect_false(res$summary$speculative_fallback_used[[1]])
+  expect_false(res$summary$is_speculative[[1]])
+  expect_false(res$summary$used_placeholder[[1]])
+})
+
+test_that("label_clusters can continue after strict abstain with the soft-label ladder", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_abstain <- .build_label_clusters_abstain_output(ev)
+  out_speculative <- .build_label_clusters_speculative_output(ev)
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  state$models <- character(0)
+  state$num_predict <- integer(0)
+  state$num_ctx <- integer(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$n <- state$n + 1L
+    state$models[state$n] <- payload$model %||% NA_character_
+    state$num_predict[state$n] <- as.integer(payload$options$num_predict %||% NA_integer_)
+    state$num_ctx[state$n] <- as.integer(payload$options$num_ctx %||% NA_integer_)
+
+    content <- if (state$n == 1L) {
+      jsonlite::toJSON(out_abstain, auto_unbox = TRUE, null = "null")
+    } else {
+      jsonlite::toJSON(out_speculative, auto_unbox = TRUE, null = "null")
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-after-nonaccepted-v3")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    speculative_fallback_mode = "after_nonaccepted",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$n, 2L)
+  expect_equal(state$models[[1]], "fake-model")
+  expect_equal(state$models[[2]], "phi4-mini:latest")
+  expect_equal(state$num_predict[[2]], 2400L)
+  expect_equal(state$num_ctx[[2]], 8192L)
+  expect_equal(res$summary$run_status[[1]], "speculative")
+  expect_equal(res$summary$strict_outcome[[1]], "abstained")
+  expect_true(res$summary$speculative_fallback_used[[1]])
+  expect_equal(res$summary$label_origin[[1]], "speculative_v3")
+  expect_equal(res$summary$species_entropy_band[[1]], "high")
+  expect_equal(res$summary$chaoticity_score[[1]], 70L)
+})
+
+test_that("label_clusters escalates from speculative v3 to v4 after soft abstain", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_abstain <- .build_label_clusters_abstain_output(ev)
+  out_speculative <- .build_label_clusters_speculative_output(ev)
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  state$num_predict <- integer(0)
+  state$num_ctx <- integer(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$n <- state$n + 1L
+    state$num_predict[state$n] <- as.integer(payload$options$num_predict %||% NA_integer_)
+    state$num_ctx[state$n] <- as.integer(payload$options$num_ctx %||% NA_integer_)
+
+    content <- if (state$n <= 2L) {
+      jsonlite::toJSON(out_abstain, auto_unbox = TRUE, null = "null")
+    } else {
+      jsonlite::toJSON(out_speculative, auto_unbox = TRUE, null = "null")
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-after-nonaccepted-v4")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    speculative_fallback_mode = "after_nonaccepted",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$n, 3L)
+  expect_true(all(state$num_predict[2:3] == 2400L))
+  expect_true(all(state$num_ctx[2:3] == 8192L))
+  expect_equal(res$summary$run_status[[1]], "speculative")
+  expect_equal(res$summary$strict_outcome[[1]], "abstained")
+  expect_equal(res$summary$label_origin[[1]], "speculative_v4")
+  expect_equal(res$summary$species_entropy_band[[1]], "very_high")
+  expect_equal(res$summary$chaoticity_score[[1]], 90L)
+})
+
 test_that("label_clusters emits progress messages when verbose = TRUE", {
   x <- .build_label_clusters_test_cocktail()
   ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
@@ -402,6 +788,8 @@ test_that("label_clusters can build a plotting registry when labels_for_imgs = T
   expect_s3_class(res, "cluster_label_batch_result")
   expect_s3_class(res$label_registry, "cluster_label_registry")
   expect_equal(nrow(res$label_registry), 1L)
+  expect_true(file.exists(res$label_registry_file))
+  expect_equal(attr(res$label_registry, "file"), res$label_registry_file)
   expect_equal(res$label_registry$cluster[[1]], "c_1")
   expect_equal(res$label_registry$plot_label_id[[1]], "c_1")
   expect_equal(res$label_registry$plot_label_short[[1]], "sp1-sp2 cluster")

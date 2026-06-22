@@ -79,6 +79,21 @@ test_that("llm_label_cluster assembles a dry-run Ollama request", {
   expect_equal(req$request$format$properties$schema_version$const, "0.1.0")
 })
 
+test_that("llm_label_cluster forwards additional Ollama options in dry-run mode", {
+  ev <- .build_test_cluster_evidence()
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "gemma4:12b",
+    variant = "concise_label_v1",
+    ollama_options = list(num_ctx = 8192L),
+    dry_run = TRUE
+  )
+
+  expect_equal(req$request$options$num_ctx, 8192L)
+  expect_equal(req$request$options$num_predict, 1200L)
+})
+
 test_that("prompt interpolation preserves replacements at template end", {
   out <- cocktailr:::.replace_fixed_scalar(
     "prefix {{TOKEN}}",

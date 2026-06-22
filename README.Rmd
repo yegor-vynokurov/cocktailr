@@ -452,6 +452,36 @@ plot(hc_clusters, main = "Cluster dendrogram (co-membership phi distance)", cex 
 
 <img src="man/figures/README-typical-phi-dist-hclust-1.png" width="100%" />
 
+If you already generated LLM label artifacts with
+`label_clusters(..., labels_for_imgs = TRUE)`, you can also relabel the base-R
+`hclust` leaves directly:
+
+```{r}
+hc_clusters_labeled <- label_hclust_leaves(
+  hc_clusters,
+  label_registry = "auto",
+  x = res,
+  label_field = "plot_label_short"
+)
+
+plot(hc_clusters_labeled, main = "Cluster dendrogram with human-readable labels", cex = 0.7)
+```
+
+If you prefer a one-call helper, the same workflow can be run directly with:
+
+```{r}
+cluster_hclust_plot(
+  x = res,
+  clusters = c("c_1", "c_2", "c_4"),
+  label_registry = "auto",
+  label_field = "plot_label_short",
+  cex = 0.7
+)
+```
+
+This convenience wrapper internally runs
+`cluster_phi_dist() -> hclust() -> label_hclust_leaves() -> plot()`.
+
 ```{r}
 
 grp_clusters <- cutree(hc_clusters, k = 2)
@@ -633,6 +663,81 @@ run$summary
 run$results[[1]]$review$file
 ```
 
+If you want figure-ready label decodings for `cocktail_plot()`, ask
+`label_clusters()` to also build a plotting registry:
+
+```{r}
+plot_clusters <- utils::head(
+  select_clusters(
+    x = res,
+    min_phi = 0.20,
+    min_k = 1,
+    min_score = 0.3,
+    mode = "strict",
+    return = "labels"
+  ),
+  2
+)
+
+run_plot <- label_clusters(
+  x = res,
+  clusters = plot_clusters,
+  model = "gemma4:12b",
+  variant = "strict_abstention_gate_v1",
+  workflow_steps = 1,
+  timeout_sec = 600,
+  num_predict = 1200,
+  labels_for_imgs = TRUE
+)
+
+cocktail_plot(
+  x = res,
+  clusters = run_plot$summary$cluster,
+  label_clusters = TRUE,
+  label_registry = "auto"
+)
+```
+
+The dendrogram still shows stable numeric cluster IDs, while the top caption
+adds a compact legend with human-readable labels plus review-card filenames.
+The registry is saved automatically as `cluster_label_registry.csv` next to the
+review cards. If you prefer not to use auto-discovery, you can still pass
+`run_plot$label_registry` explicitly.
+
+If you want a cautious exploratory fallback after a non-accepted strict
+result, you can
+also enable:
+
+```{r}
+run_spec <- label_clusters(
+  x = res,
+  clusters = plot_clusters,
+  model = "gemma4:12b",
+  variant = "strict_abstention_gate_v1",
+  workflow_steps = 1,
+  speculative_fallback_mode = "after_nonaccepted",
+  timeout_sec = 600,
+  num_predict = 1200,
+  labels_for_imgs = TRUE
+)
+
+run_spec$summary[, c("cluster", "run_status", "label_tier", "review_status")]
+```
+
+In that mode, accepted labels remain unchanged. If the strict pass abstains
+or would otherwise end in the placeholder branch, `label_clusters()` starts
+an internal soft-label ladder tuned on `phi4-mini:latest`: it tries
+`speculative_fallback_v3` first, then escalates to the more label-forcing
+`speculative_fallback_v4`. Tentative fallback labels appear with `*` in plot
+legends or `hclust` leaf labels, for example:
+
+- accepted: `c_12: Mixed Deciduous Woodland`
+- speculative: `c_27: Woodland-transition assemblage*`
+
+The plot legend adds the note:
+
+- `* tentative / speculative label; strict validation did not accept a stable evidence-backed label`
+
 Recommended defaults for the current MVP labeling workflow:
 
 - `plot_values = "rel_cover"`
@@ -645,6 +750,9 @@ Recommended defaults for the current MVP labeling workflow:
 Notes:
 
 - If you omit `clusters`, `label_clusters()` processes up to the first 10 clusters selected by score.
+- `speculative_fallback_mode = "after_nonaccepted"` is optional and off by default.
+- In that mode, the strict pass still uses your explicit `model`, `variant`, `timeout_sec`, and `num_predict`.
+- The internal soft ladder is currently benchmarked around `phi4-mini:latest` with `num_ctx = 8192` and `num_predict = 2400`.
 - The default saved artifact is a compact markdown review card under `temp/reports/cluster_reviews/`.
 - Raw LLM logs via `log_dir` are optional and not part of the default workflow.
 - For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 600` are safer than lower defaults.

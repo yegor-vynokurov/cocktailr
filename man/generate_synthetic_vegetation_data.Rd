@@ -56,12 +56,6 @@ Creates an artificial vegetation dataset with real plant names.
 The data are synthetic and intended for testing Cocktail clustering,
 cluster interpretation, and LLM-assisted labeling.
 }
-\details{
-The returned \code{wide_matrix} and \code{long_table} objects carry
-dataset-provenance attributes that \code{\link{cocktail_cluster}} can reuse.
-This allows downstream review cards to identify the dataset as synthetic and
-to group saved artifacts automatically.
-}
 \examples{
 syn <- generate_synthetic_vegetation_data(
   n_plots_per_community = 4,
@@ -72,4 +66,5 @@ syn <- generate_synthetic_vegetation_data(
 dim(syn$wide_matrix)
 head(syn$plot_truth)
 head(syn$community_profiles)
+
 }

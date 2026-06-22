@@ -40,8 +40,9 @@
 #' @param top_n_phi,n_prototype_plots,n_borderline_plots,include_cover Evidence
 #'   extraction controls forwarded to \code{\link{cluster_evidence}}.
 #' @param provider,model,variant,base_url,schema_path,temperature,top_p,seed,
-#'   num_predict,keep_alive,timeout_sec,max_retries,workflow_steps,log_dir,
-#'   request_fn LLM controls forwarded to \code{\link{llm_label_cluster}}.
+#'   num_predict,keep_alive,ollama_options,timeout_sec,max_retries,
+#'   workflow_steps,log_dir,request_fn LLM controls forwarded to
+#'   \code{\link{llm_label_cluster}}.
 #' @param max_iterations Integer workflow budget. Currently allowed values are
 #'   \code{1} and \code{2}. Default \code{2}.
 #' @param review_dir Directory where markdown review cards are written. Default
@@ -53,8 +54,15 @@
 #'   artifacts.
 #' @param labels_for_imgs Logical. If \code{TRUE}, build a plotting-oriented
 #'   registry table with \code{\link{cluster_label_registry}} after all review
-#'   cards are generated and return it as \code{$label_registry}. Default
-#'   \code{FALSE}.
+#'   cards are generated, save it automatically as
+#'   \code{"cluster_label_registry.csv"} next to the review cards, and return
+#'   it as \code{$label_registry}. Default \code{FALSE}.
+#' @param speculative_fallback_mode Character scalar controlling whether a
+#'   softer speculative fallback ladder may run after the strict workflow fails
+#'   to produce an accepted structured label. Default \code{"off"}. Supported
+#'   non-default values are \code{"after_rejection"} for the narrow placeholder
+#'   branch only, and \code{"after_nonaccepted"} to also continue after a valid
+#'   strict abstention.
 #' @param full Logical. Forwarded to \code{\link{render_cluster_review}}.
 #' @param include_front_matter,write_metadata Forwarded to
 #'   \code{\link{render_cluster_review}}.
@@ -67,6 +75,8 @@
 #'   \item \code{selection}: the resolved cluster table used for the run
 #'   \item \code{label_registry}: optional flat registry table for downstream
 #'     plotting, present when \code{labels_for_imgs = TRUE}
+#'   \item \code{label_registry_file}: optional path to the saved registry CSV,
+#'     present when \code{labels_for_imgs = TRUE}
 #' }
 #'
 #' @examples
@@ -117,6 +127,7 @@ label_clusters <- function(
     seed = NULL,
     num_predict = NULL,
     keep_alive = NULL,
+    ollama_options = NULL,
     timeout_sec = 600,
     max_retries = 1L,
     workflow_steps = 1L,
@@ -124,6 +135,7 @@ label_clusters <- function(
     review_dir = file.path("temp", "reports", "cluster_reviews"),
     verbose = TRUE,
     labels_for_imgs = FALSE,
+    speculative_fallback_mode = c("off", "after_rejection", "after_nonaccepted"),
     full = FALSE,
     include_front_matter = full,
     write_metadata = full,
@@ -136,8 +148,10 @@ label_clusters <- function(
   workflow_steps <- .arg_workflow_steps(workflow_steps, "workflow_steps")
   max_retries <- .arg_non_negative_integer(max_retries, "max_retries")
   max_iterations <- .arg_cluster_label_max_iterations(max_iterations)
+  ollama_options <- .arg_named_list_or_null(ollama_options, "ollama_options")
   verbose <- .arg_single_flag(verbose, "verbose")
   labels_for_imgs <- .arg_single_flag(labels_for_imgs, "labels_for_imgs")
+  speculative_fallback_mode <- match.arg(speculative_fallback_mode)
   select_mode <- match.arg(select_mode)
 
   selection <- .resolve_label_clusters_selection(
@@ -202,6 +216,7 @@ label_clusters <- function(
       seed = seed,
       num_predict = num_predict,
       keep_alive = keep_alive,
+      ollama_options = ollama_options,
       timeout_sec = timeout_sec,
       max_retries = max_retries,
       workflow_steps = workflow_steps,
@@ -211,6 +226,7 @@ label_clusters <- function(
 
     cluster_run <- .run_label_cluster_for_one_evidence(
       evidence = evidence,
+      cluster_score = selection$score[[i]],
       template = template,
       provider = provider,
       model = model,
@@ -222,6 +238,7 @@ label_clusters <- function(
       seed = seed,
       num_predict = num_predict,
       keep_alive = keep_alive,
+      ollama_options = ollama_options,
       timeout_sec = timeout_sec,
       max_retries = max_retries,
       workflow_steps = workflow_steps,
@@ -232,6 +249,7 @@ label_clusters <- function(
       full = full,
       include_front_matter = include_front_matter,
       write_metadata = write_metadata,
+      speculative_fallback_mode = speculative_fallback_mode,
       log_dir = log_dir,
       request_fn = request_fn
     )
@@ -248,6 +266,16 @@ label_clusters <- function(
       validation_status = cluster_run$validation$validation_status %||% NA_character_,
       needs_human_review = isTRUE(cluster_run$validation$needs_human_review),
       used_placeholder = isTRUE(cluster_run$used_placeholder),
+      label_tier = cluster_run$label_tier %||% NA_character_,
+      is_speculative = isTRUE(cluster_run$is_speculative),
+      speculative_fallback_used = isTRUE(cluster_run$speculative_fallback_used),
+      strict_outcome = cluster_run$strict_outcome %||% NA_character_,
+      strict_validation_status = cluster_run$strict_validation_status %||% NA_character_,
+      label_origin = cluster_run$label_origin %||% NA_character_,
+      species_entropy_band = cluster_run$species_entropy_band %||% NA_character_,
+      species_entropy_text = cluster_run$species_entropy_text %||% NA_character_,
+      chaoticity_score = as.integer(cluster_run$chaoticity_score %||% NA_integer_),
+      chaoticity_label = cluster_run$chaoticity_label %||% NA_character_,
       repair_used = isTRUE(cluster_run$repair_used),
       iterations_used = as.integer(cluster_run$iterations_used %||% NA_integer_),
       num_predict_used = as.integer(cluster_run$num_predict_used %||% NA_integer_),
@@ -261,18 +289,52 @@ label_clusters <- function(
     summary = do.call(rbind, summary_rows),
     results = results,
     selection = selection,
-    label_registry = NULL
+    label_registry = NULL,
+    label_registry_file = NULL
   )
   class(out) <- c("cluster_label_batch_result", "list")
 
   if (isTRUE(labels_for_imgs)) {
     out$label_registry <- cluster_label_registry(out)
+    out$label_registry_file <- tryCatch(
+      {
+        .write_cluster_label_registry_file(
+          label_registry = out$label_registry,
+          results = out$results,
+          review_dir = review_dir
+        )
+      },
+      error = function(e) {
+        warning(
+          "Could not save `cluster_label_registry.csv`: ",
+          conditionMessage(e),
+          call. = FALSE
+        )
+        NULL
+      }
+    )
+    out$label_registry <- .attach_cluster_label_registry_file(
+      out$label_registry,
+      out$label_registry_file
+    )
     .label_clusters_log(
       verbose,
       "Built label registry for downstream plotting with ",
       nrow(out$label_registry),
       " row(s)."
     )
+    if (!is.null(out$label_registry_file)) {
+      .label_clusters_log(
+        verbose,
+        "Saved label registry to ",
+        out$label_registry_file
+      )
+    } else {
+      .label_clusters_log(
+        verbose,
+        "Label registry could not be saved automatically; plotting can still use `run$label_registry` explicitly."
+      )
+    }
   }
 
   out
@@ -383,6 +445,7 @@ label_clusters <- function(
 
 .run_label_cluster_for_one_evidence <- function(
     evidence,
+    cluster_score,
     template,
     provider,
     model,
@@ -394,6 +457,7 @@ label_clusters <- function(
     seed,
     num_predict,
     keep_alive,
+    ollama_options,
     timeout_sec,
     max_retries,
     workflow_steps,
@@ -404,6 +468,7 @@ label_clusters <- function(
     full,
     include_front_matter,
     write_metadata,
+    speculative_fallback_mode,
     log_dir,
     request_fn
 ) {
@@ -424,6 +489,8 @@ label_clusters <- function(
   iteration_log <- vector("list", max_iterations)
   next_mode <- "initial"
   next_num_predict <- effective_num_predict
+  strict_terminal_state <- NULL
+  strict_terminal_iteration <- NULL
 
   # This outer loop is intentionally bounded. We allow at most one follow-up
   # iteration, either as a validator-guided repair pass or as a fresh retry
@@ -492,7 +559,8 @@ label_clusters <- function(
             num_predict = next_num_predict,
             log_dir = log_dir,
             request_fn = request_fn,
-            workflow_steps = workflow_steps
+            workflow_steps = workflow_steps,
+            ollama_options = ollama_options
           )
         } else {
           llm_label_cluster(
@@ -507,6 +575,7 @@ label_clusters <- function(
             seed = seed,
             num_predict = next_num_predict,
             keep_alive = keep_alive,
+            ollama_options = ollama_options,
             timeout_sec = timeout_sec,
             max_retries = max_retries,
             workflow_steps = workflow_steps,
@@ -574,6 +643,71 @@ label_clusters <- function(
     )
 
     if (isTRUE(validation$is_valid)) {
+      if (identical(validation$output_status, "labeled")) {
+        validation <- .attach_cluster_label_difficulty_profile(
+          validation = validation,
+          cluster_score = cluster_score,
+          label_origin = "strict_label"
+        )
+
+        review <- render_cluster_review(
+          x = llm_result,
+          evidence = evidence,
+          validation = validation,
+          review_dir = review_dir,
+          full = full,
+          include_front_matter = include_front_matter,
+          write_metadata = write_metadata
+        )
+
+        .label_clusters_log(
+          verbose,
+          cluster_tag,
+          ": results saved to ",
+          review$file %||% "<unsaved>"
+        )
+
+        return(.cluster_label_completed_run(
+          evidence = evidence,
+          llm_result = llm_result,
+          validation = validation,
+          review = review,
+          run_status = "success",
+          used_placeholder = FALSE,
+          speculative_fallback_used = FALSE,
+          strict_outcome = "accepted",
+          strict_validation_status = validation$validation_status %||% NA_character_,
+          strict_failure_reason = NULL,
+          repair_used = repair_used,
+          iterations_used = iter,
+          num_predict_used = next_num_predict,
+          failure_reason = NULL,
+          iteration_log = iteration_log[seq_len(iter)]
+        ))
+      }
+
+      if (identical(validation$output_status, "abstain") &&
+          identical(speculative_fallback_mode, "after_nonaccepted")) {
+        strict_terminal_state <- "abstained"
+        strict_terminal_iteration <- iter
+        failure_reason <- .null_default(
+          .as_scalar_character(validation$output$abstain_reason),
+          "Strict workflow abstained before the speculative fallback ladder."
+        )
+        .label_clusters_log(
+          verbose,
+          cluster_tag,
+          ": strict workflow abstained; speculative fallback ladder started."
+        )
+        break
+      }
+
+      validation <- .attach_cluster_label_difficulty_profile(
+        validation = validation,
+        cluster_score = cluster_score,
+        label_origin = "strict_abstain"
+      )
+
       review <- render_cluster_review(
         x = llm_result,
         evidence = evidence,
@@ -591,13 +725,17 @@ label_clusters <- function(
         review$file %||% "<unsaved>"
       )
 
-      return(list(
+      return(.cluster_label_completed_run(
         evidence = evidence,
         llm_result = llm_result,
         validation = validation,
         review = review,
         run_status = "success",
         used_placeholder = FALSE,
+        speculative_fallback_used = FALSE,
+        strict_outcome = "abstained",
+        strict_validation_status = validation$validation_status %||% NA_character_,
+        strict_failure_reason = NULL,
         repair_used = repair_used,
         iterations_used = iter,
         num_predict_used = next_num_predict,
@@ -625,6 +763,180 @@ label_clusters <- function(
     }
   }
 
+  strict_llm_result <- llm_result
+  strict_validation <- validation
+  strict_failure_reason <- failure_reason
+  strict_iteration_count <- strict_terminal_iteration %||% max_iterations
+  strict_iteration_log <- iteration_log[seq_len(strict_iteration_count)]
+  speculative_iteration_record <- NULL
+  speculative_fallback_used <- FALSE
+  speculative_needed <- identical(speculative_fallback_mode, "after_rejection") ||
+    (identical(speculative_fallback_mode, "after_nonaccepted") &&
+      identical(strict_terminal_state, "abstained"))
+
+  if (identical(speculative_fallback_mode, "after_nonaccepted") &&
+      !identical(strict_terminal_state, "abstained") &&
+      !isTRUE(strict_validation$is_valid)) {
+    speculative_needed <- TRUE
+  }
+
+  if (isTRUE(speculative_needed)) {
+    speculative_fallback_used <- TRUE
+    .label_clusters_log(
+      verbose,
+      cluster_tag,
+      if (identical(strict_terminal_state, "abstained")) {
+        ": soft-label ladder continues after strict abstention."
+      } else {
+        ": strict labeling exhausted its retry budget; soft-label ladder started."
+      }
+    )
+
+    speculative_attempt <- .run_speculative_fallback_cluster_label(
+      evidence = evidence,
+      provider = provider,
+      model = .cluster_label_speculative_model(provider, model),
+      base_url = base_url,
+      schema_path = schema_path,
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = .cluster_label_speculative_num_predict(provider, next_num_predict),
+      keep_alive = keep_alive,
+      ollama_options = .cluster_label_speculative_ollama_options(
+        provider = provider,
+        ollama_options = ollama_options
+      ),
+      timeout_sec = timeout_sec,
+      max_retries = max_retries,
+      strict_variant = variant,
+      strict_workflow_steps = workflow_steps,
+      strict_result = strict_llm_result,
+      strict_validation = strict_validation,
+      strict_failure_reason = strict_failure_reason,
+      cluster_score = cluster_score,
+      strict_outcome = if (identical(strict_terminal_state, "abstained")) {
+        "abstained"
+      } else {
+        "placeholder"
+      },
+      verbose = verbose,
+      cluster_tag = cluster_tag,
+      log_dir = log_dir,
+      request_fn = request_fn
+    )
+
+    if (isTRUE(speculative_attempt$success)) {
+      review <- render_cluster_review(
+        x = speculative_attempt$llm_result,
+        evidence = evidence,
+        validation = speculative_attempt$validation,
+        review_dir = review_dir,
+        full = full,
+        include_front_matter = include_front_matter,
+        write_metadata = write_metadata
+      )
+
+      .label_clusters_log(
+        verbose,
+        cluster_tag,
+        ": soft-label ladder produced a tentative label; results saved to ",
+        review$file %||% "<unsaved>"
+      )
+
+      return(.cluster_label_completed_run(
+        evidence = evidence,
+        llm_result = speculative_attempt$llm_result,
+        validation = speculative_attempt$validation,
+        review = review,
+        run_status = "speculative",
+        used_placeholder = FALSE,
+        speculative_fallback_used = speculative_fallback_used,
+        strict_outcome = if (identical(strict_terminal_state, "abstained")) {
+          "abstained"
+        } else {
+          "placeholder"
+        },
+        strict_validation_status = strict_validation$validation_status %||% NA_character_,
+        strict_failure_reason = strict_failure_reason,
+        repair_used = repair_used,
+        iterations_used = strict_iteration_count,
+        num_predict_used = speculative_attempt$num_predict_used %||% next_num_predict,
+        failure_reason = NULL,
+        iteration_log = c(
+          strict_iteration_log,
+          speculative_attempt$iteration_log %||% list()
+        )
+      ))
+    }
+
+    speculative_iteration_record <- speculative_attempt$iteration_log %||% list()
+    failure_reason <- paste(
+      c(
+        strict_failure_reason,
+        paste0(
+          "Soft-label ladder failed: ",
+          speculative_attempt$failure_reason %||% "unknown reason."
+        )
+      ),
+      collapse = " "
+    )
+
+    .label_clusters_log(
+      verbose,
+      cluster_tag,
+      ": soft-label ladder did not produce an acceptable tentative label. Reason: ",
+      speculative_attempt$failure_reason %||% "unknown reason."
+    )
+  }
+
+  if (identical(strict_terminal_state, "abstained") &&
+      inherits(strict_llm_result, "cluster_label_result") &&
+      inherits(strict_validation, "cluster_label_validation")) {
+    strict_validation <- .attach_cluster_label_difficulty_profile(
+      validation = strict_validation,
+      cluster_score = cluster_score,
+      label_origin = "fallback_abstain"
+    )
+    review <- render_cluster_review(
+      x = strict_llm_result,
+      evidence = evidence,
+      validation = strict_validation,
+      review_dir = review_dir,
+      full = full,
+      include_front_matter = include_front_matter,
+      write_metadata = write_metadata
+    )
+
+    .label_clusters_log(
+      verbose,
+      cluster_tag,
+      ": no tentative label passed the soft ladder; strict abstention saved to ",
+      review$file %||% "<unsaved>"
+    )
+
+    return(.cluster_label_completed_run(
+      evidence = evidence,
+      llm_result = strict_llm_result,
+      validation = strict_validation,
+      review = review,
+      run_status = "success",
+      used_placeholder = FALSE,
+      speculative_fallback_used = speculative_fallback_used,
+      strict_outcome = "abstained",
+      strict_validation_status = strict_validation$validation_status %||% NA_character_,
+      strict_failure_reason = strict_failure_reason,
+      repair_used = repair_used,
+      iterations_used = strict_iteration_count,
+      num_predict_used = next_num_predict,
+      failure_reason = failure_reason,
+      iteration_log = c(
+        strict_iteration_log,
+        speculative_iteration_record
+      )
+    ))
+  }
+
   used_placeholder <- TRUE
   # Never fail silently at the batch level: if we cannot obtain a valid
   # structured result, we still emit a minimal abstaining artifact so the
@@ -639,6 +951,11 @@ label_clusters <- function(
     failure_reason = failure_reason
   )
   validation <- validate_cluster_label(placeholder_result, evidence)
+  validation <- .attach_cluster_label_difficulty_profile(
+    validation = validation,
+    cluster_score = cluster_score,
+    label_origin = "placeholder"
+  )
   review <- render_cluster_review(
     x = placeholder_result,
     evidence = evidence,
@@ -656,18 +973,207 @@ label_clusters <- function(
     review$file %||% "<unsaved>"
   )
 
-  list(
+  .cluster_label_completed_run(
     evidence = evidence,
     llm_result = placeholder_result,
     validation = validation,
     review = review,
     run_status = "placeholder",
     used_placeholder = used_placeholder,
+    speculative_fallback_used = speculative_fallback_used,
+    strict_outcome = "placeholder",
+    strict_validation_status = strict_validation$validation_status %||% NA_character_,
+    strict_failure_reason = strict_failure_reason,
     repair_used = repair_used,
-    iterations_used = max_iterations,
+    iterations_used = strict_iteration_count,
     num_predict_used = next_num_predict,
     failure_reason = failure_reason,
-    iteration_log = iteration_log[seq_len(max_iterations)]
+    iteration_log = c(
+      strict_iteration_log,
+      speculative_iteration_record
+    )
+  )
+}
+
+.cluster_label_completed_run <- function(
+    evidence,
+    llm_result,
+    validation,
+    review,
+    run_status,
+    used_placeholder,
+    speculative_fallback_used,
+    strict_outcome,
+    strict_validation_status,
+    strict_failure_reason,
+    repair_used,
+    iterations_used,
+    num_predict_used,
+    failure_reason,
+    iteration_log
+) {
+  list(
+    evidence = evidence,
+    llm_result = llm_result,
+    validation = validation,
+    review = review,
+    run_status = run_status,
+    used_placeholder = isTRUE(used_placeholder),
+    label_tier = .cluster_label_validation_label_tier(validation),
+    is_speculative = isTRUE(validation$is_speculative),
+    speculative_fallback_used = isTRUE(speculative_fallback_used),
+    strict_outcome = strict_outcome %||% validation$strict_outcome %||% NA_character_,
+    strict_validation_status = strict_validation_status %||%
+      validation$strict_validation_status %||% NA_character_,
+    strict_failure_reason = strict_failure_reason,
+    label_origin = validation$label_origin %||% NA_character_,
+    species_entropy_band = validation$species_entropy_band %||% NA_character_,
+    species_entropy_text = validation$species_entropy_text %||% NA_character_,
+    chaoticity_score = validation$chaoticity_score %||% NA_integer_,
+    chaoticity_label = validation$chaoticity_label %||% NA_character_,
+    repair_used = isTRUE(repair_used),
+    iterations_used = as.integer(iterations_used %||% NA_integer_),
+    num_predict_used = as.integer(num_predict_used %||% NA_integer_),
+    failure_reason = failure_reason,
+    iteration_log = iteration_log
+  )
+}
+
+.cluster_label_entropy_profile <- function(cluster_score, label_origin) {
+  label_origin <- .as_scalar_character(label_origin)
+  cluster_score <- suppressWarnings(as.numeric(cluster_score))
+
+  if (identical(label_origin, "strict_label")) {
+    if (is.finite(cluster_score) && cluster_score > 50) {
+      return(list(
+        label_origin = "strict_label",
+        species_entropy_band = "minimal",
+        species_entropy_text = "minimal entropy of species composition",
+        chaoticity_score = 10L,
+        chaoticity_label = "low"
+      ))
+    }
+
+    return(list(
+      label_origin = "strict_label",
+      species_entropy_band = "moderate",
+      species_entropy_text = "moderate entropy of species composition",
+      chaoticity_score = 40L,
+      chaoticity_label = "moderate"
+    ))
+  }
+
+  if (identical(label_origin, "speculative_v3")) {
+    return(list(
+      label_origin = "speculative_v3",
+      species_entropy_band = "high",
+      species_entropy_text = "high entropy of species composition",
+      chaoticity_score = 70L,
+      chaoticity_label = "high"
+    ))
+  }
+
+  if (identical(label_origin, "speculative_v4")) {
+    return(list(
+      label_origin = "speculative_v4",
+      species_entropy_band = "very_high",
+      species_entropy_text = "very high entropy of species composition",
+      chaoticity_score = 90L,
+      chaoticity_label = "very_high"
+    ))
+  }
+
+  if (identical(label_origin, "fallback_abstain")) {
+    return(list(
+      label_origin = "fallback_abstain",
+      species_entropy_band = "very_high",
+      species_entropy_text = "very high entropy of species composition",
+      chaoticity_score = 95L,
+      chaoticity_label = "very_high"
+    ))
+  }
+
+  if (identical(label_origin, "placeholder")) {
+    return(list(
+      label_origin = "placeholder",
+      species_entropy_band = "extreme",
+      species_entropy_text = "extreme entropy of species composition",
+      chaoticity_score = 100L,
+      chaoticity_label = "extreme"
+    ))
+  }
+
+  if (identical(label_origin, "strict_abstain")) {
+    return(list(
+      label_origin = "strict_abstain",
+      species_entropy_band = NA_character_,
+      species_entropy_text = NA_character_,
+      chaoticity_score = NA_integer_,
+      chaoticity_label = NA_character_
+    ))
+  }
+
+  list(
+    label_origin = label_origin %||% NA_character_,
+    species_entropy_band = NA_character_,
+    species_entropy_text = NA_character_,
+    chaoticity_score = NA_integer_,
+    chaoticity_label = NA_character_
+  )
+}
+
+.attach_cluster_label_difficulty_profile <- function(validation, cluster_score, label_origin) {
+  if (!inherits(validation, "cluster_label_validation")) {
+    return(validation)
+  }
+
+  profile <- .cluster_label_entropy_profile(
+    cluster_score = cluster_score,
+    label_origin = label_origin
+  )
+
+  validation$label_origin <- profile$label_origin
+  validation$species_entropy_band <- profile$species_entropy_band
+  validation$species_entropy_text <- profile$species_entropy_text
+  validation$chaoticity_score <- profile$chaoticity_score
+  validation$chaoticity_label <- profile$chaoticity_label
+  class(validation) <- "cluster_label_validation"
+  validation
+}
+
+.cluster_label_speculative_model <- function(provider, model) {
+  provider <- .as_scalar_character(provider)
+  model <- .as_scalar_character(model)
+
+  if (!identical(provider, "ollama")) {
+    return(model)
+  }
+
+  .default_cluster_label_speculative_model()
+}
+
+.cluster_label_speculative_num_predict <- function(provider, fallback_num_predict) {
+  provider <- .as_scalar_character(provider)
+  fallback_num_predict <- suppressWarnings(as.integer(fallback_num_predict))
+
+  if (!identical(provider, "ollama")) {
+    return(fallback_num_predict)
+  }
+
+  .default_cluster_label_speculative_num_predict()
+}
+
+.cluster_label_speculative_ollama_options <- function(provider, ollama_options) {
+  provider <- .as_scalar_character(provider)
+  ollama_options <- .arg_named_list_or_null(ollama_options, "ollama_options")
+
+  if (!identical(provider, "ollama")) {
+    return(ollama_options)
+  }
+
+  .merge_named_lists(
+    .default_cluster_label_speculative_ollama_options(),
+    ollama_options
   )
 }
 
@@ -807,7 +1313,8 @@ label_clusters <- function(
     num_predict,
     log_dir,
     request_fn,
-    workflow_steps
+    workflow_steps,
+    ollama_options
 ) {
   prompt_bundle <- if (identical(workflow_steps, 2L)) {
     template$workflow$label$prompt
@@ -853,6 +1360,7 @@ label_clusters <- function(
     variant = variant,
     prompt_bundle = prompt_bundle,
     keep_alive = keep_alive,
+    ollama_options = ollama_options,
     endpoint = endpoint,
     timeout_sec = timeout_sec,
     max_retries = max_retries,
@@ -878,6 +1386,498 @@ label_clusters <- function(
   )
   class(out) <- c("cluster_label_result", "list")
   out
+}
+
+.cluster_label_speculative_followup_message <- function(
+    strict_result,
+    strict_validation,
+    strict_failure_reason
+) {
+  issues <- strict_validation$issues %||% .new_cluster_label_issue_table()
+  issue_lines <- if (!nrow(issues)) {
+    "- No structured validator issue table was recorded for the strict pass."
+  } else {
+    vapply(seq_len(nrow(issues)), function(i) {
+      row <- issues[i, , drop = FALSE]
+      location <- row$location[[1]]
+      location_text <- if (!is.na(location) && nzchar(location)) {
+        paste0(" Location: ", location, ".")
+      } else {
+        ""
+      }
+      paste0(
+        "- [", row$severity[[1]], "][", row$category[[1]], "][", row$code[[1]], "] ",
+        row$message[[1]],
+        location_text
+      )
+    }, character(1))
+  }
+
+  previous_json <- if (inherits(strict_result, "cluster_label_result") &&
+    is.list(strict_result$output)) {
+    jsonlite::toJSON(
+      strict_result$output,
+      auto_unbox = TRUE,
+      null = "null",
+      pretty = TRUE
+    )
+  } else {
+    "No structured strict-pass JSON is available."
+  }
+
+  failure_reason <- .null_default(
+    .as_scalar_character(strict_failure_reason),
+    "No structured accepted label was obtained in the strict workflow."
+  )
+
+  paste(
+    c(
+      "The strict cluster-labeling workflow did not produce an accepted stable label.",
+      "Run a speculative fallback pass using the same evidence only.",
+      "If there is any directional signal, return one cautious tentative label.",
+      "If you return `status = \"labeled\"`, explicitly list what is missing in `not_confirmed_by_data`.",
+      "Prefer compositional or structural wording over strong habitat naming.",
+      "Do not add markdown, commentary, or code fences.",
+      "If there is no directional signal, return `status = \"abstain\"`.",
+      "",
+      "Strict-pass failure summary:",
+      failure_reason,
+      "",
+      "Strict-pass validator issues:",
+      issue_lines,
+      "",
+      "Previous strict-pass JSON output:",
+      previous_json
+    ),
+    collapse = "\n"
+  )
+}
+
+.speculative_missing_for_confidence_text <- function(output) {
+  .cluster_label_missing_for_confidence_from_output(output)
+}
+
+.normalize_speculative_fallback_output <- function(output) {
+  if (!is.list(output)) {
+    return(output)
+  }
+
+  if (!identical(.as_scalar_character(output$status), "labeled")) {
+    return(output)
+  }
+
+  confidence <- output$confidence %||% list()
+  confidence$score <- 0
+  if (!.is_non_empty_scalar_character(confidence$rationale)) {
+    confidence$rationale <- paste(
+      "This is a tentative speculative label produced after the strict",
+      "workflow failed to produce an accepted stable label."
+    )
+  }
+  output$confidence <- confidence
+  output
+}
+
+.validate_speculative_fallback_contract <- function(validation) {
+  if (!inherits(validation, "cluster_label_validation")) {
+    return(list(ok = FALSE, message = "Speculative fallback did not return a cluster_label_validation object."))
+  }
+
+  output <- validation$output %||% list()
+  not_confirmed <- output$not_confirmed_by_data %||% list()
+  checks_to_run <- output$checks_to_run %||% list()
+
+  problems <- character(0)
+
+  if (!isTRUE(validation$is_valid)) {
+    problems <- c(
+      problems,
+      paste0(
+        "validator returned non-valid status `",
+        validation$validation_status %||% "unknown",
+        "`"
+      )
+    )
+  }
+
+  if (!identical(validation$output_status, "labeled")) {
+    problems <- c(problems, "output status is not `labeled`")
+  }
+
+  if (!is.list(not_confirmed) || !length(not_confirmed)) {
+    problems <- c(problems, "`not_confirmed_by_data` is empty")
+  }
+
+  if (!is.list(checks_to_run) || !length(checks_to_run)) {
+    problems <- c(problems, "`checks_to_run` is empty")
+  }
+
+  if (!length(problems)) {
+    return(list(ok = TRUE, message = NULL))
+  }
+
+  list(
+    ok = FALSE,
+    message = paste(
+      c(
+        "Speculative fallback output did not satisfy the tentative-label contract:",
+        problems
+      ),
+      collapse = "; "
+    )
+  )
+}
+
+.mark_speculative_validation <- function(
+    validation,
+    strict_validation_status = NULL,
+    strict_outcome = "placeholder",
+    speculative_variant = NULL,
+    cluster_score = NA_real_
+) {
+  issues <- validation$issues %||% .new_cluster_label_issue_table()
+  issues <- rbind(
+    issues,
+    data.frame(
+      severity = "warning",
+      category = "speculative",
+      code = "speculative_fallback_label",
+      message = "Tentative label produced by the speculative fallback path after the strict workflow failed to produce an accepted stable label.",
+      location = "top_level",
+      stringsAsFactors = FALSE
+    )
+  )
+
+  validation$issues <- issues
+  validation$validation_status <- "valid_with_warnings"
+  validation$needs_human_review <- TRUE
+  validation$is_valid <- TRUE
+  validation$label_tier <- "speculative"
+  validation$is_speculative <- TRUE
+  validation$plot_marker <- "*"
+  validation$strict_outcome <- strict_outcome %||% "placeholder"
+  validation$strict_validation_status <- strict_validation_status %||% NA_character_
+  validation$missing_for_confidence_text <- .speculative_missing_for_confidence_text(
+    validation$output %||% list()
+  )
+  label_origin <- switch(
+    .as_scalar_character(speculative_variant),
+    speculative_fallback_v3 = "speculative_v3",
+    speculative_fallback_v4 = "speculative_v4",
+    "speculative_v3"
+  )
+  validation <- .attach_cluster_label_difficulty_profile(
+    validation = validation,
+    cluster_score = cluster_score,
+    label_origin = label_origin
+  )
+  class(validation) <- "cluster_label_validation"
+  validation
+}
+
+.run_speculative_fallback_cluster_label <- function(
+    evidence,
+    provider,
+    model,
+    base_url,
+    schema_path,
+    temperature,
+    top_p,
+    seed,
+    num_predict,
+    keep_alive,
+    ollama_options,
+    timeout_sec,
+    max_retries,
+    strict_variant,
+    strict_workflow_steps,
+    strict_result,
+    strict_validation,
+    strict_failure_reason,
+    cluster_score,
+    strict_outcome,
+    verbose,
+    cluster_tag,
+    log_dir,
+    request_fn
+) {
+  request_fn <- request_fn %||% .ollama_chat_request
+  variants <- .default_cluster_label_speculative_variants()
+  iteration_log <- list()
+  failure_messages <- character(0)
+
+  for (i in seq_along(variants)) {
+    speculative_variant <- variants[[i]]
+
+    .label_clusters_log(
+      verbose,
+      cluster_tag,
+      ": speculative rung ",
+      i,
+      "/",
+      length(variants),
+      " started with variant `",
+      speculative_variant,
+      "` (model=",
+      model,
+      ", num_predict=",
+      num_predict,
+      ")."
+    )
+
+    attempt <- .run_speculative_fallback_single_variant(
+      evidence = evidence,
+      provider = provider,
+      model = model,
+      speculative_variant = speculative_variant,
+      base_url = base_url,
+      schema_path = schema_path,
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = num_predict,
+      keep_alive = keep_alive,
+      ollama_options = ollama_options,
+      timeout_sec = timeout_sec,
+      max_retries = max_retries,
+      strict_variant = strict_variant,
+      strict_workflow_steps = strict_workflow_steps,
+      strict_result = strict_result,
+      strict_validation = strict_validation,
+      strict_failure_reason = strict_failure_reason,
+      strict_outcome = strict_outcome,
+      cluster_score = cluster_score,
+      log_dir = log_dir,
+      request_fn = request_fn
+    )
+
+    iteration_log <- c(iteration_log, attempt$iteration_log %||% list())
+
+    if (isTRUE(attempt$success)) {
+      return(list(
+        success = TRUE,
+        llm_result = attempt$llm_result,
+        validation = attempt$validation,
+        num_predict_used = attempt$num_predict_used,
+        iteration_log = iteration_log,
+        used_variant = speculative_variant
+      ))
+    }
+
+    failure_messages <- c(
+      failure_messages,
+      paste0(speculative_variant, ": ", attempt$failure_reason %||% "unknown reason.")
+    )
+  }
+
+  list(
+    success = FALSE,
+    failure_reason = paste(failure_messages, collapse = " | "),
+    iteration_log = iteration_log
+  )
+}
+
+.run_speculative_fallback_single_variant <- function(
+    evidence,
+    provider,
+    model,
+    speculative_variant,
+    base_url,
+    schema_path,
+    temperature,
+    top_p,
+    seed,
+    num_predict,
+    keep_alive,
+    ollama_options,
+    timeout_sec,
+    max_retries,
+    strict_variant,
+    strict_workflow_steps,
+    strict_result,
+    strict_validation,
+    strict_failure_reason,
+    strict_outcome,
+    cluster_score,
+    log_dir,
+    request_fn
+) {
+  template <- llm_label_cluster(
+    evidence = evidence,
+    provider = provider,
+    model = model,
+    variant = speculative_variant,
+    base_url = base_url,
+    schema_path = schema_path,
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    keep_alive = keep_alive,
+    ollama_options = ollama_options,
+    timeout_sec = timeout_sec,
+    max_retries = max_retries,
+    workflow_steps = 1L,
+    dry_run = TRUE,
+    request_fn = request_fn
+  )
+
+  prompt_bundle <- template$prompt
+  prompt_bundle$messages <- c(
+    prompt_bundle$messages,
+    list(
+      list(
+        role = "user",
+        content = .cluster_label_speculative_followup_message(
+          strict_result = strict_result,
+          strict_validation = strict_validation,
+          strict_failure_reason = strict_failure_reason
+        )
+      )
+    )
+  )
+
+  endpoint <- paste0(sub("/+$", "", base_url), "/api/chat")
+  log_paths <- .init_cluster_label_logs(
+    log_dir = log_dir,
+    cluster_id = evidence$meta$cluster_id,
+    model = model,
+    variant = paste0(speculative_variant, "_after_", strict_outcome)
+  )
+
+  out <- tryCatch(
+    .run_structured_llm_stage(
+      evidence = evidence,
+      provider = provider,
+      model = model,
+      variant = speculative_variant,
+      prompt_bundle = prompt_bundle,
+      keep_alive = keep_alive,
+      ollama_options = ollama_options,
+      endpoint = endpoint,
+      timeout_sec = timeout_sec,
+      max_retries = max_retries,
+      request_fn = request_fn,
+      log_paths = log_paths,
+      parse_output_fn = function(content) {
+        .parse_cluster_label_json(
+          content = content,
+          required_fields = prompt_bundle$schema_required,
+          cluster_id = evidence$meta$cluster_id
+        )
+      },
+      stage_name = "speculative_fallback"
+    ),
+    error = function(e) e
+  )
+
+  if (inherits(out, "error")) {
+    return(list(
+      success = FALSE,
+      failure_reason = conditionMessage(out),
+      iteration_log = list(
+        list(
+          iteration = NA_integer_,
+          mode = speculative_variant,
+          result = "error",
+          num_predict = as.integer(num_predict %||% NA_integer_),
+          failure_reason = conditionMessage(out)
+        )
+      )
+    ))
+  }
+
+  out$workflow_steps <- 1L
+  out$workflow <- list(
+    strict = list(
+      variant = strict_variant,
+      workflow_steps = strict_workflow_steps,
+      output_status = strict_validation$output_status %||% NULL,
+      validation_status = strict_validation$validation_status %||% NULL,
+      failure_reason = strict_failure_reason %||% NULL
+    )
+  )
+  out$speculative <- list(
+    used = TRUE,
+    mode = "soft_label_ladder",
+    variant = speculative_variant,
+    label_tier = "speculative",
+    plot_marker = "*",
+    strict_outcome = strict_outcome,
+    strict_variant = strict_variant,
+    strict_workflow_steps = strict_workflow_steps,
+    strict_validation_status = strict_validation$validation_status %||% NULL,
+    strict_failure_reason = strict_failure_reason %||% NULL
+  )
+  class(out) <- c("cluster_label_result", "list")
+  out$output <- .normalize_speculative_fallback_output(out$output)
+
+  validation <- validate_cluster_label(out, evidence)
+  if (identical(validation$output_status, "abstain") && isTRUE(validation$is_valid)) {
+    return(list(
+      success = FALSE,
+      failure_reason = "variant returned a valid abstain",
+      llm_result = out,
+      validation = validation,
+      iteration_log = list(
+        list(
+          iteration = NA_integer_,
+          mode = speculative_variant,
+          result = "abstain",
+          num_predict = as.integer(num_predict %||% NA_integer_),
+          validation_status = validation$validation_status %||% NA_character_,
+          failure_reason = "variant returned a valid abstain"
+        )
+      )
+    ))
+  }
+
+  contract <- .validate_speculative_fallback_contract(validation)
+  if (!isTRUE(contract$ok)) {
+    return(list(
+      success = FALSE,
+      failure_reason = contract$message,
+      llm_result = out,
+      validation = validation,
+      iteration_log = list(
+        list(
+          iteration = NA_integer_,
+          mode = speculative_variant,
+          result = "rejected",
+          num_predict = as.integer(num_predict %||% NA_integer_),
+          validation_status = validation$validation_status %||% NA_character_,
+          failure_reason = contract$message
+        )
+      )
+    ))
+  }
+
+  validation <- .mark_speculative_validation(
+    validation = validation,
+    strict_validation_status = strict_validation$validation_status %||% NULL,
+    strict_outcome = strict_outcome,
+    speculative_variant = speculative_variant,
+    cluster_score = cluster_score
+  )
+  out$speculative$missing_for_confidence_text <- validation$missing_for_confidence_text %||%
+    NA_character_
+
+  list(
+    success = TRUE,
+    llm_result = out,
+    validation = validation,
+    num_predict_used = as.integer(num_predict %||% NA_integer_),
+    iteration_log = list(
+      list(
+        iteration = NA_integer_,
+        mode = speculative_variant,
+        result = "ok",
+        num_predict = as.integer(num_predict %||% NA_integer_),
+        validation_status = validation$validation_status %||% NA_character_,
+        label_tier = "speculative"
+      )
+    )
+  )
 }
 
 .cluster_label_placeholder_template <- function(llm_result, template) {

@@ -254,6 +254,18 @@ print.cluster_review_artifact <- function(x, ...) {
     review_status = .cluster_review_status(validation),
     needs_human_review = isTRUE(validation$needs_human_review),
     is_valid = isTRUE(validation$is_valid),
+    label_tier = .cluster_label_validation_label_tier(validation),
+    is_speculative = isTRUE(validation$is_speculative),
+    plot_marker = .cluster_label_validation_plot_marker(validation),
+    strict_outcome = validation$strict_outcome %||% NA_character_,
+    strict_validation_status = validation$strict_validation_status %||% NA_character_,
+    label_origin = validation$label_origin %||% NA_character_,
+    species_entropy_band = validation$species_entropy_band %||% NA_character_,
+    species_entropy_text = validation$species_entropy_text %||% NA_character_,
+    chaoticity_score = validation$chaoticity_score %||% NA_integer_,
+    chaoticity_label = validation$chaoticity_label %||% NA_character_,
+    missing_for_confidence_text = validation$missing_for_confidence_text %||%
+      .cluster_label_missing_for_confidence_from_output(output),
     evidence_coverage_score = coverage$score %||% NA_real_,
     evidence_citation_valid = coverage$n_valid_citations %||% NA_integer_,
     evidence_citation_total = coverage$n_citation_targets %||% NA_integer_,
@@ -331,6 +343,10 @@ print.cluster_review_artifact <- function(x, ...) {
 .cluster_review_status <- function(validation) {
   if (identical(validation$validation_status, "schema_error")) {
     return("blocked")
+  }
+  if (isTRUE(validation$is_speculative) ||
+      identical(.cluster_label_validation_label_tier(validation), "speculative")) {
+    return("speculative")
   }
   if (isTRUE(validation$needs_human_review)) {
     return("review_required")
@@ -483,7 +499,8 @@ print.cluster_review_artifact <- function(x, ...) {
   dataset_lines <- .cluster_review_dataset_lines(evidence)
   generation_lines <- .cluster_review_generation_lines(metadata)
   summary_lines <- .cluster_review_summary_lines(validation, metadata)
-  label_lines <- .cluster_review_label_lines(output)
+  label_lines <- .cluster_review_label_lines(output, metadata)
+  tentative_lines <- .cluster_review_tentative_lines(metadata)
   claims_lines <- .cluster_review_claim_lines(output$basis_in_data)
   key_species_lines <- .cluster_review_key_species_lines(output$key_species)
   external_lines <- .cluster_review_external_knowledge_lines(output$external_knowledge)
@@ -517,6 +534,9 @@ print.cluster_review_artifact <- function(x, ...) {
       "",
       "## Proposed label",
       label_lines,
+      if (length(tentative_lines)) "" else NULL,
+      if (length(tentative_lines)) "## Why tentative" else NULL,
+      tentative_lines,
       "",
       "## Interpretation summary",
       .paragraph_or_placeholder(.as_scalar_character(output$interpretation_summary)),
@@ -564,6 +584,9 @@ print.cluster_review_artifact <- function(x, ...) {
       "",
       "## Proposed label",
       label_lines,
+      if (length(tentative_lines)) "" else NULL,
+      if (length(tentative_lines)) "## Why tentative" else NULL,
+      tentative_lines,
       "",
       "## Interpretation summary",
       .paragraph_or_placeholder(.as_scalar_character(output$interpretation_summary)),
@@ -613,10 +636,52 @@ print.cluster_review_artifact <- function(x, ...) {
     )
   )
 
+  if (!is.na(metadata$label_tier) && nzchar(metadata$label_tier)) {
+    lines <- c(lines, paste0("- Label tier: `", metadata$label_tier, "`"))
+  }
+
+  if (isTRUE(metadata$is_speculative)) {
+    lines <- c(
+      lines,
+      paste0("- Strict outcome before fallback: `", metadata$strict_outcome %||% NA_character_, "`"),
+      paste0(
+        "- Strict validation status before fallback: `",
+        metadata$strict_validation_status %||% NA_character_,
+        "`"
+      ),
+      paste0("- Plot marker: ", .md_code(metadata$plot_marker %||% "*"))
+    )
+  }
+
+  if (!is.na(metadata$label_origin) && nzchar(metadata$label_origin)) {
+    lines <- c(lines, paste0("- Label origin: `", metadata$label_origin, "`"))
+  }
+  if (!is.na(metadata$species_entropy_text) && nzchar(metadata$species_entropy_text)) {
+    lines <- c(
+      lines,
+      paste0("- Species-composition entropy: `", metadata$species_entropy_text, "`")
+    )
+  }
+  if (!is.na(metadata$chaoticity_score)) {
+    lines <- c(
+      lines,
+      paste0(
+        "- Chaoticity score: `",
+        metadata$chaoticity_score,
+        "`",
+        if (!is.na(metadata$chaoticity_label) && nzchar(metadata$chaoticity_label)) {
+          paste0(" (`", metadata$chaoticity_label, "`)")
+        } else {
+          ""
+        }
+      )
+    )
+  }
+
   if (length(unsupported_codes)) {
     lines <- c(
       lines,
-      paste0("- Unsupported-claim flags: ", paste(.md_code(unsupported_codes), collapse = ", "))
+      paste0("- Unsupported-claim flags: ", .collapse_md_codes(unsupported_codes))
     )
   } else {
     lines <- c(lines, "- Unsupported-claim flags: none")
@@ -625,7 +690,7 @@ print.cluster_review_artifact <- function(x, ...) {
   if (length(warning_codes)) {
     lines <- c(
       lines,
-      paste0("- Warning codes: ", paste(.md_code(warning_codes), collapse = ", "))
+      paste0("- Warning codes: ", .collapse_md_codes(warning_codes))
     )
   } else {
     lines <- c(lines, "- Warning codes: none")
@@ -702,24 +767,105 @@ print.cluster_review_artifact <- function(x, ...) {
   lines
 }
 
-.cluster_review_label_lines <- function(output) {
+.cluster_review_label_lines <- function(output, metadata) {
   status <- .as_scalar_character(output$status)
 
   if (identical(status, "abstain")) {
-    return(c(
+    lines <- c(
       "- Status: `abstain`",
       paste0(
         "- Abstain reason: ",
         .paragraph_or_placeholder(.as_scalar_character(output$abstain_reason))
       )
-    ))
+    )
+    if (!is.na(metadata$label_origin) && nzchar(metadata$label_origin)) {
+      lines <- c(lines, paste0("- Label origin: `", metadata$label_origin, "`"))
+    }
+    if (!is.na(metadata$species_entropy_text) && nzchar(metadata$species_entropy_text)) {
+      lines <- c(
+        lines,
+        paste0("- Species-composition entropy: `", metadata$species_entropy_text, "`")
+      )
+    }
+    if (!is.na(metadata$chaoticity_score)) {
+      lines <- c(
+        lines,
+        paste0(
+          "- Chaoticity score: `",
+          metadata$chaoticity_score,
+          "`",
+          if (!is.na(metadata$chaoticity_label) && nzchar(metadata$chaoticity_label)) {
+            paste0(" (`", metadata$chaoticity_label, "`)")
+          } else {
+            ""
+          }
+        )
+      )
+    }
+    return(lines)
+  }
+
+  display_label <- .cluster_label_display_with_marker(
+    output$display_label,
+    metadata$plot_marker %||% ""
+  )
+
+  lines <- c("- Status: `labeled`")
+
+  if (isTRUE(metadata$is_speculative)) {
+    lines <- c(
+      lines,
+      "- Label tier: `speculative`",
+      "- Human review: strongly recommended."
+    )
   }
 
   c(
-    "- Status: `labeled`",
+    lines,
     paste0("- Canonical label: ", .md_code(.as_scalar_character(output$canonical_label))),
-    paste0("- Display label: ", .md_code(.as_scalar_character(output$display_label)))
+    paste0("- Display label: ", .md_code(display_label)),
+    if (!is.na(metadata$label_origin) && nzchar(metadata$label_origin)) {
+      paste0("- Label origin: `", metadata$label_origin, "`")
+    },
+    if (!is.na(metadata$species_entropy_text) && nzchar(metadata$species_entropy_text)) {
+      paste0("- Species-composition entropy: `", metadata$species_entropy_text, "`")
+    },
+    if (!is.na(metadata$chaoticity_score)) {
+      paste0(
+        "- Chaoticity score: `",
+        metadata$chaoticity_score,
+        "`",
+        if (!is.na(metadata$chaoticity_label) && nzchar(metadata$chaoticity_label)) {
+          paste0(" (`", metadata$chaoticity_label, "`)")
+        } else {
+          ""
+        }
+      )
+    }
   )
+}
+
+.cluster_review_tentative_lines <- function(metadata) {
+  if (!isTRUE(metadata$is_speculative)) {
+    return(character(0))
+  }
+
+  lines <- c(
+    paste0(
+      "- The strict workflow did not accept a stable evidence-backed label (`",
+      metadata$strict_outcome %||% "unknown",
+      "`)."
+    )
+  )
+
+  missing_text <- .as_scalar_character(metadata$missing_for_confidence_text)
+  if (!is.na(missing_text) && nzchar(missing_text)) {
+    lines <- c(lines, paste0("- What prevents full confidence: ", missing_text))
+  } else {
+    lines <- c(lines, "- What prevents full confidence: not explicitly recorded.")
+  }
+
+  lines
 }
 
 .cluster_review_claim_lines <- function(basis_in_data) {

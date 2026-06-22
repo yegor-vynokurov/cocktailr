@@ -214,8 +214,29 @@
   )
 }
 
-.build_ollama_label_request <- function(model, prompt_bundle, keep_alive = NULL) {
-  options <- Filter(
+.merge_named_lists <- function(base, override) {
+  if (is.null(base)) {
+    return(override)
+  }
+  if (is.null(override)) {
+    return(base)
+  }
+
+  out <- base
+  for (nm in names(override)) {
+    out[[nm]] <- override[[nm]]
+  }
+  out
+}
+
+.build_ollama_label_request <- function(
+    model,
+    prompt_bundle,
+    keep_alive = NULL,
+    ollama_options = NULL
+) {
+  ollama_options <- .arg_named_list_or_null(ollama_options, "ollama_options")
+  generation_options <- Filter(
     Negate(is.null),
     list(
       temperature = prompt_bundle$generation$temperature,
@@ -224,6 +245,7 @@
       num_predict = prompt_bundle$generation$num_predict
     )
   )
+  options <- .merge_named_lists(ollama_options, generation_options)
 
   Filter(
     function(x) !is.null(x),
@@ -241,6 +263,47 @@
 
 .default_cluster_label_gate_variant <- function() {
   "gate_abstain_examples_v1"
+}
+
+.default_cluster_label_speculative_variant <- function() {
+  "speculative_fallback_v3"
+}
+
+.default_cluster_label_speculative_variants <- function() {
+  c("speculative_fallback_v3", "speculative_fallback_v4")
+}
+
+.default_cluster_label_speculative_model <- function() {
+  model <- getOption("cocktailr.speculative_fallback_model", "phi4-mini:latest")
+  if (.is_non_empty_scalar_character(model)) {
+    return(model)
+  }
+  "phi4-mini:latest"
+}
+
+.default_cluster_label_speculative_num_predict <- function() {
+  value <- suppressWarnings(as.integer(
+    getOption("cocktailr.speculative_fallback_num_predict", 2400L)
+  ))
+  if (!is.finite(value) || is.na(value) || value < 1L) {
+    return(2400L)
+  }
+  value
+}
+
+.default_cluster_label_speculative_ollama_options <- function() {
+  opt <- getOption("cocktailr.speculative_fallback_ollama_options", NULL)
+  if (!is.null(opt)) {
+    opt <- .arg_named_list_or_null(
+      opt,
+      "getOption(\"cocktailr.speculative_fallback_ollama_options\")"
+    )
+  }
+
+  .merge_named_lists(
+    list(num_ctx = 8192L),
+    opt
+  )
 }
 
 .expect_prompt_task_type <- function(prompt_bundle, expected_task_type, variant) {

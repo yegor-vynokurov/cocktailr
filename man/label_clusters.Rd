@@ -24,6 +24,7 @@ label_clusters(
   seed = NULL,
   num_predict = NULL,
   keep_alive = NULL,
+  ollama_options = NULL,
   timeout_sec = 600,
   max_retries = 1L,
   workflow_steps = 1L,
@@ -31,6 +32,7 @@ label_clusters(
   review_dir = file.path("temp", "reports", "cluster_reviews"),
   verbose = TRUE,
   labels_for_imgs = FALSE,
+  speculative_fallback_mode = c("off", "after_rejection", "after_nonaccepted"),
   full = FALSE,
   include_front_matter = full,
   write_metadata = full,
@@ -56,7 +58,7 @@ selection controls forwarded to \code{\link{select_clusters}} when
 \item{top_n_phi, n_prototype_plots, n_borderline_plots, include_cover}{Evidence
 extraction controls forwarded to \code{\link{cluster_evidence}}.}
 
-\item{provider, model, variant, base_url, schema_path, temperature, top_p, seed, num_predict, keep_alive, timeout_sec, max_retries, workflow_steps, log_dir, request_fn}{LLM
+\item{provider, model, variant, base_url, schema_path, temperature, top_p, seed, num_predict, keep_alive, ollama_options, timeout_sec, max_retries, workflow_steps, log_dir, request_fn}{LLM
 controls forwarded to \code{\link{llm_label_cluster}}.}
 
 \item{max_iterations}{Integer workflow budget. Currently allowed values are
@@ -73,8 +75,16 @@ artifacts.}
 
 \item{labels_for_imgs}{Logical. If \code{TRUE}, build a plotting-oriented
 registry table with \code{\link{cluster_label_registry}} after all review
-cards are generated and return it as \code{$label_registry}. Default
-\code{FALSE}.}
+cards are generated, save it automatically as
+\code{"cluster_label_registry.csv"} next to the review cards, and return
+it as \code{$label_registry}. Default \code{FALSE}.}
+
+\item{speculative_fallback_mode}{Character scalar controlling whether a
+softer speculative fallback ladder may run after the strict workflow fails
+to produce an accepted structured label. Default \code{"off"}. Supported
+non-default values are \code{"after_rejection"} for the narrow placeholder
+branch only, and \code{"after_nonaccepted"} to also continue after a valid
+strict abstention.}
 
 \item{full}{Logical. Forwarded to \code{\link{render_cluster_review}}.}
 
@@ -90,6 +100,8 @@ A list of class \code{"cluster_label_batch_result"} with:
   \item \code{selection}: the resolved cluster table used for the run
   \item \code{label_registry}: optional flat registry table for downstream
   plotting, present when \code{labels_for_imgs = TRUE}
+  \item \code{label_registry_file}: optional path to the saved registry CSV,
+  present when \code{labels_for_imgs = TRUE}
 }
 }
 \description{

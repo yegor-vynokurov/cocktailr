@@ -73,6 +73,84 @@ cluster_label_registry <- function(x) {
   out
 }
 
+.cluster_label_registry_basename <- function() {
+  "cluster_label_registry.csv"
+}
+
+.cluster_label_registry_storage_dir <- function(label_registry, results, review_dir) {
+  review_files <- label_registry$review_file %||% character(0)
+  review_files <- review_files[!is.na(review_files) & nzchar(review_files)]
+
+  if (length(review_files)) {
+    dirs <- dirname(review_files)
+    dir_tab <- sort(table(dirs), decreasing = TRUE)
+    if (length(dir_tab)) {
+      return(names(dir_tab)[[1]])
+    }
+  }
+
+  root_dir <- .resolve_cocktailr_output_path(review_dir)
+  if (!length(results)) {
+    return(root_dir)
+  }
+
+  evidence <- results[[1]]$evidence %||% NULL
+  if (inherits(evidence, "cluster_evidence")) {
+    dataset <- .cluster_review_dataset_info(evidence)
+    if (!is.na(dataset$folder_slug) && nzchar(dataset$folder_slug)) {
+      return(file.path(root_dir, dataset$folder_slug))
+    }
+  }
+
+  root_dir
+}
+
+.write_cluster_label_registry_file <- function(label_registry, results, review_dir) {
+  if (!inherits(label_registry, "cluster_label_registry")) {
+    stop("`label_registry` must inherit from `cluster_label_registry`.", call. = FALSE)
+  }
+
+  target_dir <- .cluster_label_registry_storage_dir(
+    label_registry = label_registry,
+    results = results,
+    review_dir = review_dir
+  )
+  if (is.null(target_dir) || is.na(target_dir) || !nzchar(target_dir)) {
+    stop("Could not determine where to save the cluster label registry.", call. = FALSE)
+  }
+
+  dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
+  file <- file.path(target_dir, .cluster_label_registry_basename())
+  utils::write.csv(label_registry, file = file, row.names = FALSE, na = "NA")
+  normalizePath(file, winslash = "/", mustWork = TRUE)
+}
+
+.attach_cluster_label_registry_file <- function(label_registry, file) {
+  if (!inherits(label_registry, "cluster_label_registry")) {
+    return(label_registry)
+  }
+
+  attr(label_registry, "file") <- .cluster_label_registry_character(file)
+  label_registry
+}
+
+.read_cluster_label_registry_file <- function(file) {
+  file <- .as_scalar_character(file)
+  if (is.na(file) || !nzchar(file) || !file.exists(file)) {
+    stop("`file` must point to an existing cluster label registry CSV.", call. = FALSE)
+  }
+
+  reg <- utils::read.csv(
+    file,
+    stringsAsFactors = FALSE,
+    check.names = FALSE,
+    na.strings = "NA"
+  )
+  class(reg) <- c("cluster_label_registry", "data.frame")
+  attr(reg, "file") <- normalizePath(file, winslash = "/", mustWork = TRUE)
+  reg
+}
+
 .empty_cluster_label_registry <- function() {
   data.frame(
     cluster = character(),
@@ -89,9 +167,19 @@ cluster_label_registry <- function(x) {
     canonical_label = character(),
     label_available = logical(),
     accepted_label = logical(),
+    label_tier = character(),
+    is_speculative = logical(),
+    plot_marker = character(),
+    label_origin = character(),
+    species_entropy_band = character(),
+    species_entropy_text = character(),
+    chaoticity_score = integer(),
+    chaoticity_label = character(),
     output_status = character(),
     review_status = character(),
     validation_status = character(),
+    strict_outcome = character(),
+    strict_validation_status = character(),
     run_status = character(),
     needs_human_review = logical(),
     is_valid = logical(),
@@ -101,6 +189,7 @@ cluster_label_registry <- function(x) {
     num_predict_used = integer(),
     confidence_score = numeric(),
     confidence_rationale = character(),
+    missing_for_confidence_text = character(),
     interpretation_summary = character(),
     abstain_reason = character(),
     key_species_text = character(),
@@ -172,11 +261,16 @@ cluster_label_registry <- function(x) {
   canonical_label <- .as_scalar_character(output$canonical_label)
   output_status <- .null_default(validation$output_status, .as_scalar_character(output$status))
   review_status <- .cluster_review_status(validation)
+  label_tier <- .cluster_label_validation_label_tier(validation)
+  is_speculative <- isTRUE(validation$is_speculative)
+  plot_marker <- .cluster_label_validation_plot_marker(validation)
+  label_origin <- .as_scalar_character(validation$label_origin)
   used_placeholder <- isTRUE(cluster_run$used_placeholder)
   label_available <- identical(output_status, "labeled") &&
     .is_non_empty_scalar_character(display_label) &&
     !used_placeholder
   accepted_label <- label_available && identical(review_status, "accepted")
+  display_label_plot <- .cluster_label_display_with_marker(display_label, plot_marker)
 
   confidence <- output$confidence %||% list()
   basis_in_data <- output$basis_in_data %||% list()
@@ -190,10 +284,10 @@ cluster_label_registry <- function(x) {
     m = .cluster_label_registry_integer(summary_row$m),
     score = .cluster_label_registry_numeric(summary_row$score),
     plot_label_id = cluster_id,
-    plot_label_short = if (label_available) display_label else cluster_id,
+    plot_label_short = if (label_available) display_label_plot else cluster_id,
     legend_label = .cluster_label_registry_legend_label(
       cluster_id = cluster_id,
-      display_label = display_label,
+      display_label = display_label_plot,
       output_status = output_status,
       used_placeholder = used_placeholder
     ),
@@ -201,9 +295,19 @@ cluster_label_registry <- function(x) {
     canonical_label = .cluster_label_registry_character(canonical_label),
     label_available = label_available,
     accepted_label = accepted_label,
+    label_tier = .cluster_label_registry_character(label_tier),
+    is_speculative = is_speculative,
+    plot_marker = .cluster_label_registry_character(plot_marker),
+    label_origin = .cluster_label_registry_character(label_origin),
+    species_entropy_band = .cluster_label_registry_character(validation$species_entropy_band),
+    species_entropy_text = .cluster_label_registry_character(validation$species_entropy_text),
+    chaoticity_score = .cluster_label_registry_integer(validation$chaoticity_score),
+    chaoticity_label = .cluster_label_registry_character(validation$chaoticity_label),
     output_status = .cluster_label_registry_character(output_status),
     review_status = .cluster_label_registry_character(review_status),
     validation_status = .cluster_label_registry_character(validation$validation_status),
+    strict_outcome = .cluster_label_registry_character(validation$strict_outcome),
+    strict_validation_status = .cluster_label_registry_character(validation$strict_validation_status),
     run_status = .cluster_label_registry_character(cluster_run$run_status),
     needs_human_review = isTRUE(validation$needs_human_review),
     is_valid = isTRUE(validation$is_valid),
@@ -214,6 +318,10 @@ cluster_label_registry <- function(x) {
     confidence_score = .cluster_label_registry_numeric(confidence$score),
     confidence_rationale = .cluster_label_registry_character(
       .as_scalar_character(confidence$rationale)
+    ),
+    missing_for_confidence_text = .cluster_label_registry_character(
+      validation$missing_for_confidence_text %||%
+        .cluster_label_missing_for_confidence_from_output(output)
     ),
     interpretation_summary = .cluster_label_registry_character(
       .as_scalar_character(output$interpretation_summary)
