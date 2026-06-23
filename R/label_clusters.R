@@ -39,6 +39,19 @@
 #'   \code{clusters = NULL}.
 #' @param top_n_phi,n_prototype_plots,n_borderline_plots,include_cover Evidence
 #'   extraction controls forwarded to \code{\link{cluster_evidence}}.
+#' @param semantic_layer Logical. If \code{TRUE}, try to enrich each cluster's
+#'   evidence bundle with indicator-derived ecological axes from the optional
+#'   semantic layer built from files under \code{data-raw/external/}. Failures
+#'   in this auxiliary step are recorded in the batch summary and the workflow
+#'   continues with the plain evidence bundle. Default \code{FALSE}.
+#' @param semantic_min_phi Optional numeric scalar forwarded to
+#'   \code{score_cluster_semantics()}.
+#' @param semantic_bootstrap Integer bootstrap count for semantic axis
+#'   summaries. Default \code{200}.
+#' @param semantic_root Optional project root override for the semantic layer.
+#'   By default the semantic helpers use \code{cocktailr_project_root()}.
+#' @param semantic_force_species,semantic_force_reference Logical refresh flags
+#'   forwarded to \code{score_cluster_semantics()}.
 #' @param provider,model,variant,base_url,schema_path,temperature,top_p,seed,
 #'   num_predict,keep_alive,ollama_options,timeout_sec,max_retries,
 #'   workflow_steps,log_dir,request_fn LLM controls forwarded to
@@ -117,6 +130,12 @@ label_clusters <- function(
     n_prototype_plots = 5L,
     n_borderline_plots = 5L,
     include_cover = TRUE,
+    semantic_layer = FALSE,
+    semantic_min_phi = NULL,
+    semantic_bootstrap = 200L,
+    semantic_root = NULL,
+    semantic_force_species = FALSE,
+    semantic_force_reference = FALSE,
     provider = "ollama",
     model,
     variant = "strict_abstention_gate_v1",
@@ -151,8 +170,32 @@ label_clusters <- function(
   ollama_options <- .arg_named_list_or_null(ollama_options, "ollama_options")
   verbose <- .arg_single_flag(verbose, "verbose")
   labels_for_imgs <- .arg_single_flag(labels_for_imgs, "labels_for_imgs")
+  semantic_layer <- .arg_single_flag(semantic_layer, "semantic_layer")
+  semantic_bootstrap <- .arg_positive_integer(
+    semantic_bootstrap,
+    "semantic_bootstrap"
+  )
+  semantic_force_species <- .arg_single_flag(
+    semantic_force_species,
+    "semantic_force_species"
+  )
+  semantic_force_reference <- .arg_single_flag(
+    semantic_force_reference,
+    "semantic_force_reference"
+  )
   speculative_fallback_mode <- match.arg(speculative_fallback_mode)
   select_mode <- match.arg(select_mode)
+
+  if (!is.null(semantic_min_phi)) {
+    semantic_min_phi <- suppressWarnings(as.numeric(semantic_min_phi))
+    if (length(semantic_min_phi) != 1L || is.na(semantic_min_phi)) {
+      stop("`semantic_min_phi` must be NULL or a single numeric value.")
+    }
+  }
+
+  if (!is.null(semantic_root)) {
+    semantic_root <- .arg_scalar_character(semantic_root, "semantic_root")
+  }
 
   selection <- .resolve_label_clusters_selection(
     x = x,
@@ -204,6 +247,20 @@ label_clusters <- function(
       include_cover = include_cover
     )
 
+    semantic_step <- .label_clusters_apply_semantic_layer(
+      evidence = evidence,
+      x = x,
+      semantic_layer = semantic_layer,
+      semantic_min_phi = semantic_min_phi,
+      semantic_bootstrap = semantic_bootstrap,
+      semantic_root = semantic_root,
+      semantic_force_species = semantic_force_species,
+      semantic_force_reference = semantic_force_reference,
+      verbose = verbose,
+      cluster_tag = cluster_tag
+    )
+    evidence <- semantic_step$evidence
+
     template <- llm_label_cluster(
       evidence = evidence,
       provider = provider,
@@ -254,6 +311,10 @@ label_clusters <- function(
       request_fn = request_fn
     )
 
+    cluster_run$semantic_layer_used <- isTRUE(semantic_step$used)
+    cluster_run$semantic_layer_status <- semantic_step$status %||% "off"
+    cluster_run$semantic_layer_error <- semantic_step$error %||% NA_character_
+
     results[[i]] <- cluster_run
     summary_rows[[i]] <- data.frame(
       cluster = cluster_id,
@@ -271,6 +332,9 @@ label_clusters <- function(
       speculative_fallback_used = isTRUE(cluster_run$speculative_fallback_used),
       strict_outcome = cluster_run$strict_outcome %||% NA_character_,
       strict_validation_status = cluster_run$strict_validation_status %||% NA_character_,
+      semantic_layer_used = isTRUE(cluster_run$semantic_layer_used),
+      semantic_layer_status = cluster_run$semantic_layer_status %||% NA_character_,
+      semantic_layer_error = cluster_run$semantic_layer_error %||% NA_character_,
       label_origin = cluster_run$label_origin %||% NA_character_,
       species_entropy_band = cluster_run$species_entropy_band %||% NA_character_,
       species_entropy_text = cluster_run$species_entropy_text %||% NA_character_,
@@ -366,6 +430,82 @@ label_clusters <- function(
     total_clusters,
     ")"
   )
+}
+
+.label_clusters_apply_semantic_layer <- function(
+    evidence,
+    x,
+    semantic_layer,
+    semantic_min_phi,
+    semantic_bootstrap,
+    semantic_root,
+    semantic_force_species,
+    semantic_force_reference,
+    verbose,
+    cluster_tag
+) {
+  if (!isTRUE(semantic_layer)) {
+    return(list(
+      evidence = evidence,
+      used = FALSE,
+      status = "off",
+      error = NA_character_
+    ))
+  }
+
+  .label_clusters_log(verbose, cluster_tag, ": semantic enrichment started.")
+
+  attempt <- tryCatch(
+    {
+      root <- semantic_root
+      if (is.null(root)) {
+        root <- cocktailr_project_root()
+      }
+
+      semantic_result <- score_cluster_semantics(
+        x = x,
+        clusters = evidence$meta$cluster_id,
+        min_phi = semantic_min_phi,
+        bootstrap = semantic_bootstrap,
+        root = root,
+        force_species = semantic_force_species,
+        force_reference = semantic_force_reference
+      )
+
+      enriched <- .augment_cluster_evidence_with_semantic_layer(
+        evidence = evidence,
+        semantic_result = semantic_result
+      )
+
+      list(
+        evidence = enriched,
+        used = TRUE,
+        status = "enriched",
+        error = NA_character_
+      )
+    },
+    error = function(e) {
+      list(
+        evidence = evidence,
+        used = FALSE,
+        status = "failed",
+        error = conditionMessage(e)
+      )
+    }
+  )
+
+  if (identical(attempt$status, "enriched")) {
+    .label_clusters_log(verbose, cluster_tag, ": semantic enrichment completed.")
+  } else if (identical(attempt$status, "failed")) {
+    .label_clusters_log(
+      verbose,
+      cluster_tag,
+      ": semantic enrichment failed; continuing without it. ",
+      attempt$error
+    )
+  }
+
+  attempt
 }
 
 .resolve_label_clusters_selection <- function(

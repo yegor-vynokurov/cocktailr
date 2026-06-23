@@ -799,6 +799,74 @@ The dendrogram still keeps stable numeric IDs on the plot itself. The starred
 human-readable label is shown in the legend / caption layer or in relabeled
 `hclust` leaves.
 
+## 13B. Optional semantic indicator enrichment
+
+You can also enrich the evidence bundle before the LLM call with
+indicator-derived ecological axes from the external EIVE/Tichy tables.
+
+Example:
+
+```r
+run_sem <- label_clusters(
+  x = res,
+  clusters = c("c_12", "c_26"),
+  model = "gemma4:12b",
+  variant = "strict_abstention_gate_v1",
+  workflow_steps = 1,
+  semantic_layer = TRUE,
+  semantic_root = "D:/documents/coctrailr/cocktailr",
+  timeout_sec = 600,
+  num_predict = 1200
+)
+
+run_sem$summary[, c(
+  "cluster",
+  "semantic_layer_used",
+  "semantic_layer_status",
+  "semantic_layer_error"
+)]
+```
+
+What this does:
+
+- keeps the ordinary `cluster_evidence()` facts intact
+- adds a semantic indicator profile with ecological axes such as light,
+  moisture, reaction, nutrients, temperature, and salinity
+- injects those semantic summaries into the final evidence text that is
+  sent to the model
+
+Current semantic-layer arguments on `label_clusters()`:
+
+- `semantic_layer`
+  Turns the auxiliary enrichment on or off. Default is `FALSE`.
+- `semantic_root`
+  Optional project-root override used to find `data-raw/external/` and
+  `cache/semantic_layer/`.
+- `semantic_min_phi`
+  Optional species-filter threshold forwarded to the semantic scorer.
+- `semantic_bootstrap`
+  Bootstrap size for the semantic axis summaries. Default is `200`.
+- `semantic_force_species`
+  Rebuild the species lookup cache for the requested species.
+- `semantic_force_reference`
+  Re-read the source workbooks and rebuild the combined reference cache.
+
+Practical notes:
+
+- the semantic layer is auxiliary ecological context, not formal habitat
+  proof
+- it expects the EIVE/Tichy source workbooks under `data-raw/external/`
+  and uses `readxl` when available, otherwise the packaged `xml2`
+  fallback reader
+- if enrichment fails, the workflow does not stop; it records
+  `semantic_layer_status = "failed"` and continues with the plain
+  evidence bundle
+- the current local smoke run with `phi4-mini:latest` showed that the
+  semantic layer was ingested successfully on several synthetic datasets,
+  but the small model still tended to abstain
+- for ordinary cautious runs, `gemma4:12b` remains the main recommended
+  baseline even when semantic enrichment is enabled
+
 ## 14. Advanced Options
 
 These are **not** the default path, but you may need them later:

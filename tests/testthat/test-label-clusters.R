@@ -156,6 +156,36 @@
   )
 }
 
+.build_label_clusters_semantic_result <- function(ev) {
+  cluster_id <- ev$meta$cluster_id
+  dominant_species <- ev$summaries$species_topological$species[[1]]
+
+  list(
+    cluster_scores = data.frame(
+      cluster = c(cluster_id, cluster_id),
+      axis = c("m", "l"),
+      score_mean_0_10 = c(6.8, 7.4),
+      band = c("moist", "bright"),
+      coverage_weighted = c(0.81, 0.77),
+      confidence_heuristic = c(0.66, 0.58),
+      confidence_tier = c("moderate", "moderate"),
+      bootstrap_low_0_10 = c(6.1, 6.8),
+      bootstrap_high_0_10 = c(7.3, 7.9),
+      stringsAsFactors = FALSE
+    ),
+    species_evidence = data.frame(
+      cluster = c(cluster_id, cluster_id),
+      species = c(dominant_species, "unknown sp."),
+      source_layer = c("EIVE_primary", "missing"),
+      stringsAsFactors = FALSE
+    ),
+    paths = list(
+      reference_cache = "cache/semantic_layer/reference/indicator_reference.rds",
+      species_cache = "cache/semantic_layer/species/species_indicator_lookup.rds"
+    )
+  )
+}
+
 .llm_outer <- function(payload, content) {
   jsonlite::toJSON(
     list(
@@ -322,6 +352,56 @@ test_that("label_clusters doubles num_predict after EOF-like failures", {
   expect_equal(res$summary$iterations_used[[1]], 2L)
   expect_equal(res$summary$num_predict_used[[1]], 2400L)
   expect_false(res$summary$used_placeholder[[1]])
+})
+
+test_that("label_clusters can enrich evidence with the optional semantic layer", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_valid <- .build_label_clusters_valid_output(ev)
+  semantic_result <- .build_label_clusters_semantic_result(ev)
+
+  state <- new.env(parent = emptyenv())
+  state$user_prompt <- NULL
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$user_prompt <- payload$messages[[2]]$content
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(
+        payload,
+        jsonlite::toJSON(out_valid, auto_unbox = TRUE, null = "null")
+      ),
+      parsed = NULL
+    )
+  }
+
+  testthat::local_mocked_bindings(
+    score_cluster_semantics = function(...) semantic_result,
+    .package = "cocktailr"
+  )
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-semantic-layer")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    semantic_layer = TRUE,
+    semantic_root = tempdir(),
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_true(res$summary$semantic_layer_used[[1]])
+  expect_equal(res$summary$semantic_layer_status[[1]], "enriched")
+  expect_true("semantic_axes" %in% names(res$results$c_1$evidence$summaries))
+  expect_match(state$user_prompt, "Semantic indicator profile:", fixed = TRUE)
+  expect_match(state$user_prompt, "Moisture [m]", fixed = TRUE)
 })
 
 test_that("speculative fallback variants map to stable label-origin families", {

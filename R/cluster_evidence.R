@@ -576,6 +576,33 @@ cluster_evidence <- function(
     lines <- c(lines, paste("Cover summary:", paste(cover_lines, collapse = "; ")))
   }
 
+  if (!is.null(x$summaries$semantic_axes) && nrow(x$summaries$semantic_axes)) {
+    semantic_lines <- paste0(
+      x$summaries$semantic_axes$axis_name,
+      " [", x$summaries$semantic_axes$axis, "]",
+      " (score=",
+      formatC(x$summaries$semantic_axes$score_0_10, digits = 2L, format = "f"),
+      "/10, band=", x$summaries$semantic_axes$band,
+      ", coverage=",
+      formatC(x$summaries$semantic_axes$coverage, digits = 2L, format = "f"),
+      ", confidence=", x$summaries$semantic_axes$confidence_tier,
+      ") [", x$summaries$semantic_axes$evidence_id, "]"
+    )
+    lines <- c(
+      lines,
+      "Semantic indicator profile: use as an ecological hint, not as formal habitat proof.",
+      paste("Semantic axes:", paste(semantic_lines, collapse = "; "))
+    )
+
+    unmatched <- x$summaries$semantic_unmatched_species %||% character(0)
+    if (length(unmatched)) {
+      lines <- c(
+        lines,
+        paste("Semantic unmatched species:", paste(unmatched, collapse = "; "))
+      )
+    }
+  }
+
   if (length(x$limitations$warnings) || length(x$limitations$unsupported_inferences)) {
     lim_lines <- c(x$limitations$warnings, x$limitations$unsupported_inferences)
     lines <- c(lines, "Limitations:", paste0("- ", lim_lines))
@@ -627,6 +654,34 @@ cluster_evidence <- function(
     )
   } else {
     lines <- c(lines, "  phi species: <none>")
+  }
+
+  if (!is.null(x$summaries$semantic_axes) && nrow(x$summaries$semantic_axes)) {
+    lines <- c(
+      lines,
+      paste0(
+        "  semantic axes (",
+        nrow(x$summaries$semantic_axes),
+        "): ",
+        paste(
+          paste0(
+            x$summaries$semantic_axes$axis,
+            "=",
+            formatC(x$summaries$semantic_axes$score_0_10, digits = 2L, format = "f"),
+            " [", x$summaries$semantic_axes$band, "]"
+          ),
+          collapse = ", "
+        )
+      )
+    )
+
+    unmatched <- x$summaries$semantic_unmatched_species %||% character(0)
+    if (length(unmatched)) {
+      lines <- c(
+        lines,
+        paste0("  semantic unmatched species: ", paste(unmatched, collapse = ", "))
+      )
+    }
   }
 
   lines <- c(

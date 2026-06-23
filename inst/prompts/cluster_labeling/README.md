@@ -60,6 +60,11 @@ The values come from:
 - the internal prompt serializer for evidence
 - an optional coarse label vocabulary asset for constrained variants
 
+If `label_clusters(..., semantic_layer = TRUE)` is enabled, the evidence
+serializer can also append a `Semantic indicator profile` section derived
+from the external EIVE/Tichy indicator tables before the prompt reaches
+the model.
+
 The current constrained variants read their vocabulary from
 `vocabulary/coarse_label_vocabulary_core_v1.json` unless you override it
 with:

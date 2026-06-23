@@ -14,6 +14,12 @@ label_clusters(
   n_prototype_plots = 5L,
   n_borderline_plots = 5L,
   include_cover = TRUE,
+  semantic_layer = FALSE,
+  semantic_min_phi = NULL,
+  semantic_bootstrap = 200L,
+  semantic_root = NULL,
+  semantic_force_species = FALSE,
+  semantic_force_reference = FALSE,
   provider = "ollama",
   model,
   variant = "strict_abstention_gate_v1",
@@ -57,6 +63,24 @@ selection controls forwarded to \code{\link{select_clusters}} when
 
 \item{top_n_phi, n_prototype_plots, n_borderline_plots, include_cover}{Evidence
 extraction controls forwarded to \code{\link{cluster_evidence}}.}
+
+\item{semantic_layer}{Logical. If \code{TRUE}, try to enrich each cluster's
+evidence bundle with indicator-derived ecological axes from the optional
+semantic layer built from files under \code{data-raw/external/}. Failures in
+this auxiliary step are recorded in the batch summary and the workflow
+continues with the plain evidence bundle. Default \code{FALSE}.}
+
+\item{semantic_min_phi}{Optional numeric scalar forwarded to
+\code{score_cluster_semantics()}.}
+
+\item{semantic_bootstrap}{Integer bootstrap count for semantic axis
+summaries. Default \code{200}.}
+
+\item{semantic_root}{Optional project root override for the semantic layer.
+By default the semantic helpers use \code{cocktailr_project_root()}.}
+
+\item{semantic_force_species, semantic_force_reference}{Logical refresh flags
+forwarded to \code{score_cluster_semantics()}.}
 
 \item{provider, model, variant, base_url, schema_path, temperature, top_p, seed, num_predict, keep_alive, ollama_options, timeout_sec, max_retries, workflow_steps, log_dir, request_fn}{LLM
 controls forwarded to \code{\link{llm_label_cluster}}.}

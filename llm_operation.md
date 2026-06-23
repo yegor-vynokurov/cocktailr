@@ -103,6 +103,37 @@ run$summary$review_file
 Если при `num_predict = 600` появляется EOF / truncated JSON, увеличьте
 `num_predict` до `1200`.
 
+## Дополнительный semantic layer
+
+При желании можно включить дополнительное evidence-enrichment звено:
+
+```r
+run_sem <- label_clusters(
+  x = res,
+  model = "gemma4:12b",
+  variant = "strict_abstention_gate_v1",
+  workflow_steps = 1,
+  semantic_layer = TRUE,
+  timeout_sec = 600,
+  num_predict = 600
+)
+```
+
+Что это делает:
+
+- перед LLM-вызовом evidence bundle дополняется indicator-derived
+  ecological axes из внешних таблиц EIVE/Tichy
+- эти semantic axes попадают в prompt как дополнительные ecological hints
+- итог `run$summary` показывает, удалось ли enrichment реально собрать:
+  `semantic_layer_used`, `semantic_layer_status`,
+  `semantic_layer_error`
+
+Важно:
+
+- это вспомогательный слой, а не замена основного Cocktail evidence
+- на маленьких моделях типа `phi4-mini` он может добавить полезный
+  контекст, но не гарантирует снятие abstain
+
 ## Что означает speculative fallback
 
 По умолчанию speculative fallback выключен:
