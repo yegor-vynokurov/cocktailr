@@ -41,11 +41,11 @@ res <- cocktail_cluster(
 )
 run <- label_clusters(
   x = res,
-  model = "phi4-mini-4k:latest",
+  model = "gemma4:12b",
   variant = "strict_abstention_gate_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 1200,
+  num_predict = 600,
   labels_for_imgs = TRUE
 )
 ```
@@ -730,7 +730,10 @@ How the main controls are split:
   after a valid strict abstain (`"after_nonaccepted"`).
 - `model`
   Controls the strict first pass only. The current soft-label ladder was
-  developed and tuned primarily on `phi4-mini:latest`.
+  developed and tuned primarily on `phi4-mini:latest`. This does not
+  change the main project recommendation: for ordinary strict labeling,
+  keep `gemma4:12b` as the baseline and treat smaller `phi4` models as
+  experimental.
 - `variant`
   Controls the strict first-pass prompt only. For the current recommended
   strict path, keep `variant = "strict_abstention_gate_v1"`.
@@ -760,6 +763,20 @@ already:
 - `ollama_options = list(num_ctx = 8192)`
 - `num_predict = 2400`
 - `speculative_fallback_v3` first, then `speculative_fallback_v4`
+
+Advanced experimental note:
+
+- constrained fallback variants `speculative_fallback_v8` /
+  `speculative_fallback_v9` can also use an editable coarse vocabulary
+  file
+- if you want to test a dataset-specific label list, set:
+
+```r
+options(
+  cocktailr.cluster_label_vocabulary_path =
+    "path/to/your/custom_vocabulary.json"
+)
+```
 
 Typical display semantics:
 

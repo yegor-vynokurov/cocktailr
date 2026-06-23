@@ -782,6 +782,8 @@ Notes:
 - `speculative_fallback_mode = "after_nonaccepted"` is optional and off by default.
 - In that mode, the strict pass still uses your explicit `model`, `variant`, `timeout_sec`, and `num_predict`.
 - The internal soft ladder is currently benchmarked around `phi4-mini:latest` with `num_ctx = 8192` and `num_predict = 2400`.
+- For ordinary local labeling, `gemma4:12b` remains the recommended baseline.
+- Smaller models such as `phi4-mini` are still experimental for this task: they may lack enough ecological/background knowledge for stable cluster labeling and can fall back to generic labels or abstentions more often.
 - The default saved artifact is a compact markdown review card under `temp/reports/cluster_reviews/`.
 - Raw LLM logs via `log_dir` are optional and not part of the default workflow.
 - For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 600` are safer than lower defaults.

@@ -324,6 +324,33 @@ test_that("label_clusters doubles num_predict after EOF-like failures", {
   expect_false(res$summary$used_placeholder[[1]])
 })
 
+test_that("speculative fallback variants map to stable label-origin families", {
+  expect_equal(
+    cocktailr:::.cluster_label_origin_from_speculative_variant(
+      "speculative_fallback_v3"
+    ),
+    "speculative_v3"
+  )
+  expect_equal(
+    cocktailr:::.cluster_label_origin_from_speculative_variant(
+      "speculative_fallback_v8"
+    ),
+    "speculative_v3"
+  )
+  expect_equal(
+    cocktailr:::.cluster_label_origin_from_speculative_variant(
+      "speculative_fallback_v4"
+    ),
+    "speculative_v4"
+  )
+  expect_equal(
+    cocktailr:::.cluster_label_origin_from_speculative_variant(
+      "speculative_fallback_v9"
+    ),
+    "speculative_v4"
+  )
+})
+
 test_that("label_clusters writes a placeholder review card after bounded failure", {
   x <- .build_label_clusters_test_cocktail()
 
@@ -612,6 +639,63 @@ test_that("label_clusters can continue after strict abstain with the soft-label 
   expect_equal(res$summary$label_origin[[1]], "speculative_v3")
   expect_equal(res$summary$species_entropy_band[[1]], "high")
   expect_equal(res$summary$chaoticity_score[[1]], 70L)
+})
+
+test_that("label_clusters can override speculative ladder prompt variants via option", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_abstain <- .build_label_clusters_abstain_output(ev)
+  out_speculative <- .build_label_clusters_speculative_output(ev)
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$n <- state$n + 1L
+
+    content <- if (state$n == 1L) {
+      jsonlite::toJSON(out_abstain, auto_unbox = TRUE, null = "null")
+    } else {
+      jsonlite::toJSON(out_speculative, auto_unbox = TRUE, null = "null")
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  old_opt <- options(
+    cocktailr.speculative_fallback_variants = c(
+      "speculative_fallback_v6",
+      "speculative_fallback_v7"
+    )
+  )
+  on.exit(options(old_opt), add = TRUE)
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-after-nonaccepted-v6")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "strict_abstention_gate_v1",
+    speculative_fallback_mode = "after_nonaccepted",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$n, 2L)
+  expect_equal(res$summary$label_origin[[1]], "speculative_v3")
+  expect_match(
+    basename(res$results[[1]]$llm_result$prompt$user_path),
+    "user_speculative_fallback_v6\\.md$",
+    perl = TRUE
+  )
 })
 
 test_that("label_clusters escalates from speculative v3 to v4 after soft abstain", {

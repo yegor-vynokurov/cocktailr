@@ -123,7 +123,7 @@ run_spec <- label_clusters(
   model = "gemma4:12b",
   variant = "strict_abstention_gate_v1",
   workflow_steps = 1,
-  speculative_fallback_mode = "after_rejection",
+  speculative_fallback_mode = "after_nonaccepted",
   timeout_sec = 600,
   num_predict = 1200,
   labels_for_imgs = TRUE
@@ -133,14 +133,22 @@ run_spec <- label_clusters(
 Смысл этого режима:
 
 - accepted strict labels остаются обычными accepted labels
-- valid strict abstain остаётся abstain
-- fallback запускается только если strict path иначе закончился бы
-  placeholder / no-valid-label
+- fallback может запускаться не только после placeholder / no-valid-label,
+  но и после валидного strict `abstain`
 - успешный fallback label помечается как speculative и требует human review
 
 Это не “второй основной prompt”.
 
 Это отдельный workflow-слой поверх strict baseline.
+
+Если нужен более узкий legacy-режим, при котором fallback включается
+только после placeholder-ветки, можно вручную использовать
+`speculative_fallback_mode = "after_rejection"`.
+
+Текущая внутренняя fallback-лестница по умолчанию использует сначала
+`speculative_fallback_v3`, затем `speculative_fallback_v4`. Более новые
+варианты `v6-v9` сейчас считаются экспериментальными prompt assets, а
+не пользовательским default.
 
 ## Как speculative labels выглядят снаружи
 
@@ -216,7 +224,10 @@ run <- label_clusters(
 - `qwen3.5:9b-q4_K_M`
   Полезная secondary alternative для сравнений.
 - `phi4-mini`
-  Неплохой вариант для лёгкого smoke-test запуска на более слабой машине.
+  Экспериментальный вариант для лёгкого smoke-test запуска на более
+  слабой машине. Для устойчивого ecological labeling ему может не
+  хватать знаний, поэтому он чаще уходит в generic labels или требует
+  speculative ladder.
 
 Если нужен более подробный разбор моделей и запусков, смотрите
 [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).

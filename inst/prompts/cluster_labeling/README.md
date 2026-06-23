@@ -30,6 +30,8 @@ documentation during runtime.
   Shared system prompt.
 - `user_*_v*.md`
   User prompt templates for specific strategies and prompt revisions.
+- `vocabulary/`
+  Editable coarse label vocabularies for constrained prompt variants.
 
 `llm_label_cluster()` loads `catalog.json`, resolves the referenced
 prompt files, substitutes placeholders, and builds the final structured
@@ -49,12 +51,25 @@ Current placeholders:
 - `{{CLUSTER_ID}}`
 - `{{OUTPUT_SCHEMA_JSON}}`
 - `{{CLUSTER_EVIDENCE_TEXT}}`
+- `{{COARSE_LABEL_VOCABULARY_TEXT}}`
 
 The values come from:
 
 - the `cluster_evidence` object
 - the packaged JSON schema in `inst/schemas/`
 - the internal prompt serializer for evidence
+- an optional coarse label vocabulary asset for constrained variants
+
+The current constrained variants read their vocabulary from
+`vocabulary/coarse_label_vocabulary_core_v1.json` unless you override it
+with:
+
+```r
+options(
+  cocktailr.cluster_label_vocabulary_path =
+    "path/to/your/custom_vocabulary.json"
+)
+```
 
 ## How to add a new prompt variant correctly
 
@@ -161,6 +176,25 @@ more selective in `gray_zone` cases.
   Emergency rescue prompt. It is designed to never leave a cluster
   unlabeled, even if the result is only a very broad heuristic
   orientation label.
+- `speculative_fallback_v6`
+  Phi4-oriented soft rescue prompt. It adds stronger direction-picking
+  instructions and explicit validator-aware wording for coarse habitat
+  labels.
+- `speculative_fallback_v7`
+  Phi4-oriented label-required rescue prompt. It is even more
+  label-forcing than `v6` and is meant as a second rescue rung for small
+  local models.
+- `speculative_fallback_v8`
+  Phi4-oriented constrained soft rescue prompt. It still allows
+  abstention, but if it labels, it must choose from the explicit coarse
+  vocabulary instead of inventing a free-form label. On the current
+  A10.8 phi4 stress run, this improved control but not family accuracy.
+- `speculative_fallback_v9`
+  Phi4-oriented constrained label-required rescue prompt. It is the
+  vocabulary-constrained backup rung and prefers a listed fallback label
+  over open-ended free-form wording. It is useful as an experiment, but
+  is not a recommended default yet because it still collapses heavily
+  toward `Mixed Generalist Assemblage`.
 - `gate_abstain_examples_v1`
   Internal gate-only prompt used by `workflow_steps = 2`. It is not
   meant to be used as the main public label-stage `variant`.
@@ -178,16 +212,20 @@ Speculative fallback is a separate workflow layer, not a normal prompt
 replacement:
 
 - keep `strict_abstention_gate_v1` as the main public label-stage prompt
-- enable `speculative_fallback_mode = "after_rejection"` only when you
-  want tentative orientation labels after strict failure
-- `speculative_fallback_v1` is then used internally as a softer fallback
-  prompt
+- for the broader current fallback path, enable
+  `speculative_fallback_mode = "after_nonaccepted"`
+- the default internal tentative ladder then tries
+  `speculative_fallback_v3` first and escalates to
+  `speculative_fallback_v4` only if needed
+- `speculative_fallback_mode = "after_rejection"` still exists as the
+  narrower compatibility mode when you want fallback labels only after a
+  placeholder-like strict failure
 
 This is separate from `workflow_steps = 2`:
 
 - `workflow_steps = 2` means gate -> label
-- `speculative_fallback_mode = "after_rejection"` means strict failure
-  -> optional tentative fallback label
+- `speculative_fallback_mode = "after_nonaccepted"` means strict
+  abstain or strict failure -> optional tentative fallback label
 
 ## phi4-mini full-context rescue ladder
 
@@ -227,6 +265,22 @@ Practical takeaway for phi4 rescue experiments:
 - treat `speculative_fallback_v5` as an emergency fallback, not a
   quality-oriented default
 
+Later phi4-specific tuning on the two-new-datasets stress run showed a
+different tradeoff:
+
+- `speculative_fallback_v6` and `speculative_fallback_v7`
+  dramatically improved label coverage
+- but they currently over-collapse toward
+  `mixed_generalist_assemblage`-style outputs
+
+So the current reading is:
+
+- `v6` / `v7` are useful experimental rescue prompts for coverage work
+- they are not yet good enough to replace the earlier family-sensitive
+  phi4 rescue prompts as the default speculative pair
+- `v8` / `v9` are the next constrained-vocabulary experiment for phi4:
+  they trade label freedom for a smaller, editable decision space
+
 Short display example:
 
 - accepted label: `c_12: Mixed Deciduous Woodland`
@@ -247,7 +301,7 @@ to keep the default workflow simple, reproducible, and easy to support.
   baseline for cautious one-step labeling.
 - If you need tentative plot-oriented fallback labels, keep this same
   prompt/model/workflow combination and add
-  `speculative_fallback_mode = "after_rejection"` at the
+  `speculative_fallback_mode = "after_nonaccepted"` at the
   `label_clusters()` level rather than swapping out the main prompt.
 
 ### Keep as secondary alternatives

@@ -36,7 +36,8 @@ llm_label_cluster(
 Currently supported label-stage values include
 \code{"concise_label_v1"}, \code{"conservative_interpretation_v1"},
 \code{"abstain_first_v1"}, \code{"strict_abstention_gate_v1"}, and
-the speculative fallback prompt \code{"speculative_fallback_v1"}.}
+the versioned speculative fallback variants
+\code{"speculative_fallback_v1"} to \code{"speculative_fallback_v9"}.}
 
 \item{base_url}{Base URL of the Ollama server.}
 

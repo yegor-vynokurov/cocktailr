@@ -94,6 +94,62 @@ test_that("llm_label_cluster forwards additional Ollama options in dry-run mode"
   expect_equal(req$request$options$num_predict, 1200L)
 })
 
+test_that("llm_label_cluster injects the packaged coarse vocabulary for constrained variants", {
+  ev <- .build_test_cluster_evidence()
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "phi4-mini:latest",
+    variant = "speculative_fallback_v8",
+    dry_run = TRUE
+  )
+
+  expect_true(file.exists(req$prompt$vocabulary_path))
+  expect_match(req$prompt$user, "Allowed coarse label vocabulary:", fixed = TRUE)
+  expect_match(req$prompt$user, "woodland_like_assemblage", fixed = TRUE)
+  expect_match(req$prompt$user, "chaotic_plant_assemblage", fixed = TRUE)
+})
+
+test_that("llm_label_cluster can override the coarse vocabulary via option", {
+  ev <- .build_test_cluster_evidence()
+  vocab_path <- file.path(tempdir(), "cocktailr_custom_vocab.json")
+  jsonlite::write_json(
+    list(
+      vocabulary_version = "test-1",
+      vocabulary_name = "custom_test_vocab",
+      labels = list(
+        list(
+          canonical_label = "custom_transition_label",
+          display_label = "Custom Transition Label",
+          short_description = "Custom broad label for test coverage.",
+          use_when = "Use when the user supplied a custom dataset-specific label list."
+        )
+      )
+    ),
+    vocab_path,
+    auto_unbox = TRUE,
+    pretty = TRUE
+  )
+
+  old_opt <- options(cocktailr.cluster_label_vocabulary_path = vocab_path)
+  on.exit(options(old_opt), add = TRUE)
+  on.exit(unlink(vocab_path, force = TRUE), add = TRUE)
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "phi4-mini:latest",
+    variant = "speculative_fallback_v8",
+    dry_run = TRUE
+  )
+
+  expect_equal(
+    req$prompt$vocabulary_path,
+    normalizePath(vocab_path, winslash = "/", mustWork = TRUE)
+  )
+  expect_match(req$prompt$user, "custom_transition_label", fixed = TRUE)
+  expect_match(req$prompt$user, "Custom Transition Label", fixed = TRUE)
+})
+
 test_that("prompt interpolation preserves replacements at template end", {
   out <- cocktailr:::.replace_fixed_scalar(
     "prefix {{TOKEN}}",

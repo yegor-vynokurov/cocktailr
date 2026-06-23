@@ -6,7 +6,8 @@
   "placeholders": [
     "{{CLUSTER_ID}}",
     "{{OUTPUT_SCHEMA_JSON}}",
-    "{{CLUSTER_EVIDENCE_TEXT}}"
+    "{{CLUSTER_EVIDENCE_TEXT}}",
+    "{{COARSE_LABEL_VOCABULARY_TEXT}}"
   ],
   "default_generation": {
     "temperature": 0.1,
@@ -78,6 +79,36 @@
       "task_type": "label",
       "temperature": 0.15,
       "top_p": 0.95
+    },
+    "speculative_fallback_v6": {
+      "user_prompt_path": "user_speculative_fallback_v6.md",
+      "description": "Phi4-oriented soft rescue prompt that pushes broad family orientation labels while staying validator-aware.",
+      "task_type": "label",
+      "temperature": 0.06,
+      "top_p": 0.9
+    },
+    "speculative_fallback_v7": {
+      "user_prompt_path": "user_speculative_fallback_v7.md",
+      "description": "Phi4-oriented label-required rescue prompt that prefers the safest broad family label over abstention.",
+      "task_type": "label",
+      "temperature": 0.08,
+      "top_p": 0.9
+    },
+    "speculative_fallback_v8": {
+      "user_prompt_path": "user_speculative_fallback_v8.md",
+      "description": "Phi4-oriented constrained soft rescue prompt that must choose from an explicit coarse vocabulary instead of free-form labeling.",
+      "task_type": "label",
+      "temperature": 0.04,
+      "top_p": 0.85,
+      "vocabulary_path": "vocabulary/coarse_label_vocabulary_core_v1.json"
+    },
+    "speculative_fallback_v9": {
+      "user_prompt_path": "user_speculative_fallback_v9.md",
+      "description": "Phi4-oriented constrained label-required rescue prompt that must choose from an explicit coarse vocabulary and prefer a fallback label over abstention.",
+      "task_type": "label",
+      "temperature": 0.05,
+      "top_p": 0.85,
+      "vocabulary_path": "vocabulary/coarse_label_vocabulary_core_v1.json"
     },
     "gate_abstain_examples_v1": {
       "user_prompt_path": "user_gate_abstain_examples_v1.md",

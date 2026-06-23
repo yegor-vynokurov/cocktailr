@@ -139,6 +139,133 @@
   normalizePath(path, winslash = "/", mustWork = TRUE)
 }
 
+# The constrained phi4-oriented prompt variants can optionally read a
+# user-supplied coarse label vocabulary. Keeping this in prompt assembly,
+# rather than inside the LLM workflow file, makes prompt assets easier to test
+# and swap without touching the control-flow code.
+.cluster_label_vocabulary_override_path <- function() {
+  path <- getOption("cocktailr.cluster_label_vocabulary_path", NULL)
+  if (is.null(path)) {
+    return(NULL)
+  }
+
+  .arg_scalar_character(
+    path,
+    'getOption("cocktailr.cluster_label_vocabulary_path")'
+  )
+}
+
+.resolve_cluster_label_vocabulary_path <- function(catalog, variant_def) {
+  override_path <- .cluster_label_vocabulary_override_path()
+
+  if (!is.null(override_path)) {
+    resolved <- .resolve_cocktailr_output_path(override_path)
+    if (!file.exists(resolved)) {
+      stop(
+        "The configured coarse label vocabulary file does not exist: ",
+        override_path
+      )
+    }
+
+    return(normalizePath(resolved, winslash = "/", mustWork = TRUE))
+  }
+
+  rel_path <- variant_def$vocabulary_path %||% NULL
+  if (is.null(rel_path)) {
+    return(NULL)
+  }
+
+  .cluster_label_prompt_asset_path(catalog, rel_path)
+}
+
+.render_cluster_label_vocabulary_text <- function(vocabulary) {
+  labels <- vocabulary$labels %||% NULL
+  if (!is.list(labels) || !length(labels)) {
+    stop(
+      "The coarse label vocabulary must define a non-empty `labels` list."
+    )
+  }
+
+  lines <- c(
+    paste0(
+      "Vocabulary name: ",
+      .null_default(
+        .as_scalar_character(vocabulary$vocabulary_name),
+        "coarse_label_vocabulary"
+      )
+    ),
+    paste0(
+      "Vocabulary version: ",
+      .null_default(
+        .as_scalar_character(vocabulary$vocabulary_version),
+        "unknown"
+      )
+    ),
+    "Allowed labels:",
+    ""
+  )
+
+  for (i in seq_along(labels)) {
+    label <- labels[[i]]
+    canonical <- .as_scalar_character(label$canonical_label)
+    display <- .as_scalar_character(label$display_label)
+    description <- .as_scalar_character(label$short_description)
+    use_when <- .as_scalar_character(label$use_when)
+
+    if (is.na(canonical) || !nzchar(canonical)) {
+      stop("Vocabulary label #", i, " is missing `canonical_label`.")
+    }
+    if (is.na(display) || !nzchar(display)) {
+      stop("Vocabulary label `", canonical, "` is missing `display_label`.")
+    }
+    if (is.na(description) || !nzchar(description)) {
+      stop(
+        "Vocabulary label `",
+        canonical,
+        "` is missing `short_description`."
+      )
+    }
+
+    lines <- c(
+      lines,
+      paste0("- `", canonical, "` -> `", display, "`: ", description)
+    )
+
+    if (!is.na(use_when) && nzchar(use_when)) {
+      lines <- c(lines, paste0("  Use when: ", use_when))
+    }
+  }
+
+  paste(lines, collapse = "\n")
+}
+
+.read_cluster_label_vocabulary <- function(catalog, variant_def) {
+  path <- .resolve_cluster_label_vocabulary_path(catalog, variant_def)
+
+  if (is.null(path)) {
+    return(list(
+      path = NULL,
+      text = NULL,
+      parsed = NULL,
+      rendered = ""
+    ))
+  }
+
+  text <- .read_text_file(path)
+  parsed <- jsonlite::fromJSON(text, simplifyVector = FALSE)
+
+  if (!is.list(parsed) || is.null(parsed$labels)) {
+    stop("The coarse label vocabulary file is malformed: ", path)
+  }
+
+  list(
+    path = path,
+    text = text,
+    parsed = parsed,
+    rendered = .render_cluster_label_vocabulary_text(parsed)
+  )
+}
+
 .build_cluster_label_prompt <- function(
     evidence,
     variant,
@@ -162,6 +289,7 @@
 
   schema <- .read_cluster_label_schema(schema_path)
   evidence_text <- .format_cluster_evidence_prompt(evidence)
+  vocabulary <- .read_cluster_label_vocabulary(catalog, variant_def)
   system_prompt_path <- .cluster_label_prompt_asset_path(
     catalog,
     catalog_def$system_prompt_path
@@ -174,7 +302,8 @@
   template_values <- list(
     "{{CLUSTER_ID}}" = evidence$meta$cluster_id,
     "{{OUTPUT_SCHEMA_JSON}}" = schema$text,
-    "{{CLUSTER_EVIDENCE_TEXT}}" = evidence_text
+    "{{CLUSTER_EVIDENCE_TEXT}}" = evidence_text,
+    "{{COARSE_LABEL_VOCABULARY_TEXT}}" = vocabulary$rendered %||% ""
   )
 
   system_content <- .interpolate_prompt_template(
@@ -202,6 +331,9 @@
     schema_required = schema$required,
     schema_object = schema$parsed,
     evidence_text = evidence_text,
+    vocabulary_path = vocabulary$path,
+    vocabulary_text = vocabulary$rendered,
+    vocabulary_object = vocabulary$parsed,
     system_path = system_prompt_path,
     user_path = user_prompt_path,
     system = system_content,
@@ -265,11 +397,21 @@
   "gate_abstain_examples_v1"
 }
 
-.default_cluster_label_speculative_variant <- function() {
-  "speculative_fallback_v3"
-}
-
 .default_cluster_label_speculative_variants <- function() {
+  opt <- getOption("cocktailr.speculative_fallback_variants", NULL)
+
+  if (!is.null(opt)) {
+    if (!is.character(opt) || !length(opt) || any(is.na(opt)) || any(!nzchar(opt))) {
+      stop(
+        "getOption(\"cocktailr.speculative_fallback_variants\") must be NULL ",
+        "or a non-empty character vector of prompt variant IDs.",
+        call. = FALSE
+      )
+    }
+
+    return(unname(opt))
+  }
+
   c("speculative_fallback_v3", "speculative_fallback_v4")
 }
 

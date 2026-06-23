@@ -24,8 +24,9 @@
 #' @param variant Character scalar naming the label-stage prompt variant from
 #'   the packaged prompt catalog. Current label-stage values include
 #'   \code{"concise_label_v1"}, \code{"conservative_interpretation_v1"},
-#'   \code{"abstain_first_v1"}, \code{"strict_abstention_gate_v1"}, and
-#'   the speculative fallback prompt \code{"speculative_fallback_v1"}.
+#'   \code{"abstain_first_v1"}, \code{"strict_abstention_gate_v1"}, and the
+#'   versioned speculative fallback variants
+#'   \code{"speculative_fallback_v1"} to \code{"speculative_fallback_v9"}.
 #' @param base_url Character scalar. Base URL of the Ollama server. Default
 #'   reads \code{getOption("cocktailr.ollama_base_url", "http://localhost:11434")}.
 #' @param schema_path Optional path to a JSON schema file. By default the

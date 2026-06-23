@@ -1560,19 +1560,40 @@ label_clusters <- function(
   validation$missing_for_confidence_text <- .speculative_missing_for_confidence_text(
     validation$output %||% list()
   )
-  label_origin <- switch(
-    .as_scalar_character(speculative_variant),
-    speculative_fallback_v3 = "speculative_v3",
-    speculative_fallback_v4 = "speculative_v4",
-    "speculative_v3"
-  )
   validation <- .attach_cluster_label_difficulty_profile(
     validation = validation,
     cluster_score = cluster_score,
-    label_origin = label_origin
+    label_origin = .cluster_label_origin_from_speculative_variant(
+      speculative_variant
+    )
   )
   class(validation) <- "cluster_label_validation"
   validation
+}
+
+# The speculative ladder is allowed to evolve by adding new versioned variants.
+# Centralizing the "soft" vs "label-required" grouping avoids scattering manual
+# switch statements across the workflow code as the ladder grows.
+.cluster_label_origin_from_speculative_variant <- function(speculative_variant) {
+  speculative_variant <- .as_scalar_character(speculative_variant)
+
+  if (speculative_variant %in% c(
+    "speculative_fallback_v3",
+    "speculative_fallback_v6",
+    "speculative_fallback_v8"
+  )) {
+    return("speculative_v3")
+  }
+
+  if (speculative_variant %in% c(
+    "speculative_fallback_v4",
+    "speculative_fallback_v7",
+    "speculative_fallback_v9"
+  )) {
+    return("speculative_v4")
+  }
+
+  "speculative_v3"
 }
 
 .run_speculative_fallback_cluster_label <- function(

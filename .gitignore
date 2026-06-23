@@ -8,3 +8,4 @@
 *.Rcheck/
 Thumbs.db
 temp/
+data-raw
