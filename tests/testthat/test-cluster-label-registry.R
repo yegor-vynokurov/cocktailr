@@ -177,7 +177,7 @@ test_that("cluster_label_registry flattens label_clusters output into plotting-r
     x = x,
     clusters = c("c_1", "c_2"),
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     review_dir = review_dir,
     verbose = FALSE,
@@ -209,7 +209,7 @@ test_that("cluster_label_registry flattens label_clusters output into plotting-r
   expect_true(row1$accepted_label[[1]])
   expect_equal(row1$review_status[[1]], "accepted")
   expect_equal(row1$model[[1]], "fake-model")
-  expect_equal(row1$variant[[1]], "strict_abstention_gate_v1")
+  expect_equal(row1$variant[[1]], "label_primary_v1")
   expect_equal(row1$workflow_steps[[1]], 1L)
   expect_true(file.exists(row1$review_file[[1]]))
 
@@ -267,7 +267,7 @@ test_that("cluster_label_registry carries speculative plotting metadata", {
   llm1 <- list(
     provider = "ollama",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     workflow_steps = 1L,
     output = out1
   )
@@ -334,3 +334,4 @@ test_that("cluster_label_registry carries speculative plotting metadata", {
   expect_equal(row2$strict_validation_status[[1]], "unsupported_claims")
   expect_match(row2$missing_for_confidence_text[[1]], "not confirmed", ignore.case = TRUE)
 })
+

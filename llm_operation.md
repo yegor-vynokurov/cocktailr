@@ -80,10 +80,10 @@ res <- cocktail_cluster(
 run <- label_clusters(
   x = res,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 600
+  num_predict = 2400
 )
 
 run$summary
@@ -95,13 +95,59 @@ run$summary$review_file
 Для обычного первого запуска сейчас рекомендуется:
 
 - модель: `gemma4:12b`
-- prompt variant: `strict_abstention_gate_v1`
+- prompt variant: `label_primary_v1`
 - workflow: `workflow_steps = 1`
 - safer first-run settings:
-  `timeout_sec = 600`, `num_predict = 600`
+  `timeout_sec = 600`, `num_predict = 2400`
 
-Если при `num_predict = 600` появляется EOF / truncated JSON, увеличьте
-`num_predict` до `1200`.
+Если строгий проход всё ещё упирается в EOF / truncated JSON, `label_clusters()`
+автоматически попробует `num_predict = 4800`, а затем `9600`.
+
+Если модель начинает путать короткий label с длинным объяснением, полезно
+переключиться на:
+
+- `workflow_steps = 3`
+
+Этот режим сначала делает свободный draft-analysis, потом отдельно выбирает
+короткий label через каскад `primary -> soft -> broad`, и только после этого
+генерирует итоговое structured explanation. Для более слабых локальных моделей
+это часто устойчивее, чем пытаться получить и label, и explanation за один шаг.
+
+Если весь Stage-B каскад `primary -> soft -> broad` исчерпан, workflow теперь
+не тратит ещё один LLM-вызов на explanation pass. Вместо этого он
+детерминированно завершает run broad fallback-лейблом `chaotic cluster` и
+сразу помечает такой результат как требующий human review.
+
+Дополнительно теперь есть общий переключатель пространства меток:
+
+- `label_mode = "open"`
+  Свободное лейблирование, текущий default.
+- `label_mode = "constrained"`
+  Модель обязана выбирать label из coarse vocabulary. Если не задавать свой
+  словарь, используется packaged vocabulary по умолчанию.
+- `label_mode = "dynamic"`
+  Работает вместе с `workflow_steps = 3`: Stage A сначала предлагает candidate
+  labels, а Stage B старается переиспользовать именно их.
+
+Для собственного constrained vocabulary можно задать:
+
+```r
+options(
+  cocktailr.cluster_label_vocabulary_path =
+    "path/to/your/custom_cluster_label_vocabulary.json"
+)
+```
+
+Важно для миграции prompt-слоя:
+
+- публично поддерживаются только `label_primary_v1`,
+  `label_soft_v1`, `label_broad_v1`
+- старые versioned prompt IDs всё ещё принимаются как compatibility
+  aliases, но больше не являются отдельными рекомендуемыми режимами
+- архивные копии retired prompt texts лежат локально в
+  `temp/prompt_archive/cluster_labeling/`
+- внутренние service prompts вынесены в
+  `inst/prompts/internal_cluster_labeling/`
 
 ## Дополнительный semantic layer
 
@@ -111,11 +157,11 @@ run$summary$review_file
 run_sem <- label_clusters(
   x = res,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   semantic_layer = TRUE,
   timeout_sec = 600,
-  num_predict = 600
+  num_predict = 2400
 )
 ```
 
@@ -152,11 +198,11 @@ strict result или abstain.
 run_spec <- label_clusters(
   x = res,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   speculative_fallback_mode = "after_nonaccepted",
   timeout_sec = 600,
-  num_predict = 1200,
+  num_predict = 2400,
   labels_for_imgs = TRUE
 )
 ```
@@ -177,7 +223,7 @@ run_spec <- label_clusters(
 `speculative_fallback_mode = "after_rejection"`.
 
 Текущая внутренняя fallback-лестница по умолчанию использует сначала
-`speculative_fallback_v3`, затем `speculative_fallback_v4`. Более новые
+`label_soft_v1`, затем `label_broad_v1`. Более новые
 варианты `v6-v9` сейчас считаются экспериментальными prompt assets, а
 не пользовательским default.
 
@@ -213,10 +259,10 @@ run_plot <- label_clusters(
   x = res,
   clusters = c("c_12", "c_26"),
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 1200,
+  num_predict = 2400,
   labels_for_imgs = TRUE
 )
 ```
@@ -241,10 +287,10 @@ ollama pull qwen3.5:9b-q4_K_M
 run <- label_clusters(
   x = res,
   model = "qwen3.5:9b-q4_K_M",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 600
+  num_predict = 2400
 )
 ```
 
@@ -297,10 +343,11 @@ pkgload::load_all("D:/documents/coctrailr/cocktailr")
 
 ```r
 timeout_sec = 600
-num_predict = 600
+num_predict = 2400
 ```
 
-Если ответа всё ещё не хватает, увеличьте `num_predict` до `1200`.
+Если ответа всё ещё не хватает, дайте strict-pass дойти до автоматической
+лестницы `4800 -> 9600`.
 
 ### EOF / truncated JSON
 
@@ -310,7 +357,8 @@ num_predict = 600
 Первая практическая реакция:
 
 - оставить `timeout_sec = 600`
-- увеличить `num_predict` до `1200`
+- начать с `num_predict = 2400`
+- если strict-pass снова обрывается по EOF, дождаться автоматических ретраев на `4800` и `9600`
 
 ### Не удаётся подключиться к Ollama
 

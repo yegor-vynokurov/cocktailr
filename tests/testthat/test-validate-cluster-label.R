@@ -180,6 +180,76 @@ test_that("validate_cluster_label flags habitat overreach without explicit separ
   expect_true(any(val$issues$code == "unsupported_habitat_overreach"))
 })
 
+test_that("cluster label schema asset encodes label length and format limits", {
+  schema_path <- cocktailr:::.package_asset_path("schemas", "cluster_label_output_schema.json")
+  schema <- jsonlite::read_json(
+    schema_path,
+    simplifyVector = FALSE
+  )
+
+  expect_equal(schema$properties$canonical_label$maxLength, 64)
+  expect_equal(schema$properties$display_label$maxLength, 80)
+  expect_equal(
+    schema$properties$display_label$pattern,
+    "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$)\\S+(?:\\s+\\S+){0,5}$"
+  )
+})
+
+test_that("validate_cluster_label rejects overly long canonical labels", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$canonical_label <- paste(rep("a", 65), collapse = "")
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "canonical_label_too_long"))
+})
+
+test_that("validate_cluster_label rejects overly long display labels", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$display_label <- paste(rep("a", 81), collapse = "")
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "display_label_too_long"))
+})
+
+test_that("validate_cluster_label rejects display labels with too many words", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$display_label <- "one two three four five six seven"
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "display_label_too_many_words"))
+})
+
+test_that("validate_cluster_label rejects forbidden punctuation in display labels", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$display_label <- "woodland, edge"
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "display_label_forbidden_punctuation"))
+})
+
+test_that("validate_cluster_label rejects display labels with a trailing period", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$display_label <- "Woodland Edge."
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "display_label_trailing_period"))
+})
+
 test_that("validate_cluster_label recognizes a clean abstention output", {
   ev <- .build_validation_test_cluster_evidence()
 

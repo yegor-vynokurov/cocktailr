@@ -251,6 +251,17 @@ validate_cluster_label <- function(x, evidence) {
         "canonical_label must use lowercase snake_case.",
         "canonical_label"
       )
+    } else if (nchar(canonical_label, type = "chars") > .cluster_label_max_canonical_length()) {
+      add_issue(
+        "error",
+        "schema",
+        "canonical_label_too_long",
+        sprintf(
+          "canonical_label must be at most %d characters long.",
+          .cluster_label_max_canonical_length()
+        ),
+        "canonical_label"
+      )
     }
     if (!.is_non_empty_scalar_character(display_label)) {
       add_issue(
@@ -260,6 +271,55 @@ validate_cluster_label <- function(x, evidence) {
         "Labeled outputs must provide a non-empty display_label.",
         "display_label"
       )
+    } else {
+      display_label_trimmed <- trimws(display_label)
+      display_word_count <- .cluster_label_word_count(display_label_trimmed)
+
+      if (nchar(display_label_trimmed, type = "chars") > .cluster_label_max_display_length()) {
+        add_issue(
+          "error",
+          "schema",
+          "display_label_too_long",
+          sprintf(
+            "display_label must be at most %d characters long.",
+            .cluster_label_max_display_length()
+          ),
+          "display_label"
+        )
+      }
+
+      if (display_word_count > .cluster_label_max_display_words()) {
+        add_issue(
+          "error",
+          "schema",
+          "display_label_too_many_words",
+          sprintf(
+            "display_label must contain at most %d words.",
+            .cluster_label_max_display_words()
+          ),
+          "display_label"
+        )
+      }
+
+      if (grepl(.cluster_label_forbidden_display_punctuation_pattern(), display_label_trimmed, perl = TRUE)) {
+        add_issue(
+          "error",
+          "schema",
+          "display_label_forbidden_punctuation",
+          "display_label must not contain commas or brackets.",
+          "display_label"
+        )
+      }
+
+      if (grepl("\\.$", display_label_trimmed, perl = TRUE)) {
+        add_issue(
+          "error",
+          "schema",
+          "display_label_trailing_period",
+          "display_label must not end with a period.",
+          "display_label"
+        )
+      }
     }
     if (!is.null(abstain_reason)) {
       add_issue(
@@ -1001,6 +1061,36 @@ print.cluster_label_validation <- function(x, ...) {
       )
     }
   }
+}
+
+.cluster_label_max_canonical_length <- function() {
+  64L
+}
+
+.cluster_label_max_display_length <- function() {
+  80L
+}
+
+.cluster_label_max_display_words <- function() {
+  6L
+}
+
+.cluster_label_forbidden_display_punctuation_pattern <- function() {
+  "[,()\\[\\]]"
+}
+
+.cluster_label_word_count <- function(x) {
+  x <- .as_scalar_character(x)
+  if (is.na(x)) {
+    return(NA_integer_)
+  }
+
+  x <- trimws(x)
+  if (!nzchar(x)) {
+    return(0L)
+  }
+
+  length(strsplit(x, "\\s+", perl = TRUE)[[1]])
 }
 
 .compute_cluster_label_evidence_coverage <- function(basis_validation, key_species_validation) {

@@ -184,6 +184,56 @@
   parsed
 }
 
+.parse_cluster_label_selection_json <- function(content, required_fields, cluster_id) {
+  parsed <- jsonlite::fromJSON(content, simplifyVector = FALSE)
+
+  if (!is.list(parsed) || is.null(names(parsed))) {
+    stop("LLM label-selection output did not parse to a JSON object.")
+  }
+
+  missing_fields <- setdiff(required_fields, names(parsed))
+  if (length(missing_fields)) {
+    stop(
+      "LLM label-selection output is missing required top-level fields: ",
+      paste(missing_fields, collapse = ", "),
+      "."
+    )
+  }
+
+  if (!identical(parsed$cluster_id, cluster_id)) {
+    stop(
+      "LLM label-selection output returned cluster_id = '",
+      parsed$cluster_id,
+      "' but expected '",
+      cluster_id,
+      "'."
+    )
+  }
+
+  if (!identical(parsed$status, "labeled") &&
+      !identical(parsed$status, "abstain")) {
+    stop(
+      "LLM label-selection output must set `status` to either ",
+      "'labeled' or 'abstain'."
+    )
+  }
+
+  parsed
+}
+
+.parse_cluster_label_draft_text <- function(content, cluster_id) {
+  content <- .as_scalar_character(content)
+  if (is.na(content) || !nzchar(trimws(content))) {
+    stop("LLM draft-analysis output must be non-empty text.")
+  }
+
+  list(
+    cluster_id = cluster_id,
+    status = "draft_ready",
+    draft_analysis = trimws(content)
+  )
+}
+
 .init_cluster_label_logs <- function(log_dir, cluster_id, model, variant) {
   if (is.null(log_dir)) {
     return(list(
@@ -277,6 +327,20 @@
   )
 }
 
+.cluster_label_workflow_stage_names <- function(workflow_steps) {
+  workflow_steps <- .arg_workflow_steps(workflow_steps, "workflow_steps")
+
+  if (identical(workflow_steps, 2L)) {
+    return(c("gate", "label"))
+  }
+
+  if (identical(workflow_steps, 3L)) {
+    return(c("draft", "label", "explanation"))
+  }
+
+  "label"
+}
+
 .init_cluster_label_workflow_logs <- function(
     log_dir,
     cluster_id,
@@ -284,6 +348,8 @@
     variant,
     workflow_steps
 ) {
+  stage_names <- .cluster_label_workflow_stage_names(workflow_steps)
+
   if (is.null(log_dir)) {
     return(list(
       dir = NULL,
@@ -293,9 +359,9 @@
       metadata = NULL,
       output = NULL,
       error = NULL,
-      stages = list(
-        gate = .null_stage_log_paths(),
-        label = .null_stage_log_paths()
+      stages = stats::setNames(
+        lapply(stage_names, function(...) .null_stage_log_paths()),
+        stage_names
       )
     ))
   }
@@ -328,9 +394,17 @@
     metadata = file.path(run_dir, "metadata.json"),
     output = file.path(run_dir, "parsed_output.json"),
     error = file.path(run_dir, "error.txt"),
-    stages = list(
-      gate = .stage_log_paths(file.path(run_dir, "stage1_gate"), started_at = started_at),
-      label = .stage_log_paths(file.path(run_dir, "stage2_label"), started_at = started_at)
+    stages = stats::setNames(
+      lapply(seq_along(stage_names), function(i) {
+        .stage_log_paths(
+          file.path(
+            run_dir,
+            paste0("stage", i, "_", stage_names[[i]])
+          ),
+          started_at = started_at
+        )
+      }),
+      stage_names
     )
   )
 }

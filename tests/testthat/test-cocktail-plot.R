@@ -193,7 +193,7 @@ test_that("cocktail_plot accepts a label registry and still writes a png", {
     x = x,
     clusters = c("c_1", "c_2"),
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     review_dir = review_dir,
     labels_for_imgs = TRUE,
@@ -259,7 +259,7 @@ test_that("cocktail_plot can auto-load a saved label registry", {
     x = x,
     clusters = c("c_1", "c_2"),
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     labels_for_imgs = TRUE,
     verbose = FALSE,
@@ -303,9 +303,11 @@ test_that("auto-loaded speculative registries preserve starred labels", {
       regexpr("c_[0-9]+", payload$messages[[2]]$content, perl = TRUE)
     )
     cluster_id <- if (length(cluster_id_match)) cluster_id_match[[1]] else NA_character_
-    is_speculative <- any(vapply(payload$messages, function(msg) {
-      grepl("SPECULATIVE FALLBACK PASS", msg$content, fixed = TRUE)
-    }, logical(1)))
+    is_speculative <- identical(payload$model %||% NA_character_, "phi4-mini:latest") ||
+      any(vapply(payload$messages, function(msg) {
+        grepl("Task mode: `label_soft_v1`", msg$content, fixed = TRUE) ||
+          grepl("Task mode: `label_broad_v1`", msg$content, fixed = TRUE)
+      }, logical(1)))
 
     content <- if (identical(cluster_id, "c_1")) {
       jsonlite::toJSON(out1, auto_unbox = TRUE, null = "null")
@@ -333,7 +335,7 @@ test_that("auto-loaded speculative registries preserve starred labels", {
     x = x,
     clusters = c("c_1", "c_2"),
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     speculative_fallback_mode = "after_rejection",
     timeout_sec = 1,
     labels_for_imgs = TRUE,
@@ -444,7 +446,7 @@ test_that("label_hclust_leaves can auto-load a saved registry", {
     x = x,
     clusters = c("c_1", "c_2"),
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     labels_for_imgs = TRUE,
     verbose = FALSE,
@@ -546,7 +548,7 @@ test_that("cluster_hclust_plot can auto-load saved labels in one call", {
     x = x,
     clusters = c("c_1", "c_2"),
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     labels_for_imgs = TRUE,
     verbose = FALSE,
@@ -570,3 +572,4 @@ test_that("cluster_hclust_plot can auto-load saved labels in one call", {
   expect_true(file.exists(out_file))
   expect_equal(res$hclust_plot$labels, c("label for c_1", "label for c_2"))
 })
+

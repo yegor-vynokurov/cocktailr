@@ -682,10 +682,10 @@ run <- label_clusters(
   x = res,
   clusters = strong_labels[1],
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 600
+  num_predict = 2400
 )
 
 run$summary
@@ -712,10 +712,10 @@ run_plot <- label_clusters(
   x = res,
   clusters = plot_clusters,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 1200,
+  num_predict = 2400,
   labels_for_imgs = TRUE
 )
 
@@ -742,11 +742,11 @@ run_spec <- label_clusters(
   x = res,
   clusters = plot_clusters,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   speculative_fallback_mode = "after_nonaccepted",
   timeout_sec = 600,
-  num_predict = 1200,
+  num_predict = 2400,
   labels_for_imgs = TRUE
 )
 
@@ -756,8 +756,8 @@ run_spec$summary[, c("cluster", "run_status", "label_tier", "review_status")]
 In that mode, accepted labels remain unchanged. If the strict pass abstains
 or would otherwise end in the placeholder branch, `label_clusters()` starts
 an internal soft-label ladder tuned on `phi4-mini:latest`: it tries
-`speculative_fallback_v3` first, then escalates to the more label-forcing
-`speculative_fallback_v4`. Tentative fallback labels appear with `*` in plot
+`label_soft_v1` first, then escalates to the more label-forcing
+`label_broad_v1`. Tentative fallback labels appear with `*` in plot
 legends or `hclust` leaf labels, for example:
 
 - accepted: `c_12: Mixed Deciduous Woodland`
@@ -773,12 +773,15 @@ Recommended defaults for the current MVP labeling workflow:
 - `species_cluster_phi = TRUE`
 - `save_vegmatrix = TRUE`
 - `model = "gemma4:12b"`
-- `variant = "strict_abstention_gate_v1"`
+- `variant = "label_primary_v1"`
 - `workflow_steps = 1`
 
 Notes:
 
 - If you omit `clusters`, `label_clusters()` processes up to the first 10 clusters selected by score.
+- `workflow_steps = 3` is available when a weaker model tends to turn the label itself into a paragraph; it splits the run into draft analysis, short-label selection, and explanation.
+- If that Stage-B selection cascade fully exhausts `label_primary_v1 -> label_soft_v1 -> label_broad_v1`, the workflow now stops cleanly with a deterministic review-needed fallback label `chaotic cluster` instead of spending one more fragile LLM call on explanation generation.
+- `label_mode = "open"` is the default. Switch to `label_mode = "constrained"` when a small model should choose from the packaged coarse vocabulary, or use `label_mode = "dynamic"` together with `workflow_steps = 3` when Stage B should reuse candidate labels proposed by Stage A.
 - `speculative_fallback_mode = "after_nonaccepted"` is optional and off by default.
 - In that mode, the strict pass still uses your explicit `model`, `variant`, `timeout_sec`, and `num_predict`.
 - The internal soft ladder is currently benchmarked around `phi4-mini:latest` with `num_ctx = 8192` and `num_predict = 2400`.
@@ -788,8 +791,12 @@ Notes:
 - That semantic step uses an auxiliary Excel reader (`readxl` if available, otherwise the packaged `xml2` fallback path). If enrichment cannot be built, `label_clusters()` records the outcome in `summary$semantic_layer_status` and continues with the plain evidence bundle.
 - The default saved artifact is a compact markdown review card under `temp/reports/cluster_reviews/`.
 - Raw LLM logs via `log_dir` are optional and not part of the default workflow.
-- For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 600` are safer than lower defaults.
-- If `num_predict = 600` causes an EOF-like truncation error, increase it to `1200` or higher.
+- Public prompt selection is intentionally small now: use only `label_primary_v1`, `label_soft_v1`, or `label_broad_v1`; older prompt IDs are compatibility aliases, and retired prompt texts live locally under `temp/prompt_archive/cluster_labeling/`.
+- For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 2400` are the current recommended strict-pass settings.
+- If the strict pass still hits an EOF-like truncation error, `label_clusters()` now retries automatically at `4800` and then `9600`.
+- Final prompt messages are budget-aware by default: `prompt_budget_chars = 10000`, with lower-priority evidence blocks trimmed first if needed.
+- The JSON schema is still enforced, but it is now passed through the structured-output `format` field rather than embedded verbatim inside the prompt text.
+- If validation fails only because label fields are too long or use forbidden punctuation, `label_clusters()` now runs a lightweight repair pass that edits the parsed JSON without resending the full evidence bundle.
 
 If you want to inspect the evidence object directly before any LLM call:
 
@@ -817,10 +824,10 @@ run_syn <- label_clusters(
   x = res_syn,
   clusters = "c_1",
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 600
+  num_predict = 2400
 )
 ```
 

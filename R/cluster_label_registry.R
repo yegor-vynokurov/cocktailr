@@ -29,6 +29,8 @@
 #'     \item{review_status, validation_status, output_status}{Review and validation summaries.}
 #'     \item{review_file, review_metadata_file}{Saved review-card artifact paths, when present.}
 #'     \item{model, variant, workflow_steps}{Prompt / model provenance.}
+#'     \item{selected_label_variant, label_stage_exhausted}{Resolved stage-B rung
+#'       and whether the public selection cascade was fully exhausted.}
 #'     \item{dataset_type, dataset_label, dataset_path}{Dataset provenance carried through evidence extraction.}
 #'   }
 #'
@@ -38,7 +40,7 @@
 #'   x = res,
 #'   clusters = c("c_12", "c_27"),
 #'   model = "gemma4:12b",
-#'   variant = "strict_abstention_gate_v1"
+#'   variant = "label_primary_v1"
 #' )
 #'
 #' reg <- cluster_label_registry(run)
@@ -201,6 +203,9 @@ cluster_label_registry <- function(x) {
     model = character(),
     variant = character(),
     workflow_steps = integer(),
+    selected_label_variant = character(),
+    label_stage_exhausted = logical(),
+    label_stage_failure_reason = character(),
     gate_variant = character(),
     gate_decision = character(),
     prompt_catalog_path = character(),
@@ -338,6 +343,13 @@ cluster_label_registry <- function(x) {
     model = .cluster_label_registry_character(provenance$model),
     variant = .cluster_label_registry_character(provenance$variant),
     workflow_steps = .cluster_label_registry_integer(provenance$workflow_steps),
+    selected_label_variant = .cluster_label_registry_character(
+      provenance$selected_label_variant
+    ),
+    label_stage_exhausted = isTRUE(provenance$label_stage_exhausted),
+    label_stage_failure_reason = .cluster_label_registry_character(
+      provenance$label_stage_failure_reason
+    ),
     gate_variant = .cluster_label_registry_character(provenance$gate_variant),
     gate_decision = .cluster_label_registry_character(provenance$gate_decision),
     prompt_catalog_path = .cluster_label_registry_character(provenance$prompt_catalog_path),

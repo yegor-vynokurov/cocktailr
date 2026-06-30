@@ -22,7 +22,7 @@ It:
 - generates a synthetic dataset
 - runs Cocktail clustering
 - labels the top score-ranked clusters with the current default
-  `gemma4:12b` + `strict_abstention_gate_v1` + `workflow_steps = 1`
+  `gemma4:12b` + `label_primary_v1` + `workflow_steps = 1`
 - saves compact markdown review cards under
   `temp/reports/cluster_reviews/`
 
@@ -42,10 +42,10 @@ res <- cocktail_cluster(
 run <- label_clusters(
   x = res,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 600,
+  num_predict = 2400,
   labels_for_imgs = TRUE
 )
 ```
@@ -62,9 +62,13 @@ The current default recommendation is:
 
 - one-step workflow: `workflow_steps = 1`
 - model: `gemma4:12b`
-- prompt variant: `strict_abstention_gate_v1`
+- prompt variant: `label_primary_v1`
 - safer first-run overrides on unknown local hardware:
-  `timeout_sec = 600`, `num_predict = 600` (or 1200 if we have EOF error)
+  `timeout_sec = 600`, `num_predict = 2400`
+- if the model tends to turn the label itself into a paragraph, try the
+  staged mode: `workflow_steps = 3`
+- if a weaker model needs a narrower decision space, try
+  `label_mode = "constrained"`
 - final saved artifact: compact markdown review card under
   dataset-aware subfolders of `temp/reports/cluster_reviews/`
 - no `log_dir` by default
@@ -396,10 +400,10 @@ The current default recommendation is one-step labeling:
 ans <- llm_label_cluster(
   evidence = ev,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 1200
+  num_predict = 2400
 )
 ```
 
@@ -413,11 +417,11 @@ What this does:
 Why these extra arguments are recommended for the first real run:
 
 - the package-level defaults are stricter: `timeout_sec = 120` and
-  `num_predict = 1200`
+  `num_predict = 2400`
 - on slower local hardware, the model may need more than 120 seconds to
   finish one structured response
-- reducing `num_predict` while increasing `timeout_sec` is often a safer
-  starting point than using the built-in defaults immediately
+- keeping `num_predict = 2400` while increasing `timeout_sec` is often a
+  safer starting point than falling back to the short default timeout
 
 Short troubleshooting note:
 
@@ -427,7 +431,43 @@ Short troubleshooting note:
   timeout
 - this is usually a local Ollama performance or model-loading issue,
   not a `cluster_evidence()` issue
-- first try: `timeout_sec = 600` and `num_predict = 600` (or num_predict = 1200 if we have EOF error)
+- first try: `timeout_sec = 600` and `num_predict = 2400`
+- if structured output still hits EOF, `label_clusters()` now retries
+  automatically at `4800` and then `9600`
+
+## 9A. Run Three-Step Labeling (Optional)
+
+If the model tends to blur the short label together with the explanation,
+you can switch to the staged workflow:
+
+```r
+ans <- llm_label_cluster(
+  evidence = ev,
+  model = "gemma4:12b",
+  variant = "label_primary_v1",
+  workflow_steps = 3,
+  label_mode = "dynamic",
+  timeout_sec = 600,
+  num_predict = 2400
+)
+```
+
+What changes in this mode:
+
+- stage A writes a freeform draft analysis without the final JSON schema
+- stage B runs a short-label selection cascade:
+  `label_primary_v1 -> label_soft_v1 -> label_broad_v1`
+- stage C writes the final structured explanation while keeping the selected
+  label fixed
+
+Use this when:
+
+- a weaker model keeps returning paragraph-like labels
+- you want more open-ended reasoning before the final label is chosen
+- you want the explanation pass to justify an already accepted label instead
+  of renegotiating it
+- `label_mode = "dynamic"` is useful here when you want Stage B to prefer
+  short labels already proposed by Stage A instead of inventing a fresh one
 
 If you only want to inspect the request before calling the model:
 
@@ -435,7 +475,7 @@ If you only want to inspect the request before calling the model:
 req <- llm_label_cluster(
   evidence = ev,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   dry_run = TRUE
 )
@@ -494,6 +534,14 @@ This step checks:
 - evidence ID integrity
 - separation between data-backed claims and external knowledge
 - unsupported ecological overreach
+- label-shape constraints such as `display_label <= 80` characters,
+  `display_label <= 6` words, forbidden punctuation, and
+  `canonical_label <= 64` characters
+
+If validation fails only because the label fields violate these format
+limits, `label_clusters()` now uses a lightweight repair pass. That repair
+reuses the parsed JSON plus validator feedback and does not resend the full
+evidence bundle.
 
 ## 12. Save the Final Review Card to Disk
 
@@ -575,10 +623,10 @@ Recommended high-level shortcut:
 run <- label_clusters(
   x = res,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 1200,
+  num_predict = 2400,
   review_dir = file.path("temp", "reports", "cluster_reviews")
 )
 
@@ -591,10 +639,10 @@ run <- label_clusters(
   x = res,
   clusters = c("c_12", "c_35"),
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 1200
+  num_predict = 2400
 )
 
 run$summary
@@ -605,10 +653,10 @@ run$results$c_12$review$file
 run <- label_clusters(
   x = res,
   model = "qwen3.5:9b-q4_K_M",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 2,
   timeout_sec = 600,
-  num_predict = 1200,
+  num_predict = 2400,
   review_dir = file.path("temp", "reports", "cluster_reviews")
 )
 ```
@@ -635,10 +683,10 @@ run <- label_clusters(
   x = res,
   clusters = c("c_12", "c_26"),
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 1200
+  num_predict = 2400
 )
 
 run$summary
@@ -656,10 +704,10 @@ for (cluster_id in cluster_ids) {
   ans <- llm_label_cluster(
     evidence = ev,
     model = "gemma4:12b",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     workflow_steps = 1,
     timeout_sec = 600,
-    num_predict = 1200
+    num_predict = 2400
   )
 
   val <- validate_cluster_label(ans, ev)
@@ -695,11 +743,11 @@ run_spec <- label_clusters(
   x = res,
   clusters = c("c_12", "c_26"),
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   speculative_fallback_mode = "after_nonaccepted",
   timeout_sec = 600,
-  num_predict = 1200,
+  num_predict = 2400,
   labels_for_imgs = TRUE
 )
 
@@ -714,9 +762,9 @@ What this mode does:
 - the current soft-label ladder uses:
   `phi4-mini:latest` + `ollama_options = list(num_ctx = 8192)` +
   `num_predict = 2400`
-- the ladder tries `speculative_fallback_v3` first
-- if `v3` still abstains, it escalates to the more label-forcing
-  `speculative_fallback_v4`
+- the ladder tries `label_soft_v1` first
+- if the soft rung still abstains, it escalates to the more label-forcing
+  `label_broad_v1`
 - successful fallback labels are marked as speculative and still require human review
 - the final review card and registry also record:
   `label_origin`, `species_entropy_band`, `species_entropy_text`,
@@ -736,13 +784,18 @@ How the main controls are split:
   experimental.
 - `variant`
   Controls the strict first-pass prompt only. For the current recommended
-  strict path, keep `variant = "strict_abstention_gate_v1"`.
+  strict path, keep `variant = "label_primary_v1"`.
 - `timeout_sec`
   Controls the request timeout for both the strict pass and the fallback
   ladder.
 - `num_predict`
   Controls the strict pass. The fallback ladder uses its own larger internal
   default, currently `2400`.
+- `prompt_budget_chars`
+  Controls the character budget for the final system + user prompt messages.
+  Default `10000`. If the evidence bundle is too large, lower-priority
+  evidence blocks are trimmed first. The full JSON schema is still enforced
+  separately through the structured-output `format` field.
 - `labels_for_imgs`
   If `TRUE`, the resulting speculative or accepted labels are also exported
   into `cluster_label_registry.csv` for plotting helpers.
@@ -762,13 +815,12 @@ already:
 - `phi4-mini:latest`
 - `ollama_options = list(num_ctx = 8192)`
 - `num_predict = 2400`
-- `speculative_fallback_v3` first, then `speculative_fallback_v4`
+- `label_soft_v1` first, then `label_broad_v1`
 
-Advanced experimental note:
+Advanced note:
 
-- constrained fallback variants `speculative_fallback_v8` /
-  `speculative_fallback_v9` can also use an editable coarse vocabulary
-  file
+- `label_mode = "constrained"` now uses the packaged coarse vocabulary
+  directly
 - if you want to test a dataset-specific label list, set:
 
 ```r
@@ -811,12 +863,12 @@ run_sem <- label_clusters(
   x = res,
   clusters = c("c_12", "c_26"),
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   semantic_layer = TRUE,
   semantic_root = "D:/documents/coctrailr/cocktailr",
   timeout_sec = 600,
-  num_predict = 1200
+  num_predict = 2400
 )
 
 run_sem$summary[, c(
@@ -872,14 +924,28 @@ Practical notes:
 These are **not** the default path, but you may need them later:
 
 - different prompt variants:
-  `concise_label_v1`, `conservative_interpretation_v1`,
-  `abstain_first_v1`, `strict_abstention_gate_v1`
+  `label_primary_v1`, `label_soft_v1`, `label_broad_v1`
+- older versioned prompt IDs are still accepted as compatibility aliases,
+  but they now resolve to the public three-prompt set
 - two-step workflow:
   `workflow_steps = 2`
+- staged draft -> label -> explanation workflow:
+  `workflow_steps = 3`
+- label-space modes:
+  `label_mode = "open"`, `"constrained"`, `"dynamic"`
 - speculative fallback ladder after strict abstain or rejection:
   `speculative_fallback_mode = "after_nonaccepted"`
 - raw run logging for debugging:
   `log_dir = ...`
+
+Migration note:
+
+- do not manually browse the old `v1-v9` prompt ladder anymore
+- the supported public choices are now only
+  `label_primary_v1`, `label_soft_v1`, `label_broad_v1`
+- legacy IDs still work as compatibility aliases
+- retired prompt texts are archived locally under
+  `temp/prompt_archive/cluster_labeling/`
 
 For the current project default, keep:
 
@@ -927,10 +993,10 @@ The most practical first fix is:
 ans <- llm_label_cluster(
   evidence = ev,
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 1200
+  num_predict = 2400
 )
 ```
 

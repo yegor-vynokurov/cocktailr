@@ -7,6 +7,12 @@ The current small-model constrained prompts use:
 
 - `coarse_label_vocabulary_core_v1.json`
 
+Activate it with:
+
+```r
+label_mode = "constrained"
+```
+
 ## Why this exists
 
 For some local models, free-form label generation collapses into either:
@@ -30,7 +36,7 @@ define:
 - `use_when`
 
 The runtime turns this JSON into prompt text and injects it into the
-selected prompt variant.
+selected prompt variant when `label_mode = "constrained"`.
 
 ## How to customize safely
 

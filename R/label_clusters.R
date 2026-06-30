@@ -19,12 +19,14 @@
 #' \code{top_n} clusters ranked by the Cocktail selection score from
 #' \code{\link{select_clusters}(return = "table")}.
 #'
-#' The workflow is intentionally bounded: at most two top-level iterations are
-#' attempted per cluster. If the first attempt fails with an EOF-like structured
-#' output error, the second attempt automatically doubles \code{num_predict}. If
-#' no valid structured result is available after the bounded retry budget, the
-#' function writes a compact placeholder review card that records the cluster,
-#' model, prompt provenance, and the failure reason.
+#' The workflow is intentionally bounded: at most three top-level iterations are
+#' attempted per cluster, while still allowing at most one validator-guided
+#' repair pass. If an iteration fails with an EOF-like structured output error,
+#' the next iteration automatically increases \code{num_predict} along the
+#' default retry ladder \code{2400 -> 4800 -> 9600}. If no valid structured
+#' result is available after the bounded retry budget, the function writes a
+#' compact placeholder review card that records the cluster, model, prompt
+#' provenance, and the failure reason.
 #'
 #' @param x A \code{"cocktail"} object produced by
 #'   \code{\link{cocktail_cluster}}.
@@ -53,11 +55,15 @@
 #' @param semantic_force_species,semantic_force_reference Logical refresh flags
 #'   forwarded to \code{score_cluster_semantics()}.
 #' @param provider,model,variant,base_url,schema_path,temperature,top_p,seed,
-#'   num_predict,keep_alive,ollama_options,timeout_sec,max_retries,
-#'   workflow_steps,log_dir,request_fn LLM controls forwarded to
-#'   \code{\link{llm_label_cluster}}.
+#'   num_predict,prompt_budget_chars,keep_alive,ollama_options,timeout_sec,max_retries,
+#'   workflow_steps,label_mode,log_dir,request_fn LLM controls forwarded to
+#'   \code{\link{llm_label_cluster}}. In particular, \code{workflow_steps = 3}
+#'   enables the staged draft-analysis -> label-selection -> explanation mode,
+#'   and \code{label_mode} selects between open, constrained, and dynamic
+#'   label-space behavior.
 #' @param max_iterations Integer workflow budget. Currently allowed values are
-#'   \code{1} and \code{2}. Default \code{2}.
+#'   \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports
+#'   the full EOF retry ladder \code{2400 -> 4800 -> 9600}.
 #' @param review_dir Directory where markdown review cards are written. Default
 #'   \code{file.path("temp", "reports", "cluster_reviews")}. When a relative
 #'   path is used and a local \code{cocktailr} source checkout can be detected,
@@ -111,7 +117,7 @@
 #'   x = res,
 #'   clusters = "c_1",
 #'   model = "gemma4:12b",
-#'   variant = "strict_abstention_gate_v1",
+#'   variant = "label_primary_v1",
 #'   review_dir = file.path("temp", "reports", "cluster_reviews")
 #' )
 #'
@@ -138,19 +144,21 @@ label_clusters <- function(
     semantic_force_reference = FALSE,
     provider = "ollama",
     model,
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
+    label_mode = "open",
     base_url = getOption("cocktailr.ollama_base_url", "http://localhost:11434"),
     schema_path = NULL,
     temperature = NULL,
     top_p = NULL,
     seed = NULL,
     num_predict = NULL,
+    prompt_budget_chars = 10000L,
     keep_alive = NULL,
     ollama_options = NULL,
     timeout_sec = 600,
     max_retries = 1L,
     workflow_steps = 1L,
-    max_iterations = 2L,
+    max_iterations = 3L,
     review_dir = file.path("temp", "reports", "cluster_reviews"),
     verbose = TRUE,
     labels_for_imgs = FALSE,
@@ -164,8 +172,13 @@ label_clusters <- function(
   provider <- .arg_scalar_character(provider, "provider")
   model <- .arg_scalar_character(model, "model")
   variant <- .arg_scalar_character(variant, "variant")
+  label_mode <- .arg_cluster_label_mode(label_mode, "label_mode")
   workflow_steps <- .arg_workflow_steps(workflow_steps, "workflow_steps")
   max_retries <- .arg_non_negative_integer(max_retries, "max_retries")
+  prompt_budget_chars <- .arg_nullable_positive_integer(
+    prompt_budget_chars,
+    "prompt_budget_chars"
+  )
   max_iterations <- .arg_cluster_label_max_iterations(max_iterations)
   ollama_options <- .arg_named_list_or_null(ollama_options, "ollama_options")
   verbose <- .arg_single_flag(verbose, "verbose")
@@ -183,6 +196,10 @@ label_clusters <- function(
     semantic_force_reference,
     "semantic_force_reference"
   )
+
+  if (identical(label_mode, "dynamic") && !identical(workflow_steps, 3L)) {
+    stop("`label_mode = \"dynamic\"` currently requires `workflow_steps = 3`.")
+  }
   speculative_fallback_mode <- match.arg(speculative_fallback_mode)
   select_mode <- match.arg(select_mode)
 
@@ -266,12 +283,14 @@ label_clusters <- function(
       provider = provider,
       model = model,
       variant = variant,
+      label_mode = label_mode,
       base_url = base_url,
       schema_path = schema_path,
       temperature = temperature,
       top_p = top_p,
       seed = seed,
       num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
       keep_alive = keep_alive,
       ollama_options = ollama_options,
       timeout_sec = timeout_sec,
@@ -288,12 +307,14 @@ label_clusters <- function(
       provider = provider,
       model = model,
       variant = variant,
+      label_mode = label_mode,
       base_url = base_url,
       schema_path = schema_path,
       temperature = temperature,
       top_p = top_p,
       seed = seed,
       num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
       keep_alive = keep_alive,
       ollama_options = ollama_options,
       timeout_sec = timeout_sec,
@@ -406,8 +427,8 @@ label_clusters <- function(
 
 .arg_cluster_label_max_iterations <- function(x) {
   x <- .arg_non_negative_integer(x, "max_iterations")
-  if (!x %in% c(1L, 2L)) {
-    stop("`max_iterations` must be either 1 or 2.")
+  if (!x %in% c(1L, 2L, 3L)) {
+    stop("`max_iterations` must be one of 1, 2, or 3.")
   }
   x
 }
@@ -590,12 +611,14 @@ label_clusters <- function(
     provider,
     model,
     variant,
+    label_mode,
     base_url,
     schema_path,
     temperature,
     top_p,
     seed,
     num_predict,
+    prompt_budget_chars,
     keep_alive,
     ollama_options,
     timeout_sec,
@@ -632,9 +655,8 @@ label_clusters <- function(
   strict_terminal_state <- NULL
   strict_terminal_iteration <- NULL
 
-  # This outer loop is intentionally bounded. We allow at most one follow-up
-  # iteration, either as a validator-guided repair pass or as a fresh retry
-  # after transport / truncation failure.
+  # This outer loop is intentionally bounded. We allow up to three top-level
+  # iterations, while still keeping validator-guided repair to a single pass.
   for (iter in seq_len(max_iterations)) {
     iter_mode <- next_mode
 
@@ -708,12 +730,14 @@ label_clusters <- function(
             provider = provider,
             model = model,
             variant = variant,
+            label_mode = label_mode,
             base_url = base_url,
             schema_path = schema_path,
             temperature = temperature,
             top_p = top_p,
             seed = seed,
             num_predict = next_num_predict,
+            prompt_budget_chars = prompt_budget_chars,
             keep_alive = keep_alive,
             ollama_options = ollama_options,
             timeout_sec = timeout_sec,
@@ -742,7 +766,10 @@ label_clusters <- function(
         next_mode <- "retry"
         if (.is_cluster_label_eof_error(failure_reason)) {
           previous_num_predict <- next_num_predict
-          next_num_predict <- .double_num_predict(next_num_predict, effective_num_predict)
+          next_num_predict <- .next_cluster_label_num_predict(
+            current = next_num_predict,
+            fallback = effective_num_predict
+          )
           .label_clusters_log(
             verbose,
             cluster_tag,
@@ -885,7 +912,7 @@ label_clusters <- function(
     }
 
     failure_reason <- .validation_failure_summary(validation)
-    if (iter < max_iterations) {
+    if (iter < max_iterations && !isTRUE(repair_used)) {
       .label_clusters_log(
         verbose,
         cluster_tag,
@@ -898,7 +925,11 @@ label_clusters <- function(
       .label_clusters_log(
         verbose,
         cluster_tag,
-        ": validator rejected the output and retry budget is exhausted."
+        if (isTRUE(repair_used)) {
+          ": validator rejected the repaired output and no additional repair pass is allowed."
+        } else {
+          ": validator rejected the output and retry budget is exhausted."
+        }
       )
     }
   }
@@ -942,6 +973,7 @@ label_clusters <- function(
       top_p = top_p,
       seed = seed,
       num_predict = .cluster_label_speculative_num_predict(provider, next_num_predict),
+      prompt_budget_chars = prompt_budget_chars,
       keep_alive = keep_alive,
       ollama_options = .cluster_label_speculative_ollama_options(
         provider = provider,
@@ -950,6 +982,7 @@ label_clusters <- function(
       timeout_sec = timeout_sec,
       max_retries = max_retries,
       strict_variant = variant,
+      strict_label_mode = label_mode,
       strict_workflow_steps = workflow_steps,
       strict_result = strict_llm_result,
       strict_validation = strict_validation,
@@ -1317,6 +1350,14 @@ label_clusters <- function(
   )
 }
 
+.default_cluster_label_num_predict <- function() {
+  2400L
+}
+
+.default_cluster_label_max_num_predict <- function() {
+  9600L
+}
+
 .cluster_label_effective_num_predict <- function(template, workflow_steps) {
   request <- if (identical(workflow_steps, 2L)) {
     template$workflow$label$request
@@ -1327,24 +1368,29 @@ label_clusters <- function(
   num_predict <- request$options$num_predict %||% NULL
   num_predict <- suppressWarnings(as.integer(num_predict))
   if (!is.finite(num_predict) || is.na(num_predict) || num_predict < 1L) {
-    return(1200L)
+    return(.default_cluster_label_num_predict())
   }
   num_predict
 }
 
-.double_num_predict <- function(current, fallback) {
+.next_cluster_label_num_predict <- function(current, fallback) {
   current <- suppressWarnings(as.integer(current))
   fallback <- suppressWarnings(as.integer(fallback))
+  max_num_predict <- .default_cluster_label_max_num_predict()
 
   if (!is.finite(current) || is.na(current) || current < 1L) {
     current <- if (is.finite(fallback) && !is.na(fallback) && fallback >= 1L) {
       fallback
     } else {
-      1200L
+      .default_cluster_label_num_predict()
     }
   }
 
-  as.integer(current * 2L)
+  if (current >= max_num_predict) {
+    return(as.integer(current))
+  }
+
+  as.integer(min(current * 2L, max_num_predict))
 }
 
 .is_cluster_label_eof_error <- function(message) {
@@ -1390,26 +1436,96 @@ label_clusters <- function(
   )
 }
 
+.cluster_label_format_issue_codes <- function() {
+  c(
+    "canonical_label_too_long",
+    "display_label_too_long",
+    "display_label_too_many_words",
+    "display_label_forbidden_punctuation",
+    "display_label_trailing_period"
+  )
+}
+
+.cluster_label_has_format_issues <- function(validation) {
+  issues <- validation$issues %||% .new_cluster_label_issue_table()
+  if (!nrow(issues)) {
+    return(FALSE)
+  }
+
+  any(issues$code %in% .cluster_label_format_issue_codes())
+}
+
+.cluster_label_lightweight_repair_issue_codes <- function() {
+  c(
+    "invalid_canonical_label_format",
+    "missing_canonical_label",
+    "canonical_label_too_long",
+    "missing_display_label",
+    "display_label_too_long",
+    "display_label_too_many_words",
+    "display_label_forbidden_punctuation",
+    "display_label_trailing_period"
+  )
+}
+
+.cluster_label_validation_issue_lines <- function(
+    issues,
+    empty_message = "- No structured validator issue table was recorded."
+) {
+  if (!nrow(issues)) {
+    return(empty_message)
+  }
+
+  vapply(seq_len(nrow(issues)), function(i) {
+    row <- issues[i, , drop = FALSE]
+    location <- row$location[[1]]
+    location_text <- if (!is.na(location) && nzchar(location)) {
+      paste0(" Location: ", location, ".")
+    } else {
+      ""
+    }
+    paste0(
+      "- [", row$severity[[1]], "][", row$category[[1]], "][", row$code[[1]], "] ",
+      row$message[[1]],
+      location_text
+    )
+  }, character(1))
+}
+
+.cluster_label_can_use_lightweight_repair <- function(validation) {
+  issues <- validation$issues %||% .new_cluster_label_issue_table()
+
+  if (!nrow(issues) || !identical(validation$output_status, "labeled")) {
+    return(FALSE)
+  }
+
+  all(issues$code %in% .cluster_label_lightweight_repair_issue_codes())
+}
+
+.cluster_label_validation_repair_guidance <- function(validation) {
+  if (!.cluster_label_has_format_issues(validation)) {
+    return(character(0))
+  }
+
+  c(
+    "",
+    "Label-format repair reminder:",
+    "- display_label must be <= 80 characters and <= 6 words.",
+    "- display_label must not contain commas or brackets, and must not end with a period.",
+    "- canonical_label must stay lowercase snake_case and must be <= 64 characters.",
+    "- If the evidence-backed content is already valid, prefer changing only canonical_label and display_label, plus the minimum dependent wording needed for consistency."
+  )
+}
+
 .cluster_label_validation_repair_message <- function(validation, previous_output) {
   issues <- validation$issues %||% .new_cluster_label_issue_table()
-  issue_lines <- if (!nrow(issues)) {
-    "- No structured validator issue table was recorded, but the previous output must still be corrected."
-  } else {
-    vapply(seq_len(nrow(issues)), function(i) {
-      row <- issues[i, , drop = FALSE]
-      location <- row$location[[1]]
-      location_text <- if (!is.na(location) && nzchar(location)) {
-        paste0(" Location: ", location, ".")
-      } else {
-        ""
-      }
-      paste0(
-        "- [", row$severity[[1]], "][", row$category[[1]], "][", row$code[[1]], "] ",
-        row$message[[1]],
-        location_text
-      )
-    }, character(1))
-  }
+  issue_lines <- .cluster_label_validation_issue_lines(
+    issues,
+    empty_message = paste(
+      "- No structured validator issue table was recorded,",
+      "but the previous output must still be corrected."
+    )
+  )
 
   previous_json <- jsonlite::toJSON(
     previous_output,
@@ -1427,6 +1543,7 @@ label_clusters <- function(
       "Do not add markdown, commentary, or code fences.",
       "Do not invent new evidence IDs, species, habitats, or external facts.",
       "If the evidence is insufficient for a safe label, switch to `status = \"abstain\"` and make all dependent fields consistent.",
+      .cluster_label_validation_repair_guidance(validation),
       "",
       "Validator issues:",
       issue_lines,
@@ -1436,6 +1553,103 @@ label_clusters <- function(
     ),
     collapse = "\n"
   )
+}
+
+.cluster_label_lightweight_repair_message <- function(validation) {
+  issues <- validation$issues %||% .new_cluster_label_issue_table()
+  issue_lines <- .cluster_label_validation_issue_lines(
+    issues,
+    empty_message = paste(
+      "- No structured validator issue table was recorded,",
+      "but the label fields must still be corrected."
+    )
+  )
+
+  paste(
+    c(
+      "Repair the previously parsed JSON object shown in the assistant message above.",
+      "Return one complete corrected JSON object only.",
+      "Keep fields that are already valid unless they depend on a corrected label field.",
+      "This is a lightweight label-repair pass: do not reconsider the full evidence bundle.",
+      "Do not add markdown, commentary, or code fences.",
+      "Do not invent new evidence IDs, species, habitats, or external facts.",
+      "Keep schema_version, cluster_id, basis_in_data, key_species, external_knowledge, not_confirmed_by_data, confidence, and checks_to_run unchanged unless a listed validator issue explicitly requires a dependent fix.",
+      .cluster_label_validation_repair_guidance(validation),
+      "",
+      "Validator issues:",
+      issue_lines
+    ),
+    collapse = "\n"
+  )
+}
+
+.cluster_label_lightweight_repair_prompt_bundle <- function(
+    prompt_bundle,
+    previous_output,
+    validation,
+    num_predict
+) {
+  previous_json <- jsonlite::toJSON(
+    previous_output,
+    auto_unbox = TRUE,
+    null = "null",
+    pretty = TRUE
+  )
+  system_content <- paste(
+    prompt_bundle$system,
+    "",
+    "Repair mode: fix a previously parsed JSON object using validator feedback.",
+    "Prefer the smallest defensible edit and keep already-valid evidence-backed fields unchanged.",
+    sep = "\n"
+  )
+  user_content <- .cluster_label_lightweight_repair_message(validation)
+  system_chars <- .cluster_evidence_prompt_char_count(system_content)
+  user_chars <- .cluster_evidence_prompt_char_count(user_content)
+  assistant_chars <- .cluster_evidence_prompt_char_count(previous_json)
+  prompt_budget_chars <- prompt_bundle$evidence_budget$prompt_budget_chars %||% NULL
+
+  prompt_bundle$system <- system_content
+  prompt_bundle$user <- user_content
+  prompt_bundle$messages <- list(
+    list(role = "system", content = system_content),
+    list(role = "assistant", content = previous_json),
+    list(role = "user", content = user_content)
+  )
+  prompt_bundle$generation$num_predict <- as.integer(num_predict)
+  prompt_bundle$evidence_text <- ""
+  prompt_bundle$evidence_budget <- list(
+    prompt_budget_chars = prompt_budget_chars,
+    fixed_overhead_chars = system_chars + user_chars,
+    schema_prompt_chars = .cluster_evidence_prompt_char_count(
+      prompt_bundle$schema_prompt_text %||% ""
+    ),
+    schema_text_chars = .cluster_evidence_prompt_char_count(
+      prompt_bundle$schema_text %||% ""
+    ),
+    evidence_budget_chars = 0L,
+    evidence_chars_full = 0L,
+    evidence_chars_used = 0L,
+    repair_previous_json_chars = assistant_chars,
+    total_prompt_chars = system_chars + user_chars + assistant_chars,
+    fits_within_budget = if (is.null(prompt_budget_chars)) {
+      TRUE
+    } else {
+      (system_chars + user_chars + assistant_chars) <= prompt_budget_chars
+    },
+    fixed_overhead_exceeds_budget = if (is.null(prompt_budget_chars)) {
+      FALSE
+    } else {
+      (system_chars + user_chars) > prompt_budget_chars
+    },
+    trimmed = FALSE,
+    kept_block_ids = character(0),
+    dropped_block_ids = character(0),
+    truncated_block_ids = character(0),
+    blocks = NULL,
+    repair_mode = "lightweight_label_format"
+  )
+  prompt_bundle$repair_prompt_type <- "lightweight_label_format"
+  prompt_bundle
 }
 
 .repair_cluster_label_result <- function(
@@ -1456,41 +1670,63 @@ label_clusters <- function(
     workflow_steps,
     ollama_options
 ) {
-  prompt_bundle <- if (identical(workflow_steps, 2L)) {
+  prompt_bundle <- if (inherits(previous_result, "cluster_label_result") &&
+    is.list(previous_result$prompt)) {
+    previous_result$prompt
+  } else if (identical(workflow_steps, 2L)) {
     template$workflow$label$prompt
   } else {
     template$prompt
   }
 
-  prompt_bundle$generation$num_predict <- as.integer(num_predict)
-  prompt_bundle$messages <- c(
-    prompt_bundle$messages,
-    list(
+  use_lightweight_repair <- .cluster_label_can_use_lightweight_repair(validation)
+
+  if (isTRUE(use_lightweight_repair)) {
+    prompt_bundle <- .cluster_label_lightweight_repair_prompt_bundle(
+      prompt_bundle = prompt_bundle,
+      previous_output = previous_result$output,
+      validation = validation,
+      num_predict = num_predict
+    )
+  } else {
+    prompt_bundle$generation$num_predict <- as.integer(num_predict)
+    prompt_bundle$messages <- c(
+      prompt_bundle$messages,
       list(
-        role = "assistant",
-        content = jsonlite::toJSON(
-          previous_result$output,
-          auto_unbox = TRUE,
-          null = "null",
-          pretty = TRUE
-        )
-      ),
-      list(
-        role = "user",
-        content = .cluster_label_validation_repair_message(
-          validation = validation,
-          previous_output = previous_result$output
+        list(
+          role = "assistant",
+          content = jsonlite::toJSON(
+            previous_result$output,
+            auto_unbox = TRUE,
+            null = "null",
+            pretty = TRUE
+          )
+        ),
+        list(
+          role = "user",
+          content = .cluster_label_validation_repair_message(
+            validation = validation,
+            previous_output = previous_result$output
+          )
         )
       )
     )
-  )
+    prompt_bundle$repair_prompt_type <- "validator_full"
+  }
 
   endpoint <- paste0(sub("/+$", "", base_url), "/api/chat")
   log_paths <- .init_cluster_label_logs(
     log_dir = log_dir,
     cluster_id = evidence$meta$cluster_id,
     model = model,
-    variant = paste0(variant, "_validator_repair")
+    variant = paste0(
+      variant,
+      if (isTRUE(use_lightweight_repair)) {
+        "_label_format_repair"
+      } else {
+        "_validator_repair"
+      }
+    )
   )
 
   out <- .run_structured_llm_stage(
@@ -1507,20 +1743,38 @@ label_clusters <- function(
     request_fn = request_fn,
     log_paths = log_paths,
     parse_output_fn = function(content) {
-      .parse_cluster_label_json(
+      output <- .parse_cluster_label_json(
         content = content,
         required_fields = prompt_bundle$schema_required,
         cluster_id = evidence$meta$cluster_id
       )
+      .assert_cluster_label_prompt_contract(
+        output = output,
+        prompt_bundle = prompt_bundle,
+        stage_name = if (isTRUE(use_lightweight_repair)) {
+          "label_format_repair"
+        } else {
+          "validator_repair"
+        }
+      )
     },
-    stage_name = "validator_repair"
+    stage_name = if (isTRUE(use_lightweight_repair)) {
+      "label_format_repair"
+    } else {
+      "validator_repair"
+    }
   )
 
   out$workflow_steps <- workflow_steps
   out$workflow <- previous_result$workflow %||% NULL
   out$attempts <- as.integer((previous_result$attempts %||% 0L) + (out$attempts %||% 0L))
   out$repair <- list(
-    source = "validator",
+    source = if (isTRUE(use_lightweight_repair)) {
+      "validator_lightweight_label_format"
+    } else {
+      "validator"
+    },
+    prompt_type = prompt_bundle$repair_prompt_type %||% "validator_full",
     previous_validation_status = validation$validation_status,
     issue_count = nrow(validation$issues %||% .new_cluster_label_issue_table())
   )
@@ -1718,6 +1972,7 @@ label_clusters <- function(
   speculative_variant <- .as_scalar_character(speculative_variant)
 
   if (speculative_variant %in% c(
+    "label_soft_v1",
     "speculative_fallback_v3",
     "speculative_fallback_v6",
     "speculative_fallback_v8"
@@ -1726,6 +1981,7 @@ label_clusters <- function(
   }
 
   if (speculative_variant %in% c(
+    "label_broad_v1",
     "speculative_fallback_v4",
     "speculative_fallback_v7",
     "speculative_fallback_v9"
@@ -1746,11 +2002,13 @@ label_clusters <- function(
     top_p,
     seed,
     num_predict,
+    prompt_budget_chars,
     keep_alive,
     ollama_options,
     timeout_sec,
     max_retries,
     strict_variant,
+    strict_label_mode,
     strict_workflow_steps,
     strict_result,
     strict_validation,
@@ -1797,11 +2055,13 @@ label_clusters <- function(
       top_p = top_p,
       seed = seed,
       num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
       keep_alive = keep_alive,
       ollama_options = ollama_options,
       timeout_sec = timeout_sec,
       max_retries = max_retries,
       strict_variant = strict_variant,
+      strict_label_mode = strict_label_mode,
       strict_workflow_steps = strict_workflow_steps,
       strict_result = strict_result,
       strict_validation = strict_validation,
@@ -1849,11 +2109,13 @@ label_clusters <- function(
     top_p,
     seed,
     num_predict,
+    prompt_budget_chars,
     keep_alive,
     ollama_options,
     timeout_sec,
     max_retries,
     strict_variant,
+    strict_label_mode,
     strict_workflow_steps,
     strict_result,
     strict_validation,
@@ -1863,18 +2125,26 @@ label_clusters <- function(
     log_dir,
     request_fn
 ) {
+  speculative_label_mode <- if (identical(strict_label_mode, "dynamic")) {
+    "open"
+  } else {
+    strict_label_mode
+  }
+
   template <- llm_label_cluster(
     evidence = evidence,
     provider = provider,
     model = model,
     variant = speculative_variant,
+    label_mode = speculative_label_mode,
     base_url = base_url,
     schema_path = schema_path,
-    temperature = temperature,
-    top_p = top_p,
-    seed = seed,
-    num_predict = num_predict,
-    keep_alive = keep_alive,
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
+      keep_alive = keep_alive,
     ollama_options = ollama_options,
     timeout_sec = timeout_sec,
     max_retries = max_retries,
@@ -1921,10 +2191,15 @@ label_clusters <- function(
       request_fn = request_fn,
       log_paths = log_paths,
       parse_output_fn = function(content) {
-        .parse_cluster_label_json(
+        output <- .parse_cluster_label_json(
           content = content,
           required_fields = prompt_bundle$schema_required,
           cluster_id = evidence$meta$cluster_id
+        )
+        .assert_cluster_label_prompt_contract(
+          output = output,
+          prompt_bundle = prompt_bundle,
+          stage_name = "speculative_fallback"
         )
       },
       stage_name = "speculative_fallback"
@@ -1952,6 +2227,7 @@ label_clusters <- function(
   out$workflow <- list(
     strict = list(
       variant = strict_variant,
+      label_mode = strict_label_mode,
       workflow_steps = strict_workflow_steps,
       output_status = strict_validation$output_status %||% NULL,
       validation_status = strict_validation$validation_status %||% NULL,
@@ -1962,6 +2238,7 @@ label_clusters <- function(
     used = TRUE,
     mode = "soft_label_ladder",
     variant = speculative_variant,
+    label_mode = speculative_label_mode,
     label_tier = "speculative",
     plot_marker = "*",
     strict_outcome = strict_outcome,

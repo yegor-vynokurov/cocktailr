@@ -279,6 +279,13 @@ print.cluster_review_artifact <- function(x, ...) {
     model = provenance$model,
     variant = provenance$variant,
     workflow_steps = provenance$workflow_steps,
+    selected_label_variant = provenance$selected_label_variant,
+    label_stage_exhausted = if (is.null(provenance$label_stage_exhausted)) {
+      NA
+    } else {
+      isTRUE(provenance$label_stage_exhausted)
+    },
+    label_stage_failure_reason = provenance$label_stage_failure_reason,
     gate_variant = provenance$gate_variant,
     gate_decision = provenance$gate_decision,
     log_run_dir = provenance$log_run_dir,
@@ -303,6 +310,9 @@ print.cluster_review_artifact <- function(x, ...) {
       model = NULL,
       variant = NULL,
       workflow_steps = NULL,
+      selected_label_variant = NULL,
+      label_stage_exhausted = NULL,
+      label_stage_failure_reason = NULL,
       gate_variant = NULL,
       gate_decision = NULL,
       log_run_dir = NULL,
@@ -318,15 +328,40 @@ print.cluster_review_artifact <- function(x, ...) {
 
   workflow <- x$workflow %||% list()
   gate_stage <- if (is.list(workflow)) workflow$gate else NULL
+  label_stage <- if (is.list(workflow)) workflow$label else NULL
   gate_output <- if (is.list(gate_stage)) gate_stage$output %||% NULL else NULL
   main_prompt <- x$prompt %||% list()
   gate_prompt <- if (is.list(gate_stage)) gate_stage$prompt %||% list() else list()
+  label_stage_failure_reason <- if (is.list(label_stage)) {
+    .as_scalar_character(
+      label_stage$selection_output$fallback_reason %||%
+        paste(label_stage$failure_messages %||% character(0), collapse = " | ")
+    )
+  } else {
+    NA_character_
+  }
 
   list(
     provider = .null_default(x$provider, NULL),
     model = .null_default(x$model, NULL),
     variant = .null_default(x$variant, NULL),
     workflow_steps = .null_default(x$workflow_steps, NULL),
+    selected_label_variant = if (is.list(label_stage)) {
+      label_stage$selected_public_variant %||% NULL
+    } else {
+      NULL
+    },
+    label_stage_exhausted = if (is.list(label_stage)) {
+      isTRUE(label_stage$exhausted)
+    } else {
+      NULL
+    },
+    label_stage_failure_reason = if (is.na(label_stage_failure_reason) ||
+      !nzchar(label_stage_failure_reason)) {
+      NULL
+    } else {
+      label_stage_failure_reason
+    },
     gate_variant = if (is.list(gate_stage)) gate_stage$variant %||% NULL else NULL,
     gate_decision = gate_output$decision %||% NULL,
     log_run_dir = x$logs$run_dir %||% NULL,
@@ -726,6 +761,9 @@ print.cluster_review_artifact <- function(x, ...) {
 .cluster_review_generation_lines <- function(metadata) {
   model <- .as_scalar_character(metadata$model)
   variant <- .as_scalar_character(metadata$variant)
+  selected_label_variant <- .as_scalar_character(metadata$selected_label_variant)
+  label_stage_failure_reason <- .as_scalar_character(metadata$label_stage_failure_reason)
+  label_stage_exhausted <- metadata$label_stage_exhausted %||% NULL
   system_prompt <- .as_scalar_character(metadata$prompt_system_path)
   user_prompt <- .as_scalar_character(metadata$prompt_user_path)
   gate_variant <- .as_scalar_character(metadata$gate_variant)
@@ -744,6 +782,30 @@ print.cluster_review_artifact <- function(x, ...) {
 
   if (!is.na(variant) && nzchar(variant)) {
     lines <- c(lines, paste0("- Prompt variant: ", .md_code(variant)))
+  }
+  if (!is.na(selected_label_variant) && nzchar(selected_label_variant)) {
+    lines <- c(
+      lines,
+      paste0("- Selected label rung: ", .md_code(selected_label_variant))
+    )
+  }
+  if (isTRUE(label_stage_exhausted) || identical(label_stage_exhausted, FALSE)) {
+    lines <- c(
+      lines,
+      paste0(
+        "- Label-stage exhausted: ",
+        .md_code(tolower(as.character(isTRUE(label_stage_exhausted))))
+      )
+    )
+  }
+  if (!is.na(label_stage_failure_reason) && nzchar(label_stage_failure_reason)) {
+    lines <- c(
+      lines,
+      paste0(
+        "- Label-stage fallback reason: ",
+        label_stage_failure_reason
+      )
+    )
   }
 
   if (any_main_prompt) {
@@ -824,6 +886,12 @@ print.cluster_review_artifact <- function(x, ...) {
     lines,
     paste0("- Canonical label: ", .md_code(.as_scalar_character(output$canonical_label))),
     paste0("- Display label: ", .md_code(display_label)),
+    if (isTRUE(metadata$label_stage_exhausted)) {
+      paste(
+        "- Cascade note: all public label-selection rungs were exhausted,",
+        "so this broad fallback label should be reviewed manually."
+      )
+    },
     if (!is.na(metadata$label_origin) && nzchar(metadata$label_origin)) {
       paste0("- Label origin: `", metadata$label_origin, "`")
     },

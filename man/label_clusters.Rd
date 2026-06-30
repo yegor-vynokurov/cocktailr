@@ -22,19 +22,21 @@ label_clusters(
   semantic_force_reference = FALSE,
   provider = "ollama",
   model,
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
+  label_mode = "open",
   base_url = getOption("cocktailr.ollama_base_url", "http://localhost:11434"),
   schema_path = NULL,
   temperature = NULL,
   top_p = NULL,
   seed = NULL,
   num_predict = NULL,
+  prompt_budget_chars = 10000L,
   keep_alive = NULL,
   ollama_options = NULL,
   timeout_sec = 600,
   max_retries = 1L,
   workflow_steps = 1L,
-  max_iterations = 2L,
+  max_iterations = 3L,
   review_dir = file.path("temp", "reports", "cluster_reviews"),
   verbose = TRUE,
   labels_for_imgs = FALSE,
@@ -82,11 +84,15 @@ By default the semantic helpers use \code{cocktailr_project_root()}.}
 \item{semantic_force_species, semantic_force_reference}{Logical refresh flags
 forwarded to \code{score_cluster_semantics()}.}
 
-\item{provider, model, variant, base_url, schema_path, temperature, top_p, seed, num_predict, keep_alive, ollama_options, timeout_sec, max_retries, workflow_steps, log_dir, request_fn}{LLM
-controls forwarded to \code{\link{llm_label_cluster}}.}
+\item{provider, model, variant, label_mode, base_url, schema_path, temperature, top_p, seed, num_predict, prompt_budget_chars, keep_alive, ollama_options, timeout_sec, max_retries, workflow_steps, log_dir, request_fn}{LLM
+controls forwarded to \code{\link{llm_label_cluster}}. In particular,
+\code{workflow_steps = 3} enables the staged draft-analysis ->
+label-selection -> explanation mode, and \code{label_mode} switches
+between open, constrained, and dynamic label-space behavior.}
 
 \item{max_iterations}{Integer workflow budget. Currently allowed values are
-\code{1} and \code{2}. Default \code{2}.}
+\code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports
+the full EOF retry ladder \code{2400 -> 4800 -> 9600}.}
 
 \item{review_dir}{Directory where markdown review cards are written. Default
 \code{file.path("temp", "reports", "cluster_reviews")}. When a relative path
@@ -139,16 +145,29 @@ requests one structured label / abstention from the local LLM, validates the
 structured output, optionally performs one validator-guided repair pass, and
 saves a markdown review card.
 
+When \code{workflow_steps = 3}, the LLM portion of the run is internally split
+into three stages: a freeform draft analysis, a short-label selection
+cascade, and a final explanation pass that is forced to reuse the accepted
+label from the selection stage.
+
+Use \code{label_mode = "constrained"} when a small model should choose
+from the packaged coarse vocabulary or a user override set via
+\code{options(cocktailr.cluster_label_vocabulary_path = ...)}. Use
+\code{label_mode = "dynamic"} when you want the stage-B selector to
+reuse candidate labels that were proposed in the stage-A draft analysis.
+
 If no \code{clusters} are supplied, the function selects up to the first
 \code{top_n} clusters ranked by the Cocktail selection score from
 \code{\link{select_clusters}(return = "table")}.
 
-The workflow is intentionally bounded: at most two top-level iterations are
-attempted per cluster. If the first attempt fails with an EOF-like structured
-output error, the second attempt automatically doubles \code{num_predict}. If
-no valid structured result is available after the bounded retry budget, the
-function writes a placeholder review card that records the cluster, model,
-prompt provenance, and failure reason.
+The workflow is intentionally bounded: at most three top-level iterations are
+attempted per cluster, while still allowing at most one validator-guided
+repair pass. If an iteration fails with an EOF-like structured output error,
+the next iteration automatically increases \code{num_predict} along the
+default retry ladder \code{2400 -> 4800 -> 9600}. If no valid structured
+result is available after the bounded retry budget, the function writes a
+placeholder review card that records the cluster, model, prompt provenance,
+and failure reason.
 
 Relative review-card paths follow the same source-root resolution rule as
 \code{\link{render_cluster_review}}.
@@ -172,7 +191,7 @@ req <- label_clusters(
   x = res,
   clusters = "c_1",
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   review_dir = file.path("temp", "reports", "cluster_reviews")
 )
 

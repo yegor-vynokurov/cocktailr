@@ -46,7 +46,7 @@ run <- label_clusters(
   x = res,
   clusters = c("c_12", "c_27"),
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1"
+  variant = "label_primary_v1"
 )
 
 reg <- cluster_label_registry(run)

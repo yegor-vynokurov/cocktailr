@@ -76,6 +76,13 @@
   )
 }
 
+.cluster_label_selection_schema_path <- function(schema_path = NULL) {
+  .cluster_label_schema_path(
+    schema_path = schema_path,
+    default_schema_name = "cluster_label_selection_schema.json"
+  )
+}
+
 .read_text_file <- function(path) {
   paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 }
@@ -101,8 +108,30 @@
     path = path,
     text = text,
     parsed = parsed,
-    required = parsed$required %||% character(0)
+    required = .as_character_vector(parsed$required)
   )
+}
+
+.render_cluster_label_schema_prompt_text <- function(schema) {
+  required_fields <- .as_character_vector(schema$required)
+
+  lines <- c(
+    "Structured output schema is attached separately via the API format field.",
+    "Return exactly one raw JSON object and do not restate the schema."
+  )
+
+  if (length(required_fields)) {
+    lines <- c(
+      lines,
+      paste0(
+        "Required top-level fields: ",
+        paste(required_fields, collapse = ", "),
+        "."
+      )
+    )
+  }
+
+  paste(lines, collapse = "\n")
 }
 
 .read_cluster_label_prompt_catalog <- function() {
@@ -125,6 +154,62 @@
     dir = dirname(path),
     text = text,
     parsed = parsed
+  )
+}
+
+.cluster_label_prompt_variant_choices <- function(catalog_def) {
+  variants <- names(catalog_def$variants %||% list())
+  aliases <- names(catalog_def$legacy_variant_aliases %||% list())
+
+  unique(c(variants, aliases))
+}
+
+.resolve_cluster_label_prompt_variant <- function(catalog_def, variant) {
+  variant <- .arg_scalar_character(variant, "variant")
+  variants <- catalog_def$variants %||% list()
+  variant_def <- variants[[variant]] %||% NULL
+
+  if (!is.null(variant_def)) {
+    return(list(
+      requested_variant = variant,
+      resolved_variant = variant,
+      variant_def = variant_def,
+      is_legacy_alias = FALSE
+    ))
+  }
+
+  aliases <- catalog_def$legacy_variant_aliases %||% list()
+  alias_target <- aliases[[variant]] %||% NULL
+
+  if (is.null(alias_target)) {
+    stop(
+      "`variant` must be one of: ",
+      paste(.cluster_label_prompt_variant_choices(catalog_def), collapse = ", "),
+      "."
+    )
+  }
+
+  alias_target <- .arg_scalar_character(
+    alias_target,
+    paste0("catalog legacy alias target for `", variant, "`")
+  )
+  variant_def <- variants[[alias_target]] %||% NULL
+
+  if (is.null(variant_def)) {
+    stop(
+      "The prompt catalog maps legacy alias `",
+      variant,
+      "` to missing variant `",
+      alias_target,
+      "`."
+    )
+  }
+
+  list(
+    requested_variant = variant,
+    resolved_variant = alias_target,
+    variant_def = variant_def,
+    is_legacy_alias = TRUE
   )
 }
 
@@ -155,7 +240,15 @@
   )
 }
 
-.resolve_cluster_label_vocabulary_path <- function(catalog, variant_def) {
+.default_cluster_label_packaged_vocabulary_rel_path <- function() {
+  "vocabulary/coarse_label_vocabulary_core_v1.json"
+}
+
+.resolve_cluster_label_vocabulary_path <- function(
+    catalog,
+    variant_def,
+    fallback_rel_path = NULL
+) {
   override_path <- .cluster_label_vocabulary_override_path()
 
   if (!is.null(override_path)) {
@@ -171,6 +264,9 @@
   }
 
   rel_path <- variant_def$vocabulary_path %||% NULL
+  if (is.null(rel_path)) {
+    rel_path <- fallback_rel_path %||% NULL
+  }
   if (is.null(rel_path)) {
     return(NULL)
   }
@@ -239,8 +335,16 @@
   paste(lines, collapse = "\n")
 }
 
-.read_cluster_label_vocabulary <- function(catalog, variant_def) {
-  path <- .resolve_cluster_label_vocabulary_path(catalog, variant_def)
+.read_cluster_label_vocabulary <- function(
+    catalog,
+    variant_def,
+    fallback_rel_path = NULL
+) {
+  path <- .resolve_cluster_label_vocabulary_path(
+    catalog = catalog,
+    variant_def = variant_def,
+    fallback_rel_path = fallback_rel_path
+  )
 
   if (is.null(path)) {
     return(list(
@@ -266,6 +370,283 @@
   )
 }
 
+.normalize_cluster_label_candidate_display <- function(text) {
+  text <- .as_scalar_character(text)
+  if (is.na(text) || !nzchar(trimws(text))) {
+    return(NA_character_)
+  }
+
+  text <- trimws(text)
+  text <- gsub("^[[:space:]]*[-*•]+[[:space:]]*", "", text, perl = TRUE)
+  text <- gsub("^[[:space:]]*[0-9]+[.)][[:space:]]*", "", text, perl = TRUE)
+  text <- gsub("`", "", text, fixed = TRUE)
+  text <- gsub("^[\"']+|[\"']+$", "", text, perl = TRUE)
+  text <- sub("^[[:alpha:]][[:alpha:] ]*:[[:space:]]*", "", text, perl = TRUE)
+  text <- sub("[[:space:]]*\\([^)]*\\)[[:space:]]*$", "", text, perl = TRUE)
+  text <- sub("[[:space:]]*:[[:space:]].*$", "", text, perl = TRUE)
+  text <- gsub("[\\[\\],]+", " ", text, perl = TRUE)
+  text <- gsub("[.]+$", "", text, perl = TRUE)
+  text <- gsub("\\s+", " ", text, perl = TRUE)
+  text <- trimws(text)
+
+  word_count <- length(strsplit(text, "\\s+", perl = TRUE)[[1L]])
+  if (!nzchar(text) || nchar(text) > 80L || word_count > 6L) {
+    return(NA_character_)
+  }
+
+  text
+}
+
+.cluster_label_candidate_to_canonical <- function(display_label) {
+  display_label <- .as_scalar_character(display_label)
+  if (is.na(display_label) || !nzchar(trimws(display_label))) {
+    return(NA_character_)
+  }
+
+  canonical <- tolower(display_label)
+  canonical <- gsub("[^a-z0-9]+", "_", canonical, perl = TRUE)
+  canonical <- gsub("_+", "_", canonical, perl = TRUE)
+  canonical <- gsub("^_+|_+$", "", canonical, perl = TRUE)
+
+  if (!nzchar(canonical) || nchar(canonical) > 64L) {
+    return(NA_character_)
+  }
+
+  canonical
+}
+
+.extract_cluster_label_candidates_from_draft <- function(
+    draft_analysis_text,
+    max_candidates = 8L
+) {
+  draft_analysis_text <- .as_scalar_character(draft_analysis_text)
+  max_candidates <- .arg_positive_integer(
+    max_candidates,
+    "max_candidates"
+  )
+
+  if (is.na(draft_analysis_text) || !nzchar(trimws(draft_analysis_text))) {
+    return(list())
+  }
+
+  lines <- strsplit(draft_analysis_text, "\n", fixed = TRUE)[[1L]]
+  lines <- trimws(lines)
+  section_idx <- grep(
+    "candidate labels",
+    tolower(lines),
+    fixed = TRUE
+  )
+
+  candidate_lines <- character(0)
+  if (length(section_idx)) {
+    idx <- section_idx[[1L]]
+    heading_line <- lines[[idx]]
+    heading_remainder <- sub(
+      ".*candidate labels[[:space:]]*:?[[:space:]]*",
+      "",
+      heading_line,
+      ignore.case = TRUE,
+      perl = TRUE
+    )
+    if (nzchar(heading_remainder) &&
+        !identical(trimws(heading_remainder), trimws(heading_line))) {
+      candidate_lines <- c(candidate_lines, heading_remainder)
+    }
+
+    if (idx < length(lines)) {
+      for (line in lines[(idx + 1L):length(lines)]) {
+        line_trim <- trimws(line)
+        if (!nzchar(line_trim)) {
+          if (length(candidate_lines)) {
+            break
+          }
+          next
+        }
+
+        lower_line <- tolower(line_trim)
+        if (grepl(
+          "^(possible interpretations|main signal|noise or conflicts|what not to overclaim)\\b",
+          lower_line,
+          perl = TRUE
+        ) || grepl("^[0-9]+\\.", lower_line, perl = TRUE)) {
+          break
+        }
+
+        candidate_lines <- c(candidate_lines, line_trim)
+      }
+    }
+  }
+
+  if (!length(candidate_lines)) {
+    return(list())
+  }
+
+  raw_candidates <- unlist(
+    strsplit(candidate_lines, ";", fixed = TRUE),
+    use.names = FALSE
+  )
+  raw_candidates <- raw_candidates[nzchar(trimws(raw_candidates))]
+
+  out <- list()
+  seen <- character(0)
+  for (candidate in raw_candidates) {
+    display_label <- .normalize_cluster_label_candidate_display(candidate)
+    canonical_label <- .cluster_label_candidate_to_canonical(display_label)
+
+    if (is.na(display_label) || is.na(canonical_label)) {
+      next
+    }
+    if (canonical_label %in% seen) {
+      next
+    }
+
+    seen <- c(seen, canonical_label)
+    out[[length(out) + 1L]] <- list(
+      display_label = display_label,
+      canonical_label = canonical_label,
+      source_text = .as_scalar_character(candidate)
+    )
+
+    if (length(out) >= max_candidates) {
+      break
+    }
+  }
+
+  out
+}
+
+.render_dynamic_label_candidates_text <- function(candidates) {
+  if (!is.list(candidates) || !length(candidates)) {
+    return("")
+  }
+
+  lines <- c(
+    "Label-space guidance:",
+    "",
+    "Dynamic label mode is active.",
+    "Prefer reusing one of the draft-derived candidate labels below, or a lightly normalized equivalent.",
+    "Do not invent a very different labeled answer unless every listed candidate is clearly unusable.",
+    "",
+    "Draft-derived candidate labels:",
+    ""
+  )
+
+  for (candidate in candidates) {
+    display_label <- .as_scalar_character(candidate$display_label)
+    canonical_label <- .as_scalar_character(candidate$canonical_label)
+    if (is.na(display_label) || is.na(canonical_label)) {
+      next
+    }
+
+    lines <- c(
+      lines,
+      paste0(
+        "- `",
+        display_label,
+        "` -> `",
+        canonical_label,
+        "`"
+      )
+    )
+  }
+
+  paste(lines, collapse = "\n")
+}
+
+.render_constrained_label_guidance_text <- function(vocabulary) {
+  rendered <- .as_scalar_character(vocabulary$rendered)
+  if (is.na(rendered) || !nzchar(rendered)) {
+    return("")
+  }
+
+  paste(
+    c(
+      "Label-space guidance:",
+      "",
+      "Constrained label mode is active.",
+      "If you return `status = \"labeled\"`, choose both `canonical_label` and `display_label` from the allowed labels below.",
+      "Do not invent a different labeled answer outside this list.",
+      "",
+      rendered
+    ),
+    collapse = "\n"
+  )
+}
+
+.resolve_cluster_label_mode_context <- function(
+    label_mode,
+    catalog,
+    variant_def,
+    dynamic_candidates = NULL
+) {
+  label_mode <- .arg_cluster_label_mode(label_mode, "label_mode")
+
+  empty_vocabulary <- list(
+    path = NULL,
+    text = NULL,
+    parsed = NULL,
+    rendered = ""
+  )
+
+  if (identical(label_mode, "open")) {
+    return(list(
+      requested = "open",
+      effective = "open",
+      note = NULL,
+      guidance_text = "",
+      vocabulary = empty_vocabulary,
+      dynamic_candidates = list()
+    ))
+  }
+
+  if (identical(label_mode, "constrained")) {
+    vocabulary <- .read_cluster_label_vocabulary(
+      catalog = catalog,
+      variant_def = variant_def,
+      fallback_rel_path = .default_cluster_label_packaged_vocabulary_rel_path()
+    )
+
+    return(list(
+      requested = "constrained",
+      effective = "constrained",
+      note = NULL,
+      guidance_text = .render_constrained_label_guidance_text(vocabulary),
+      vocabulary = vocabulary,
+      dynamic_candidates = list()
+    ))
+  }
+
+  dynamic_candidates <- dynamic_candidates %||% list()
+  if (is.character(dynamic_candidates) && length(dynamic_candidates) == 1L) {
+    dynamic_candidates <- .extract_cluster_label_candidates_from_draft(
+      dynamic_candidates
+    )
+  }
+
+  if (!is.list(dynamic_candidates) || !length(dynamic_candidates)) {
+    return(list(
+      requested = "dynamic",
+      effective = "open",
+      note = paste(
+        "Dynamic label mode did not find any usable candidate labels",
+        "in the draft analysis, so the prompt fell back to open labeling."
+      ),
+      guidance_text = "",
+      vocabulary = empty_vocabulary,
+      dynamic_candidates = list()
+    ))
+  }
+
+  list(
+    requested = "dynamic",
+    effective = "dynamic",
+    note = NULL,
+    guidance_text = .render_dynamic_label_candidates_text(dynamic_candidates),
+    vocabulary = empty_vocabulary,
+    dynamic_candidates = dynamic_candidates
+  )
+}
+
 .build_cluster_label_prompt <- function(
     evidence,
     variant,
@@ -273,23 +654,47 @@
     temperature = NULL,
     top_p = NULL,
     seed = NULL,
-    num_predict = NULL
+    num_predict = NULL,
+    prompt_budget_chars = 10000L,
+    include_schema = TRUE,
+    extra_template_values = NULL,
+    label_mode = "open",
+    dynamic_candidates = NULL
 ) {
   catalog <- .read_cluster_label_prompt_catalog()
   catalog_def <- catalog$parsed
-  variant_def <- catalog_def$variants[[variant]]
+  variant_resolution <- .resolve_cluster_label_prompt_variant(catalog_def, variant)
+  resolved_variant <- variant_resolution$resolved_variant
+  variant_def <- variant_resolution$variant_def
 
-  if (is.null(variant_def)) {
-    stop(
-      "`variant` must be one of: ",
-      paste(names(catalog_def$variants), collapse = ", "),
-      "."
+  include_schema <- .arg_single_flag(include_schema, "include_schema")
+  extra_template_values <- extra_template_values %||% list()
+  extra_template_values <- lapply(extra_template_values, function(x) {
+    value <- .as_scalar_character(x)
+    if (is.na(value)) "" else value
+  })
+
+  schema <- if (isTRUE(include_schema)) {
+    .read_cluster_label_schema(schema_path)
+  } else {
+    list(
+      path = NULL,
+      text = "",
+      parsed = NULL,
+      required = character(0)
     )
   }
-
-  schema <- .read_cluster_label_schema(schema_path)
-  evidence_text <- .format_cluster_evidence_prompt(evidence)
-  vocabulary <- .read_cluster_label_vocabulary(catalog, variant_def)
+  prompt_budget_chars <- .arg_nullable_positive_integer(
+    prompt_budget_chars,
+    "prompt_budget_chars"
+  )
+  mode_context <- .resolve_cluster_label_mode_context(
+    label_mode = label_mode,
+    catalog = catalog,
+    variant_def = variant_def,
+    dynamic_candidates = dynamic_candidates
+  )
+  vocabulary <- mode_context$vocabulary
   system_prompt_path <- .cluster_label_prompt_asset_path(
     catalog,
     catalog_def$system_prompt_path
@@ -298,22 +703,69 @@
     catalog,
     variant_def$user_prompt_path
   )
+  system_template <- .read_text_file(system_prompt_path)
+  user_template <- .read_text_file(user_prompt_path)
+  schema_prompt_text <- if (isTRUE(include_schema)) {
+    .render_cluster_label_schema_prompt_text(schema)
+  } else {
+    ""
+  }
 
-  template_values <- list(
-    "{{CLUSTER_ID}}" = evidence$meta$cluster_id,
-    "{{OUTPUT_SCHEMA_JSON}}" = schema$text,
-    "{{CLUSTER_EVIDENCE_TEXT}}" = evidence_text,
-    "{{COARSE_LABEL_VOCABULARY_TEXT}}" = vocabulary$rendered %||% ""
+  fixed_template_values <- c(
+    list(
+      "{{CLUSTER_ID}}" = evidence$meta$cluster_id,
+      "{{OUTPUT_SCHEMA_JSON}}" = schema_prompt_text,
+      "{{COARSE_LABEL_VOCABULARY_TEXT}}" = vocabulary$rendered %||% "",
+      "{{LABEL_MODE_GUIDANCE_TEXT}}" = mode_context$guidance_text %||% ""
+    ),
+    extra_template_values
+  )
+
+  empty_template_values <- c(
+    fixed_template_values,
+    list(
+      "{{CLUSTER_EVIDENCE_TEXT}}" = ""
+    )
+  )
+
+  system_content_empty <- .interpolate_prompt_template(
+    system_template,
+    empty_template_values
+  )
+  user_content_empty <- .interpolate_prompt_template(
+    user_template,
+    empty_template_values
+  )
+  fixed_overhead_chars <- .cluster_evidence_prompt_char_count(system_content_empty) +
+    .cluster_evidence_prompt_char_count(user_content_empty)
+  evidence_budget_chars <- if (is.null(prompt_budget_chars)) {
+    NULL
+  } else {
+    as.integer(max(prompt_budget_chars - fixed_overhead_chars, 0L))
+  }
+  evidence_render <- .serialize_cluster_evidence_prompt(
+    evidence,
+    max_chars = evidence_budget_chars
+  )
+  evidence_text <- evidence_render$text
+
+  template_values <- c(
+    fixed_template_values,
+    list(
+      "{{CLUSTER_EVIDENCE_TEXT}}" = evidence_text
+    )
   )
 
   system_content <- .interpolate_prompt_template(
-    .read_text_file(system_prompt_path),
+    system_template,
     template_values
   )
   user_content <- .interpolate_prompt_template(
-    .read_text_file(user_prompt_path),
+    user_template,
     template_values
   )
+  total_prompt_chars <- .cluster_evidence_prompt_char_count(system_content) +
+    .cluster_evidence_prompt_char_count(user_content)
 
   generation <- catalog_def$default_generation
   generation$temperature <- temperature %||% variant_def$temperature %||% generation$temperature
@@ -324,13 +776,48 @@
   list(
     cluster_id = evidence$meta$cluster_id,
     variant = variant,
+    resolved_variant = resolved_variant,
+    is_legacy_alias = variant_resolution$is_legacy_alias,
     task_type = variant_def$task_type %||% "label",
     catalog_path = catalog$path,
     schema_path = schema$path,
     schema_text = schema$text,
     schema_required = schema$required,
     schema_object = schema$parsed,
+    schema_prompt_text = schema_prompt_text,
+    extra_template_values = extra_template_values,
     evidence_text = evidence_text,
+    evidence_text_full = evidence_render$full_text,
+    evidence_budget = list(
+      prompt_budget_chars = prompt_budget_chars,
+      fixed_overhead_chars = fixed_overhead_chars,
+      schema_prompt_chars = .cluster_evidence_prompt_char_count(schema_prompt_text),
+      schema_text_chars = .cluster_evidence_prompt_char_count(schema$text),
+      evidence_budget_chars = evidence_budget_chars,
+      evidence_chars_full = evidence_render$chars_full,
+      evidence_chars_used = evidence_render$chars_used,
+      total_prompt_chars = total_prompt_chars,
+      fits_within_budget = if (is.null(prompt_budget_chars)) {
+        TRUE
+      } else {
+        total_prompt_chars <= prompt_budget_chars
+      },
+      fixed_overhead_exceeds_budget = if (is.null(prompt_budget_chars)) {
+        FALSE
+      } else {
+        fixed_overhead_chars > prompt_budget_chars
+      },
+      trimmed = isTRUE(evidence_render$trimmed),
+      kept_block_ids = evidence_render$kept_block_ids,
+      dropped_block_ids = evidence_render$dropped_block_ids,
+      truncated_block_ids = evidence_render$truncated_block_ids,
+      blocks = evidence_render$blocks
+    ),
+    label_mode_requested = mode_context$requested,
+    label_mode_effective = mode_context$effective,
+    label_mode_note = mode_context$note,
+    label_mode_guidance_text = mode_context$guidance_text,
+    dynamic_candidates = mode_context$dynamic_candidates,
     vocabulary_path = vocabulary$path,
     vocabulary_text = vocabulary$rendered,
     vocabulary_object = vocabulary$parsed,
@@ -386,7 +873,7 @@
       messages = prompt_bundle$messages,
       stream = FALSE,
       think = FALSE,
-      format = prompt_bundle$schema_object,
+      format = prompt_bundle$schema_object %||% NULL,
       options = options,
       keep_alive = keep_alive
     )
@@ -395,6 +882,78 @@
 
 .default_cluster_label_gate_variant <- function() {
   "gate_abstain_examples_v1"
+}
+
+.default_cluster_label_draft_variant <- function() {
+  catalog <- tryCatch(
+    .read_cluster_label_prompt_catalog(),
+    error = function(e) NULL
+  )
+
+  draft_variant <- catalog$parsed$internal_draft_variant %||% NULL
+  if (.is_non_empty_scalar_character(draft_variant)) {
+    return(draft_variant)
+  }
+
+  "draft_analysis_v1"
+}
+
+.default_cluster_label_explanation_variant <- function() {
+  catalog <- tryCatch(
+    .read_cluster_label_prompt_catalog(),
+    error = function(e) NULL
+  )
+
+  explanation_variant <- catalog$parsed$internal_explanation_variant %||% NULL
+  if (.is_non_empty_scalar_character(explanation_variant)) {
+    return(explanation_variant)
+  }
+
+  "explanation_pass_v1"
+}
+
+.cluster_label_selection_cascade_variants <- function(variant) {
+  catalog <- .read_cluster_label_prompt_catalog()
+  catalog_def <- catalog$parsed
+  resolved <- .resolve_cluster_label_prompt_variant(
+    catalog_def,
+    variant
+  )$resolved_variant
+  public_variants <- .as_character_vector(
+    catalog_def$public_label_variants %||%
+      c("label_primary_v1", "label_soft_v1", "label_broad_v1")
+  )
+
+  start_idx <- match(resolved, public_variants)
+  if (is.na(start_idx)) {
+    stop(
+      "workflow_steps = 3 requires a public label variant. Received `",
+      variant,
+      "` resolved to `",
+      resolved,
+      "`."
+    )
+  }
+
+  cascade_public <- public_variants[start_idx:length(public_variants)]
+  cascade_internal <- vapply(cascade_public, function(public_variant) {
+    selection_variant <- .as_scalar_character(
+      catalog_def$variants[[public_variant]]$selection_variant %||% NA_character_
+    )
+    if (is.na(selection_variant) || !nzchar(selection_variant)) {
+      stop(
+        "Public variant `",
+        public_variant,
+        "` is missing `selection_variant` in the prompt catalog."
+      )
+    }
+    selection_variant
+  }, character(1))
+
+  list(
+    public_variants = unname(cascade_public),
+    internal_variants = unname(cascade_internal)
+  )
 }
 
 .default_cluster_label_speculative_variants <- function() {
@@ -412,7 +971,21 @@
     return(unname(opt))
   }
 
-  c("speculative_fallback_v3", "speculative_fallback_v4")
+  catalog <- tryCatch(
+    .read_cluster_label_prompt_catalog(),
+    error = function(e) NULL
+  )
+
+  if (!is.null(catalog)) {
+    ladder <- .as_character_vector(
+      catalog$parsed$public_speculative_ladder %||% character(0)
+    )
+    if (length(ladder)) {
+      return(unname(ladder))
+    }
+  }
+
+  c("label_soft_v1", "label_broad_v1")
 }
 
 .default_cluster_label_speculative_model <- function() {

@@ -226,7 +226,7 @@ test_that("label_clusters runs a one-cluster workflow and writes a review card",
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     review_dir = review_dir,
     verbose = FALSE,
@@ -286,7 +286,7 @@ test_that("label_clusters performs one validator-guided repair pass", {
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     review_dir = review_dir,
     verbose = FALSE,
@@ -303,7 +303,154 @@ test_that("label_clusters performs one validator-guided repair pass", {
   expect_false(res$summary$used_placeholder[[1]])
 })
 
-test_that("label_clusters doubles num_predict after EOF-like failures", {
+test_that("label-format validator failures trigger a repair prompt with label limits", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_invalid <- .build_label_clusters_valid_output(ev)
+  out_invalid$display_label <- "one two three four five six seven"
+
+  out_valid <- .build_label_clusters_valid_output(ev)
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  state$repair_payload <- NULL
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$n <- state$n + 1L
+    if (state$n == 2L) {
+      state$repair_payload <- payload
+    }
+
+    content <- if (state$n == 1L) {
+      jsonlite::toJSON(out_invalid, auto_unbox = TRUE, null = "null")
+    } else {
+      jsonlite::toJSON(out_valid, auto_unbox = TRUE, null = "null")
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-format-repair")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$n, 2L)
+  expect_length(state$repair_payload$messages, 3L)
+  expect_equal(state$repair_payload$messages[[2]]$role, "assistant")
+  expect_equal(state$repair_payload$messages[[3]]$role, "user")
+  expect_match(
+    state$repair_payload$messages[[3]]$content,
+    "display_label must be <= 80 characters and <= 6 words",
+    fixed = TRUE
+  )
+  expect_match(
+    state$repair_payload$messages[[3]]$content,
+    "canonical_label must stay lowercase snake_case and must be <= 64 characters",
+    fixed = TRUE
+  )
+  expect_match(
+    state$repair_payload$messages[[3]]$content,
+    "prefer changing only canonical_label and display_label",
+    fixed = TRUE
+  )
+  expect_match(
+    state$repair_payload$messages[[2]]$content,
+    out_invalid$display_label,
+    fixed = TRUE
+  )
+  expect_false(any(vapply(
+    state$repair_payload$messages,
+    function(msg) {
+      content <- if (is.null(msg$content)) "" else msg$content
+      grepl("Cluster evidence:", content, fixed = TRUE)
+    },
+    logical(1)
+  )))
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_equal(res$summary$validation_status[[1]], "valid")
+  expect_true(res$summary$repair_used[[1]])
+})
+
+test_that("mixed validation failures keep the full repair context", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_invalid <- .build_label_clusters_valid_output(ev)
+  out_invalid$display_label <- "dry grassland cluster very likely indeed here"
+  out_invalid$canonical_label <- "dry_grassland_cluster"
+  out_invalid$interpretation_summary <- paste(
+    "The cluster looks like a dry grassland assemblage based on its compact species core."
+  )
+
+  out_valid <- .build_label_clusters_valid_output(ev)
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  state$repair_payload <- NULL
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$n <- state$n + 1L
+    if (state$n == 2L) {
+      state$repair_payload <- payload
+    }
+
+    content <- if (state$n == 1L) {
+      jsonlite::toJSON(out_invalid, auto_unbox = TRUE, null = "null")
+    } else {
+      jsonlite::toJSON(out_valid, auto_unbox = TRUE, null = "null")
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-mixed-repair")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$n, 2L)
+  expect_length(state$repair_payload$messages, 4L)
+  expect_match(
+    state$repair_payload$messages[[2]]$content,
+    "Cluster evidence:",
+    fixed = TRUE
+  )
+  expect_match(
+    state$repair_payload$messages[[4]]$content,
+    "Validator issues:",
+    fixed = TRUE
+  )
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_true(res$summary$repair_used[[1]])
+})
+
+test_that("label_clusters walks the EOF retry ladder before succeeding", {
   x <- .build_label_clusters_test_cocktail()
   ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
   out_valid <- .build_label_clusters_valid_output(ev)
@@ -319,7 +466,7 @@ test_that("label_clusters doubles num_predict after EOF-like failures", {
     }
     state$num_predict <- c(state$num_predict, np)
 
-    content <- if (is.na(np) || np < 2400L) {
+    content <- if (is.na(np) || np < 9600L) {
       "{\n  \"schema_version\": \"0.1.0\", "
     } else {
       jsonlite::toJSON(out_valid, auto_unbox = TRUE, null = "null")
@@ -339,19 +486,69 @@ test_that("label_clusters doubles num_predict after EOF-like failures", {
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     review_dir = review_dir,
     verbose = FALSE,
     request_fn = fake_request
   )
 
-  expect_true(any(state$num_predict == 1200L))
-  expect_true(any(state$num_predict == 2400L))
+  expect_equal(unique(state$num_predict), c(2400L, 4800L, 9600L))
+  expect_lte(max(state$num_predict), 9600L)
   expect_equal(res$summary$run_status[[1]], "success")
-  expect_equal(res$summary$iterations_used[[1]], 2L)
-  expect_equal(res$summary$num_predict_used[[1]], 2400L)
+  expect_equal(res$summary$iterations_used[[1]], 3L)
+  expect_equal(res$summary$num_predict_used[[1]], 9600L)
   expect_false(res$summary$used_placeholder[[1]])
+})
+
+test_that("label_clusters forwards prompt_budget_chars into the strict prompt", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_valid <- .build_label_clusters_valid_output(ev)
+
+  full_req <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    prompt_budget_chars = NULL,
+    dry_run = TRUE
+  )
+  small_budget <- full_req$prompt$evidence_budget$fixed_overhead_chars + 80L
+
+  state <- new.env(parent = emptyenv())
+  state$user_prompt <- NULL
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$user_prompt <- payload$messages[[2]]$content
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(
+        payload,
+        jsonlite::toJSON(out_valid, auto_unbox = TRUE, null = "null")
+      ),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-prompt-budget")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    prompt_budget_chars = small_budget,
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_match(state$user_prompt, "Metrics:", fixed = TRUE)
+  expect_false(grepl("Cover summary:", state$user_prompt, fixed = TRUE))
+  expect_equal(res$summary$run_status[[1]], "success")
 })
 
 test_that("label_clusters can enrich evidence with the optional semantic layer", {
@@ -388,7 +585,7 @@ test_that("label_clusters can enrich evidence with the optional semantic layer",
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     semantic_layer = TRUE,
     semantic_root = tempdir(),
     timeout_sec = 1,
@@ -407,6 +604,12 @@ test_that("label_clusters can enrich evidence with the optional semantic layer",
 test_that("speculative fallback variants map to stable label-origin families", {
   expect_equal(
     cocktailr:::.cluster_label_origin_from_speculative_variant(
+      "label_soft_v1"
+    ),
+    "speculative_v3"
+  )
+  expect_equal(
+    cocktailr:::.cluster_label_origin_from_speculative_variant(
       "speculative_fallback_v3"
     ),
     "speculative_v3"
@@ -416,6 +619,12 @@ test_that("speculative fallback variants map to stable label-origin families", {
       "speculative_fallback_v8"
     ),
     "speculative_v3"
+  )
+  expect_equal(
+    cocktailr:::.cluster_label_origin_from_speculative_variant(
+      "label_broad_v1"
+    ),
+    "speculative_v4"
   )
   expect_equal(
     cocktailr:::.cluster_label_origin_from_speculative_variant(
@@ -429,6 +638,258 @@ test_that("speculative fallback variants map to stable label-origin families", {
     ),
     "speculative_v4"
   )
+})
+
+test_that("default speculative ladder uses the new public soft and broad variants", {
+  expect_equal(
+    cocktailr:::.default_cluster_label_speculative_variants(),
+    c("label_soft_v1", "label_broad_v1")
+  )
+})
+
+test_that("label_clusters can run the staged draft-selection-explanation workflow", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_valid <- .build_label_clusters_valid_output(ev)
+
+  selection_output <- list(
+    schema_version = "0.1.0",
+    cluster_id = ev$meta$cluster_id,
+    status = "labeled",
+    canonical_label = out_valid$canonical_label,
+    display_label = out_valid$display_label,
+    label_summary = "A compact compositional label is safe after the draft pass.",
+    abstain_reason = NULL
+  )
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  state$formats <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$n <- state$n + 1L
+    state$formats[state$n] <- payload$format$title %||% "freeform"
+
+    content <- if (is.null(payload$format)) {
+      paste(
+        "Possible interpretations:",
+        "- compact species-core cluster",
+        "",
+        "Main signal:",
+        "- the same species core recurs",
+        sep = "\n"
+      )
+    } else if (identical(payload$format$title, "cluster_label_selection")) {
+      jsonlite::toJSON(selection_output, auto_unbox = TRUE, null = "null")
+    } else {
+      jsonlite::toJSON(out_valid, auto_unbox = TRUE, null = "null")
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-w3")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    workflow_steps = 3L,
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_gte(state$n, 3L)
+  expect_equal(state$formats[[1]], "freeform")
+  expect_equal(state$formats[[2]], "cluster_label_selection")
+  expect_equal(state$formats[[3]], "cluster_label_output")
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_equal(res$summary$output_status[[1]], "labeled")
+  expect_equal(res$results$c_1$llm_result$workflow_steps, 3L)
+  expect_equal(res$results$c_1$llm_result$workflow$draft$output$status, "draft_ready")
+  expect_equal(
+    res$results$c_1$llm_result$workflow$label$selected_public_variant,
+    "label_primary_v1"
+  )
+})
+
+test_that("label_clusters passes dynamic label mode into the staged selection prompt", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(
+    x,
+    "c_1",
+    top_n_phi = 3,
+    n_prototype_plots = 2,
+    n_borderline_plots = 2
+  )
+  out_valid <- .build_label_clusters_valid_output(ev)
+
+  selection_output <- list(
+    schema_version = "0.1.0",
+    cluster_id = ev$meta$cluster_id,
+    status = "labeled",
+    canonical_label = "transition_edge_assemblage",
+    display_label = "transition edge assemblage",
+    label_summary = "The draft-derived candidate list points to a safe transition label.",
+    abstain_reason = NULL
+  )
+
+  state <- new.env(parent = emptyenv())
+  state$checked_dynamic_prompt <- FALSE
+
+  fake_request <- function(url, payload, timeout_sec) {
+    content <- if (is.null(payload$format)) {
+      paste(
+        "Possible interpretations:",
+        "- compact species-core cluster",
+        "",
+        "Main signal:",
+        "- transition-like composition",
+        "",
+        "Candidate labels:",
+        "- transition edge assemblage",
+        "- mixed herbaceous assemblage",
+        sep = "\n"
+      )
+    } else if (identical(payload$format$title, "cluster_label_selection")) {
+      expect_match(
+        payload$messages[[2]]$content,
+        "Dynamic label mode is active.",
+        fixed = TRUE
+      )
+      expect_match(
+        payload$messages[[2]]$content,
+        "transition_edge_assemblage",
+        fixed = TRUE
+      )
+      state$checked_dynamic_prompt <- TRUE
+      jsonlite::toJSON(selection_output, auto_unbox = TRUE, null = "null")
+    } else {
+      jsonlite::toJSON(out_valid, auto_unbox = TRUE, null = "null")
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-dynamic")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    workflow_steps = 3L,
+    label_mode = "dynamic",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_true(state$checked_dynamic_prompt)
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_equal(
+    res$results$c_1$llm_result$workflow$label$selection_output$canonical_label,
+    "transition_edge_assemblage"
+  )
+})
+
+test_that("label_clusters finalizes a deterministic chaotic fallback after an exhausted staged cascade", {
+  x <- .build_label_clusters_test_cocktail()
+
+  abstain_selection <- list(
+    schema_version = "0.1.0",
+    cluster_id = "c_1",
+    status = "abstain",
+    canonical_label = NULL,
+    display_label = NULL,
+    label_summary = "This rung abstains because the cluster remains unresolved.",
+    abstain_reason = "Still unresolved."
+  )
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  state$formats <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$n <- state$n + 1L
+    state$formats[state$n] <- payload$format$title %||% "freeform"
+
+    content <- if (is.null(payload$format)) {
+      paste(
+        "Possible interpretations:",
+        "- mixed cluster",
+        "",
+        "Main signal:",
+        "- recurring but unresolved signal",
+        sep = "\n"
+      )
+    } else if (identical(payload$format$title, "cluster_label_selection")) {
+      jsonlite::toJSON(abstain_selection, auto_unbox = TRUE, null = "null")
+    } else {
+      stop("The explanation LLM call should be skipped when selection is exhausted.")
+    }
+
+    outer <- list(
+      model = payload$model,
+      created_at = "2026-06-30T12:00:00Z",
+      message = list(
+        role = "assistant",
+        content = content
+      ),
+      done = TRUE,
+      done_reason = "stop"
+    )
+
+    list(
+      status_code = 200L,
+      body_text = jsonlite::toJSON(outer, auto_unbox = TRUE, null = "null"),
+      parsed = outer
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-chaotic-fallback")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    workflow_steps = 3L,
+    timeout_sec = 1,
+    review_dir = review_dir,
+    labels_for_imgs = TRUE,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$n, 4L)
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_equal(res$summary$output_status[[1]], "labeled")
+  expect_equal(res$label_registry$review_status[[1]], "review_required")
+  expect_equal(res$label_registry$legend_label[[1]], "c_1: chaotic cluster")
+  expect_equal(res$label_registry$selected_label_variant[[1]], "chaotic_cluster_fallback")
+  expect_true(res$label_registry$label_stage_exhausted[[1]])
+  expect_match(
+    res$label_registry$label_stage_failure_reason[[1]],
+    "abstained",
+    ignore.case = TRUE
+  )
+  expect_true(isTRUE(res$results$c_1$llm_result$workflow$explanation$skipped))
 })
 
 test_that("label_clusters writes a placeholder review card after bounded failure", {
@@ -449,7 +910,7 @@ test_that("label_clusters writes a placeholder review card after bounded failure
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     review_dir = review_dir,
     verbose = FALSE,
@@ -492,7 +953,7 @@ test_that("label_clusters can produce a speculative fallback label after strict 
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     speculative_fallback_mode = "after_rejection",
     timeout_sec = 1,
     review_dir = review_dir,
@@ -543,7 +1004,7 @@ test_that("speculative fallback normalizes confidence score programmatically", {
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     speculative_fallback_mode = "after_rejection",
     timeout_sec = 1,
     review_dir = review_dir,
@@ -600,7 +1061,7 @@ test_that("label_clusters falls back to placeholder when speculative fallback al
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     speculative_fallback_mode = "after_rejection",
     timeout_sec = 1,
     review_dir = review_dir,
@@ -646,7 +1107,7 @@ test_that("label_clusters does not trigger speculative fallback after a valid st
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     speculative_fallback_mode = "after_rejection",
     timeout_sec = 1,
     review_dir = review_dir,
@@ -700,7 +1161,7 @@ test_that("label_clusters can continue after strict abstain with the soft-label 
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     speculative_fallback_mode = "after_nonaccepted",
     timeout_sec = 1,
     review_dir = review_dir,
@@ -717,11 +1178,16 @@ test_that("label_clusters can continue after strict abstain with the soft-label 
   expect_equal(res$summary$strict_outcome[[1]], "abstained")
   expect_true(res$summary$speculative_fallback_used[[1]])
   expect_equal(res$summary$label_origin[[1]], "speculative_v3")
+  expect_match(
+    basename(res$results[[1]]$llm_result$prompt$user_path),
+    "user_label_soft_v1\\.md$",
+    perl = TRUE
+  )
   expect_equal(res$summary$species_entropy_band[[1]], "high")
   expect_equal(res$summary$chaoticity_score[[1]], 70L)
 })
 
-test_that("label_clusters can override speculative ladder prompt variants via option", {
+test_that("label_clusters can override the speculative ladder with legacy aliases", {
   x <- .build_label_clusters_test_cocktail()
   ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
   out_abstain <- .build_label_clusters_abstain_output(ev)
@@ -761,7 +1227,7 @@ test_that("label_clusters can override speculative ladder prompt variants via op
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     speculative_fallback_mode = "after_nonaccepted",
     timeout_sec = 1,
     review_dir = review_dir,
@@ -773,8 +1239,12 @@ test_that("label_clusters can override speculative ladder prompt variants via op
   expect_equal(res$summary$label_origin[[1]], "speculative_v3")
   expect_match(
     basename(res$results[[1]]$llm_result$prompt$user_path),
-    "user_speculative_fallback_v6\\.md$",
+    "user_label_soft_v1\\.md$",
     perl = TRUE
+  )
+  expect_equal(
+    res$results[[1]]$llm_result$prompt$resolved_variant,
+    "label_soft_v1"
   )
 })
 
@@ -814,7 +1284,7 @@ test_that("label_clusters escalates from speculative v3 to v4 after soft abstain
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     speculative_fallback_mode = "after_nonaccepted",
     timeout_sec = 1,
     review_dir = review_dir,
@@ -828,6 +1298,11 @@ test_that("label_clusters escalates from speculative v3 to v4 after soft abstain
   expect_equal(res$summary$run_status[[1]], "speculative")
   expect_equal(res$summary$strict_outcome[[1]], "abstained")
   expect_equal(res$summary$label_origin[[1]], "speculative_v4")
+  expect_match(
+    basename(res$results[[1]]$llm_result$prompt$user_path),
+    "user_label_broad_v1\\.md$",
+    perl = TRUE
+  )
   expect_equal(res$summary$species_entropy_band[[1]], "very_high")
   expect_equal(res$summary$chaoticity_score[[1]], 90L)
 })
@@ -856,7 +1331,7 @@ test_that("label_clusters emits progress messages when verbose = TRUE", {
       x = x,
       clusters = "c_1",
       model = "fake-model",
-      variant = "strict_abstention_gate_v1",
+      variant = "label_primary_v1",
       timeout_sec = 1,
       review_dir = review_dir,
       verbose = TRUE,
@@ -907,7 +1382,7 @@ test_that("label_clusters resolves a relative review_dir against the package sou
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     review_dir = rel_dir,
     verbose = FALSE,
@@ -941,7 +1416,7 @@ test_that("label_clusters can build a plotting registry when labels_for_imgs = T
     x = x,
     clusters = "c_1",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     timeout_sec = 1,
     review_dir = review_dir,
     labels_for_imgs = TRUE,
@@ -960,3 +1435,4 @@ test_that("label_clusters can build a plotting registry when labels_for_imgs = T
   expect_equal(res$label_registry$legend_label[[1]], "c_1: sp1-sp2 cluster")
   expect_true(file.exists(res$label_registry$review_file[[1]]))
 })
+

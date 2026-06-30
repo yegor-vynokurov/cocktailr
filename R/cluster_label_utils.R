@@ -23,6 +23,14 @@
   as.integer(x)
 }
 
+.arg_nullable_non_negative_integer <- function(x, name) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+
+  .arg_non_negative_integer(x, name)
+}
+
 .arg_positive_integer <- function(x, name) {
   x <- .arg_non_negative_integer(x, name)
   if (x < 1L) {
@@ -31,10 +39,30 @@
   x
 }
 
+.arg_nullable_positive_integer <- function(x, name) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+
+  .arg_positive_integer(x, name)
+}
+
 .arg_workflow_steps <- function(x, name) {
   x <- .arg_non_negative_integer(x, name)
-  if (!x %in% c(1L, 2L)) {
-    stop("`", name, "` must be either 1 or 2.")
+  if (!x %in% c(1L, 2L, 3L)) {
+    stop("`", name, "` must be either 1, 2, or 3.")
+  }
+  x
+}
+
+.arg_cluster_label_mode <- function(x, name) {
+  x <- .arg_scalar_character(x, name)
+  if (!x %in% c("open", "constrained", "dynamic")) {
+    stop(
+      "`",
+      name,
+      "` must be one of: \"open\", \"constrained\", or \"dynamic\"."
+    )
   }
   x
 }

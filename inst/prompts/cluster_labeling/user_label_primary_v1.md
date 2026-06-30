@@ -1,4 +1,4 @@
-Task mode: `strict_abstention_gate_v1`
+Task mode: `label_primary_v1`
 
 Primary objective:
 
@@ -60,6 +60,8 @@ Formatting and content rules:
   evidence; otherwise leave the slot null.
 - Use `checks_to_run` to say what extra contrast or ecological context
   would most help resolve the abstention.
+
+{{LABEL_MODE_GUIDANCE_TEXT}}
 
 Cluster id:
 

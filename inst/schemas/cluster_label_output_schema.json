@@ -34,11 +34,14 @@
     },
     "canonical_label": {
       "type": ["string", "null"],
-      "pattern": "^[a-z0-9_]+$"
+      "pattern": "^[a-z0-9_]+$",
+      "maxLength": 64
     },
     "display_label": {
       "type": ["string", "null"],
-      "minLength": 1
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$)\\S+(?:\\s+\\S+){0,5}$"
     },
     "interpretation_summary": {
       "type": "string",
@@ -290,11 +293,14 @@
         "properties": {
           "canonical_label": {
             "type": "string",
-            "pattern": "^[a-z0-9_]+$"
+            "pattern": "^[a-z0-9_]+$",
+            "maxLength": 64
           },
           "display_label": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$)\\S+(?:\\s+\\S+){0,5}$"
           },
           "abstain_reason": {
             "type": "null"

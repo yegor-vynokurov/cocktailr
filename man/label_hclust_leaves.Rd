@@ -64,7 +64,7 @@ run <- label_clusters(
   x = res,
   clusters = c("c_12", "c_25", "c_35"),
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   labels_for_imgs = TRUE
 )
 

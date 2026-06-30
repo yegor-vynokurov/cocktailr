@@ -164,13 +164,13 @@ test_that("render_cluster_review writes compact markdown by default and metadata
     cluster_id = ev$meta$cluster_id,
     provider = "ollama",
     model = "fake-model",
-    variant = "strict_abstention_gate_v1",
+    variant = "label_primary_v1",
     workflow_steps = 1L,
     logs = list(run_dir = "temp/fake-run"),
     prompt = list(
       catalog_path = "inst/prompts/cluster_labeling/catalog.json",
-      system_path = "inst/prompts/cluster_labeling/system_v1.md",
-      user_path = "inst/prompts/cluster_labeling/user_strict_abstention_gate_v1.md",
+      system_path = "inst/prompts/cluster_labeling/system_scientific_caution_v1.md",
+      user_path = "inst/prompts/cluster_labeling/user_label_primary_v1.md",
       schema_path = "inst/schemas/cluster_label_output_schema.json"
     ),
     output = output
@@ -189,7 +189,7 @@ test_that("render_cluster_review writes compact markdown by default and metadata
   expect_match(art$markdown, "Model: `fake-model`", fixed = TRUE)
   expect_match(
     art$markdown,
-    "User prompt: `inst/prompts/cluster_labeling/user_strict_abstention_gate_v1.md`",
+    "User prompt: `inst/prompts/cluster_labeling/user_label_primary_v1.md`",
     fixed = TRUE
   )
 
@@ -201,8 +201,66 @@ test_that("render_cluster_review writes compact markdown by default and metadata
   meta <- jsonlite::fromJSON(art_full$metadata_file, simplifyVector = TRUE)
   expect_equal(meta$cluster_id, "c_1")
   expect_equal(meta$model, "fake-model")
-  expect_equal(meta$variant, "strict_abstention_gate_v1")
+  expect_equal(meta$variant, "label_primary_v1")
   expect_equal(meta$review_status, "accepted")
+})
+
+test_that("render_cluster_review surfaces exhausted staged-fallback provenance", {
+  ev <- .build_review_test_cluster_evidence()
+  selection_output <- cocktailr:::.cluster_label_selection_fallback_output(
+    ev,
+    failure_messages = c(
+      "label_primary_v1: abstained",
+      "label_soft_v1: abstained",
+      "label_broad_v1: abstained"
+    )
+  )
+  output <- cocktailr:::.cluster_label_selection_fallback_final_output(
+    evidence = ev,
+    selection_output = selection_output,
+    failure_messages = c(
+      "label_primary_v1: abstained",
+      "label_soft_v1: abstained",
+      "label_broad_v1: abstained"
+    )
+  )
+
+  res <- list(
+    cluster_id = ev$meta$cluster_id,
+    provider = "ollama",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    workflow_steps = 3L,
+    logs = list(run_dir = "temp/fake-run"),
+    prompt = list(
+      catalog_path = "inst/prompts/cluster_labeling/catalog.json",
+      system_path = "inst/prompts/cluster_labeling/system_scientific_caution_v1.md",
+      user_path = "inst/prompts/internal_cluster_labeling/user_explanation_pass_v1.md",
+      schema_path = "inst/schemas/cluster_label_output_schema.json"
+    ),
+    output = output,
+    workflow = list(
+      label = list(
+        selected_public_variant = "chaotic_cluster_fallback",
+        exhausted = TRUE,
+        selection_output = selection_output,
+        failure_messages = c(
+          "label_primary_v1: abstained",
+          "label_soft_v1: abstained",
+          "label_broad_v1: abstained"
+        )
+      )
+    )
+  )
+  class(res) <- c("cluster_label_result", "list")
+
+  art <- render_cluster_review(res, ev, full = TRUE)
+
+  expect_true(isTRUE(art$metadata$label_stage_exhausted))
+  expect_equal(art$metadata$selected_label_variant, "chaotic_cluster_fallback")
+  expect_match(art$markdown, "Selected label rung: `chaotic_cluster_fallback`", fixed = TRUE)
+  expect_match(art$markdown, "Label-stage exhausted: `true`", fixed = TRUE)
+  expect_match(art$markdown, "Cascade note: all public label-selection rungs were exhausted", fixed = TRUE)
 })
 
 test_that("render_cluster_review review_dir organizes files by dataset when known", {
@@ -299,3 +357,4 @@ test_that("render_cluster_review makes speculative fallback cards visibly distin
   expect_match(art$markdown, "What prevents full confidence", fixed = TRUE)
   expect_match(art$markdown, "Strict outcome before fallback", fixed = TRUE)
 })
+
