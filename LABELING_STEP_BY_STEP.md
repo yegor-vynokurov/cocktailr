@@ -777,9 +777,12 @@ How the main controls are split:
   after the placeholder/rejection path (`"after_rejection"`), or also used
   after a valid strict abstain (`"after_nonaccepted"`).
 - `model`
-  Controls the strict first pass only. The current soft-label ladder was
-  developed and tuned primarily on `phi4-mini:latest`. This does not
-  change the main project recommendation: for ordinary strict labeling,
+  Controls the strict first pass and, by default, the speculative fallback
+  ladder too. If you start on one model, the fallback stays on that same
+  model unless you explicitly override it with
+  `options(cocktailr.speculative_fallback_model = "...")`. The soft ladder
+  itself was developed and tuned primarily on `phi4-mini:latest`; this does
+  not change the main project recommendation: for ordinary strict labeling,
   keep `gemma4:12b` as the baseline and treat smaller `phi4` models as
   experimental.
 - `variant`
@@ -809,10 +812,10 @@ options(cocktailr.speculative_fallback_num_predict = 2400)
 options(cocktailr.speculative_fallback_ollama_options = list(num_ctx = 8192))
 ```
 
-Those overrides are optional. If you do nothing, the default soft candidate is
-already:
+Those overrides are optional. If you do nothing, the soft ladder inherits the
+current `model` and any explicitly supplied `ollama_options`; otherwise it
+falls back to:
 
-- `phi4-mini:latest`
 - `ollama_options = list(num_ctx = 8192)`
 - `num_predict = 2400`
 - `label_soft_v1` first, then `label_broad_v1`

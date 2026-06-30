@@ -303,11 +303,11 @@ test_that("auto-loaded speculative registries preserve starred labels", {
       regexpr("c_[0-9]+", payload$messages[[2]]$content, perl = TRUE)
     )
     cluster_id <- if (length(cluster_id_match)) cluster_id_match[[1]] else NA_character_
-    is_speculative <- identical(payload$model %||% NA_character_, "phi4-mini:latest") ||
-      any(vapply(payload$messages, function(msg) {
-        grepl("Task mode: `label_soft_v1`", msg$content, fixed = TRUE) ||
-          grepl("Task mode: `label_broad_v1`", msg$content, fixed = TRUE)
-      }, logical(1)))
+    is_speculative <- any(vapply(payload$messages, function(msg) {
+      content <- msg$content %||% ""
+      grepl("Task mode: `label_soft_v1`", content, fixed = TRUE) ||
+        grepl("Task mode: `label_broad_v1`", content, fixed = TRUE)
+    }, logical(1)))
 
     content <- if (identical(cluster_id, "c_1")) {
       jsonlite::toJSON(out1, auto_unbox = TRUE, null = "null")

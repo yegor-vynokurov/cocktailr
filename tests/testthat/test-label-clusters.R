@@ -156,6 +156,14 @@
   )
 }
 
+.is_speculative_fallback_request <- function(payload) {
+  any(vapply(payload$messages, function(msg) {
+    content <- msg$content %||% ""
+    grepl("Task mode: `label_soft_v1`", content, fixed = TRUE) ||
+      grepl("Task mode: `label_broad_v1`", content, fixed = TRUE)
+  }, logical(1)))
+}
+
 .build_label_clusters_semantic_result <- function(ev) {
   cluster_id <- ev$meta$cluster_id
   dominant_species <- ev$summaries$species_topological$species[[1]]
@@ -931,7 +939,7 @@ test_that("label_clusters can produce a speculative fallback label after strict 
   out_speculative <- .build_label_clusters_speculative_output(ev)
 
   fake_request <- function(url, payload, timeout_sec) {
-    is_speculative <- identical(payload$model %||% NA_character_, "phi4-mini:latest")
+    is_speculative <- .is_speculative_fallback_request(payload)
 
     content <- if (is_speculative) {
       jsonlite::toJSON(out_speculative, auto_unbox = TRUE, null = "null")
@@ -982,7 +990,7 @@ test_that("speculative fallback normalizes confidence score programmatically", {
   out_speculative$confidence$rationale <- "Model returned a non-zero score, but the workflow should normalize it."
 
   fake_request <- function(url, payload, timeout_sec) {
-    is_speculative <- identical(payload$model %||% NA_character_, "phi4-mini:latest")
+    is_speculative <- .is_speculative_fallback_request(payload)
 
     content <- if (is_speculative) {
       jsonlite::toJSON(out_speculative, auto_unbox = TRUE, null = "null")
@@ -1021,7 +1029,7 @@ test_that("label_clusters falls back to placeholder when speculative fallback al
   x <- .build_label_clusters_test_cocktail()
 
   fake_request <- function(url, payload, timeout_sec) {
-    is_speculative <- identical(payload$model %||% NA_character_, "phi4-mini:latest")
+    is_speculative <- .is_speculative_fallback_request(payload)
 
     content <- if (is_speculative) {
       jsonlite::toJSON(
@@ -1171,7 +1179,7 @@ test_that("label_clusters can continue after strict abstain with the soft-label 
 
   expect_equal(state$n, 2L)
   expect_equal(state$models[[1]], "fake-model")
-  expect_equal(state$models[[2]], "phi4-mini:latest")
+  expect_equal(state$models[[2]], "fake-model")
   expect_equal(state$num_predict[[2]], 2400L)
   expect_equal(state$num_ctx[[2]], 8192L)
   expect_equal(res$summary$run_status[[1]], "speculative")
@@ -1185,6 +1193,58 @@ test_that("label_clusters can continue after strict abstain with the soft-label 
   )
   expect_equal(res$summary$species_entropy_band[[1]], "high")
   expect_equal(res$summary$chaoticity_score[[1]], 70L)
+})
+
+test_that("label_clusters can override the speculative fallback model explicitly", {
+  x <- .build_label_clusters_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out_abstain <- .build_label_clusters_abstain_output(ev)
+  out_speculative <- .build_label_clusters_speculative_output(ev)
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  state$models <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    state$n <- state$n + 1L
+    state$models[state$n] <- payload$model %||% NA_character_
+
+    content <- if (state$n == 1L) {
+      jsonlite::toJSON(out_abstain, auto_unbox = TRUE, null = "null")
+    } else {
+      jsonlite::toJSON(out_speculative, auto_unbox = TRUE, null = "null")
+    }
+
+    list(
+      status_code = 200L,
+      body_text = .llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-override-speculative-model")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  old_options <- options(cocktailr.speculative_fallback_model = "phi4-mini:latest")
+  on.exit(options(old_options), add = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    speculative_fallback_mode = "after_nonaccepted",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$n, 2L)
+  expect_equal(state$models[[1]], "fake-model")
+  expect_equal(state$models[[2]], "phi4-mini:latest")
+  expect_equal(res$summary$run_status[[1]], "speculative")
+  expect_true(res$summary$speculative_fallback_used[[1]])
 })
 
 test_that("label_clusters can override the speculative ladder with legacy aliases", {

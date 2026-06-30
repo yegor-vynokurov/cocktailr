@@ -755,7 +755,7 @@ run_spec$summary[, c("cluster", "run_status", "label_tier", "review_status")]
 
 In that mode, accepted labels remain unchanged. If the strict pass abstains
 or would otherwise end in the placeholder branch, `label_clusters()` starts
-an internal soft-label ladder tuned on `phi4-mini:latest`: it tries
+an internal soft-label ladder on the same model by default: it tries
 `label_soft_v1` first, then escalates to the more label-forcing
 `label_broad_v1`. Tentative fallback labels appear with `*` in plot
 legends or `hclust` leaf labels, for example:
@@ -783,8 +783,8 @@ Notes:
 - If that Stage-B selection cascade fully exhausts `label_primary_v1 -> label_soft_v1 -> label_broad_v1`, the workflow now stops cleanly with a deterministic review-needed fallback label `chaotic cluster` instead of spending one more fragile LLM call on explanation generation.
 - `label_mode = "open"` is the default. Switch to `label_mode = "constrained"` when a small model should choose from the packaged coarse vocabulary, or use `label_mode = "dynamic"` together with `workflow_steps = 3` when Stage B should reuse candidate labels proposed by Stage A.
 - `speculative_fallback_mode = "after_nonaccepted"` is optional and off by default.
-- In that mode, the strict pass still uses your explicit `model`, `variant`, `timeout_sec`, and `num_predict`.
-- The internal soft ladder is currently benchmarked around `phi4-mini:latest` with `num_ctx = 8192` and `num_predict = 2400`.
+- In that mode, the speculative ladder reuses your explicit `model` by default; set `options(cocktailr.speculative_fallback_model = "...")` only if you want an explicit override.
+- The internal soft ladder is still benchmarked most around `phi4-mini:latest` with `num_ctx = 8192` and `num_predict = 2400`.
 - For ordinary local labeling, `gemma4:12b` remains the recommended baseline.
 - Smaller models such as `phi4-mini` are still experimental for this task: they may lack enough ecological/background knowledge for stable cluster labeling and can fall back to generic labels or abstentions more often.
 - `semantic_layer = TRUE` optionally enriches the evidence bundle with indicator-derived ecological axes from the external EIVE/Tichy tables under `data-raw/external/`.

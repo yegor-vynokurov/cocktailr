@@ -1322,6 +1322,15 @@ label_clusters <- function(
     return(model)
   }
 
+  model_override <- getOption("cocktailr.speculative_fallback_model", NULL)
+  if (.is_non_empty_scalar_character(model_override)) {
+    return(model_override)
+  }
+
+  if (.is_non_empty_scalar_character(model)) {
+    return(model)
+  }
+
   .default_cluster_label_speculative_model()
 }
 
