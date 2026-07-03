@@ -1431,7 +1431,6 @@ llm_label_cluster <- function(
 
   label_mode <- .as_scalar_character(prompt_bundle$label_mode_effective %||% "open")
   canonical_label <- .as_scalar_character(output$canonical_label)
-  display_label <- .as_scalar_character(output$display_label)
 
   if (identical(label_mode, "open")) {
     return(list(ok = TRUE, message = NULL))
