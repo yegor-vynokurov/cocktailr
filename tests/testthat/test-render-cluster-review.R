@@ -69,6 +69,7 @@
     status = "labeled",
     canonical_label = "sp1_sp2_cluster",
     display_label = "sp1-sp2 cluster",
+    label_summary = "A compact recurring species core supports a short compositional label.",
     interpretation_summary = "The cluster is defined by a compact recurring species core and consistent prototype plots.",
     basis_in_data = list(
       list(
@@ -109,7 +110,8 @@
         reason = "A contrastive pass would help decide whether a broader ecological label is justified."
       )
     ),
-    abstain_reason = NULL
+    abstain_reason = NULL,
+    explanation = "The short compositional label is safe because the same species core recurs across the evidence bundle."
   )
 }
 
@@ -128,6 +130,7 @@ test_that("render_cluster_review builds a readable compact markdown artifact by 
   expect_match(art$markdown, "Model: not recorded.", fixed = TRUE)
   expect_match(art$markdown, "Prompt files: not recorded.", fixed = TRUE)
   expect_match(art$markdown, "## Proposed label", fixed = TRUE)
+  expect_match(art$markdown, "## Final explanation", fixed = TRUE)
   expect_match(art$markdown, "## Evidence-backed claims", fixed = TRUE)
   expect_match(art$markdown, "## Key species", fixed = TRUE)
   expect_match(art$markdown, "## What is not confirmed", fixed = TRUE)
@@ -149,10 +152,13 @@ test_that("render_cluster_review full=TRUE builds an expanded markdown artifact"
   expect_match(art$markdown, "^---", perl = TRUE)
   expect_match(art$markdown, "cluster_id: \"c_1\"", fixed = TRUE)
   expect_match(art$markdown, "## Review summary", fixed = TRUE)
+  expect_match(art$markdown, "## Final explanation", fixed = TRUE)
   expect_match(art$markdown, "## External knowledge used", fixed = TRUE)
   expect_match(art$markdown, "## Validation warnings", fixed = TRUE)
   expect_match(art$markdown, "## Checks to run", fixed = TRUE)
   expect_match(art$markdown, "## Evidence snapshot", fixed = TRUE)
+  expect_match(art$markdown, "Topological species:", fixed = TRUE)
+  expect_match(art$markdown, "[E", fixed = TRUE)
   expect_match(art$markdown, "## Manual review notes", fixed = TRUE)
 })
 
@@ -207,21 +213,21 @@ test_that("render_cluster_review writes compact markdown by default and metadata
 
 test_that("render_cluster_review surfaces exhausted staged-fallback provenance", {
   ev <- .build_review_test_cluster_evidence()
-  selection_output <- cocktailr:::.cluster_label_selection_fallback_output(
-    ev,
+  selection_output <- cocktailr:::.cluster_label_selection_all_abstain_output(
+    evidence = ev,
+    abstain_reasons = c("The signal remains too mixed for a stable short label."),
     failure_messages = c(
       "label_primary_v1: abstained",
       "label_soft_v1: abstained",
       "label_broad_v1: abstained"
     )
   )
-  output <- cocktailr:::.cluster_label_selection_fallback_final_output(
+  output <- cocktailr:::.assemble_cluster_label_final_output(
     evidence = ev,
     selection_output = selection_output,
-    failure_messages = c(
-      "label_primary_v1: abstained",
-      "label_soft_v1: abstained",
-      "label_broad_v1: abstained"
+    explanation_text = paste(
+      "The evidence remains mixed across the available prototype plots,",
+      "so the selection ladder abstained instead of forcing a short label."
     )
   )
 
@@ -240,8 +246,30 @@ test_that("render_cluster_review surfaces exhausted staged-fallback provenance",
     ),
     output = output,
     workflow = list(
+      draft = list(
+        output = list(
+          draft_analysis = paste(
+            "Possible interpretations:",
+            "- mixed meadow assemblage",
+            "",
+            "Main signal:",
+            "- recurring but mixed meadow signal",
+            "",
+            "Noise or conflicts:",
+            "- no clean narrow habitat split",
+            "",
+            "Candidate labels:",
+            "- mixed meadow assemblage",
+            "",
+            "What not to overclaim:",
+            "- narrow habitat naming",
+            sep = "\n"
+          )
+        ),
+        skipped = FALSE
+      ),
       label = list(
-        selected_public_variant = "chaotic_cluster_fallback",
+        selected_public_variant = "selection_all_abstain",
         exhausted = TRUE,
         selection_output = selection_output,
         failure_messages = c(
@@ -257,10 +285,207 @@ test_that("render_cluster_review surfaces exhausted staged-fallback provenance",
   art <- render_cluster_review(res, ev, full = TRUE)
 
   expect_true(isTRUE(art$metadata$label_stage_exhausted))
-  expect_equal(art$metadata$selected_label_variant, "chaotic_cluster_fallback")
-  expect_match(art$markdown, "Selected label rung: `chaotic_cluster_fallback`", fixed = TRUE)
+  expect_equal(art$metadata$selected_label_variant, "selection_all_abstain")
+  expect_equal(art$metadata$public_display_label, "Chaotic Cluster")
+  expect_match(art$markdown, "Selected label rung: `selection_all_abstain`", fixed = TRUE)
   expect_match(art$markdown, "Label-stage exhausted: `true`", fixed = TRUE)
-  expect_match(art$markdown, "Cascade note: all public label-selection rungs were exhausted", fixed = TRUE)
+  expect_match(art$markdown, "Programmatic public fallback display label: `Chaotic Cluster`", fixed = TRUE)
+  expect_match(art$markdown, "Model output: no stable short label was produced.", fixed = TRUE)
+  expect_match(art$markdown, "## Brainstorm trace", fixed = TRUE)
+  expect_match(art$markdown, "Candidate label: `mixed meadow assemblage` -> `mixed_meadow_assemblage`", fixed = TRUE)
+  expect_match(art$markdown, "## Final explanation", fixed = TRUE)
+})
+
+test_that("render_cluster_review full=TRUE shows the text-only workflow trace for labeled output", {
+  ev <- .build_review_test_cluster_evidence()
+  output <- .build_review_label_output(ev)
+  label_decision_text <- "sp1-sp2 cluster"
+  summary_text <- "A compact recurring species core supports a short compositional label."
+
+  res <- list(
+    cluster_id = ev$meta$cluster_id,
+    provider = "ollama",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    workflow_steps = 3L,
+    logs = list(run_dir = "temp/fake-run"),
+    prompt = list(
+      catalog_path = "inst/prompts/cluster_labeling/catalog.json",
+      system_path = "inst/prompts/cluster_labeling/system_scientific_caution_v1.md",
+      user_path = "inst/prompts/internal_cluster_labeling/user_explanation_pass_v1.md",
+      schema_path = NULL
+    ),
+    output = output,
+    workflow = list(
+      draft = list(
+        output = list(
+          draft_analysis = paste(
+            "Possible interpretations:",
+            "- compact species core",
+            "",
+            "Main signal:",
+            "- recurring compositional core",
+            sep = "\n"
+          )
+        ),
+        skipped = FALSE
+      ),
+      label = list(
+        selected_public_variant = "label_primary_v1",
+        exhausted = FALSE,
+        selection_output = list(
+          status = "labeled",
+          label_decision_text = "sp1-sp2 cluster",
+          canonical_label = "sp1_sp2_cluster",
+          display_label = "sp1-sp2 cluster",
+          label_summary = "A compact recurring species core supports a short compositional label.",
+          abstain_reason = NULL
+        ),
+        attempts = list(
+          list(
+            public_variant = "label_primary_v1",
+            selection_variant = "label_decision_primary_v2",
+            result = "labeled",
+            attempts = 1L,
+            response = list(content = label_decision_text),
+            output = list(
+              status = "labeled",
+              label_decision_text = "sp1-sp2 cluster",
+              canonical_label = "sp1_sp2_cluster",
+              display_label = "sp1-sp2 cluster",
+              abstain_reason = NULL
+            )
+          )
+        )
+      ),
+      summary = list(
+        variant = "label_summary_pass_v2",
+        skipped = FALSE,
+        prompt = list(
+          user = paste(
+            "Task mode: `label_summary_pass_v2`",
+            "Chosen short label (fixed; do not replace it):",
+            "sp1-sp2 cluster",
+            sep = "\n"
+          ),
+          evidence_text = ""
+        ),
+        response = list(content = summary_text),
+        output = list(
+          status = "summary_ready",
+          label_summary = summary_text
+        )
+      ),
+      abstain_reason = list(
+        variant = "abstain_reason_pass_v2",
+        skipped = TRUE,
+        skip_reason = "label_selected"
+      )
+    )
+  )
+  class(res) <- c("cluster_label_result", "list")
+
+  art <- render_cluster_review(res, ev, full = TRUE)
+
+  expect_match(art$markdown, "## Workflow trace", fixed = TRUE)
+  expect_match(art$markdown, "### `label_primary_v1`", fixed = TRUE)
+  expect_match(art$markdown, "#### Raw label-only answer", fixed = TRUE)
+  expect_match(art$markdown, "sp1-sp2 cluster", fixed = TRUE)
+  expect_match(art$markdown, "#### Parsed label decision", fixed = TRUE)
+  expect_match(art$markdown, "- Label decision text: `sp1-sp2 cluster`", fixed = TRUE)
+  expect_match(art$markdown, "- Canonical label: `sp1_sp2_cluster`", fixed = TRUE)
+  expect_match(art$markdown, "### `label_summary_pass_v2`", fixed = TRUE)
+  expect_match(art$markdown, "- Raw cluster evidence re-read: `false`", fixed = TRUE)
+  expect_match(art$markdown, "- Summary input scope: `label + brainstorm only`", fixed = TRUE)
+  expect_match(art$markdown, "#### Raw summary answer", fixed = TRUE)
+  expect_match(art$markdown, summary_text, fixed = TRUE)
+})
+
+test_that("render_cluster_review full=TRUE distinguishes model abstain from downstream public fallback", {
+  ev <- .build_review_test_cluster_evidence()
+  selection_output <- cocktailr:::.cluster_label_selection_all_abstain_output(
+    evidence = ev,
+    abstain_reasons = c("ABSTAIN"),
+    failure_messages = c(
+      "label_primary_v1: abstained (ABSTAIN)",
+      "label_soft_v1: abstained (ABSTAIN)",
+      "label_broad_v1: abstained (ABSTAIN)"
+    )
+  )
+  output <- cocktailr:::.assemble_cluster_label_final_output(
+    evidence = ev,
+    selection_output = selection_output,
+    abstain_reason_text = "The evidence remains too mixed for a stable short label.",
+    explanation_text = "The evidence remains too mixed for a stable short label."
+  )
+
+  res <- list(
+    cluster_id = ev$meta$cluster_id,
+    provider = "ollama",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    workflow_steps = 3L,
+    logs = list(run_dir = "temp/fake-run"),
+    prompt = list(
+      catalog_path = "inst/prompts/cluster_labeling/catalog.json",
+      system_path = "inst/prompts/cluster_labeling/system_scientific_caution_v1.md",
+      user_path = "inst/prompts/internal_cluster_labeling/user_abstain_reason_pass_v2.md",
+      schema_path = NULL
+    ),
+    output = output,
+    workflow = list(
+      label = list(
+        selected_public_variant = "selection_all_abstain",
+        exhausted = TRUE,
+        selection_output = selection_output,
+        attempts = list(
+          list(
+            public_variant = "label_primary_v1",
+            selection_variant = "label_decision_primary_v2",
+            result = "abstain",
+            attempts = 1L,
+            response = list(content = "ABSTAIN"),
+            output = list(
+              status = "abstain",
+              label_decision_text = "ABSTAIN",
+              canonical_label = NULL,
+              display_label = NULL
+            )
+          )
+        )
+      ),
+      abstain_reason = list(
+        variant = "abstain_reason_pass_v2",
+        skipped = FALSE,
+        response = list(
+          content = "The evidence remains too mixed for a stable short label."
+        ),
+        output = list(
+          status = "abstain_reason_ready",
+          abstain_reason = "The evidence remains too mixed for a stable short label."
+        )
+      )
+    )
+  )
+  class(res) <- c("cluster_label_result", "list")
+
+  art <- render_cluster_review(res, ev, full = TRUE)
+
+  expect_match(art$markdown, "## Workflow trace", fixed = TRUE)
+  expect_match(art$markdown, "#### Raw label-only answer", fixed = TRUE)
+  expect_match(art$markdown, "ABSTAIN", fixed = TRUE)
+  expect_match(
+    art$markdown,
+    "This is the model's abstain decision at the label-only step",
+    fixed = TRUE
+  )
+  expect_match(art$markdown, "#### Raw abstain-reason answer", fixed = TRUE)
+  expect_match(
+    art$markdown,
+    "does not create the downstream public fallback label",
+    fixed = TRUE
+  )
+  expect_match(art$markdown, "### Model abstain vs public fallback", fixed = TRUE)
 })
 
 test_that("render_cluster_review review_dir organizes files by dataset when known", {
@@ -316,15 +541,19 @@ test_that("render_cluster_review resolves relative review_dir against the packag
 test_that("render_cluster_review visibly flags risky outputs", {
   ev <- .build_review_test_cluster_evidence()
   output <- .build_review_label_output(ev)
-  output$canonical_label <- "dry_grassland_cluster"
-  output$display_label <- "dry grassland cluster"
-  output$interpretation_summary <- "The cluster looks like a dry grassland assemblage based on its compact species core."
+  output$external_knowledge <- list(
+    list(
+      statement = "The data show this cluster is a wet meadow.",
+      knowledge_type = "habitat_hint",
+      confidence = "medium"
+    )
+  )
 
   art <- render_cluster_review(output, ev, full = TRUE)
 
   expect_equal(art$metadata$review_status, "review_required")
   expect_true(art$metadata$needs_human_review)
-  expect_match(art$markdown, "unsupported_habitat_overreach", fixed = TRUE)
+  expect_match(art$markdown, "external_knowledge_poses_as_data", fixed = TRUE)
   expect_match(art$markdown, "Review status: `review_required`", fixed = TRUE)
 })
 

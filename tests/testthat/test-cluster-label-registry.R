@@ -37,6 +37,7 @@
     status = "labeled",
     canonical_label = "sp1_sp2_cluster",
     display_label = "sp1-sp2 cluster",
+    label_summary = "A compact recurring species core supports a short compositional label.",
     interpretation_summary = "The cluster is defined by a compact recurring species core and consistent prototype plots.",
     basis_in_data = list(
       list(
@@ -77,7 +78,8 @@
         reason = "A contrastive pass would help decide whether a broader ecological label is justified."
       )
     ),
-    abstain_reason = NULL
+    abstain_reason = NULL,
+    explanation = "The same species core recurs across the evidence bundle, so a short compositional label is safe."
   )
 }
 
@@ -91,6 +93,7 @@
     status = "abstain",
     canonical_label = NULL,
     display_label = NULL,
+    label_summary = NULL,
     interpretation_summary = "The cluster is internally coherent, but the current evidence is not distinctive enough for a stable final label.",
     basis_in_data = list(),
     key_species = list(
@@ -123,7 +126,8 @@
         reason = "A contrastive pass may reveal whether abstention should be lifted."
       )
     ),
-    abstain_reason = "Distinctiveness is insufficient for a stable label."
+    abstain_reason = "Distinctiveness is insufficient for a stable label.",
+    explanation = "The evidence stays too mixed to defend a stable short label."
   )
 }
 
@@ -144,45 +148,71 @@
   )
 }
 
-test_that("cluster_label_registry flattens label_clusters output into plotting-ready fields", {
+test_that("cluster_label_registry flattens batch output into plotting-ready fields", {
   x <- .build_registry_test_cocktail()
   ev1 <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
   ev2 <- cluster_evidence(x, "c_2", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
   out1 <- .build_registry_valid_output(ev1)
   out2 <- .build_registry_abstain_output(ev2)
+  val1 <- validate_cluster_label(out1, ev1)
+  val2 <- validate_cluster_label(out2, ev2)
+  review_dir <- file.path(tempdir(), "cocktailr-registry-manual")
+  dir.create(review_dir, recursive = TRUE, showWarnings = FALSE)
+  review1 <- file.path(review_dir, "c_1_review.md")
+  review2 <- file.path(review_dir, "c_2_review.md")
+  writeLines("# c_1", review1, useBytes = TRUE)
+  writeLines("# c_2", review2, useBytes = TRUE)
 
-  outputs <- list(
-    c_1 = jsonlite::toJSON(out1, auto_unbox = TRUE, null = "null"),
-    c_2 = jsonlite::toJSON(out2, auto_unbox = TRUE, null = "null")
-  )
-
-  fake_request <- function(url, payload, timeout_sec) {
-    cluster_id_match <- regmatches(
-      payload$messages[[2]]$content,
-      regexpr("c_[0-9]+", payload$messages[[2]]$content, perl = TRUE)
-    )
-    cluster_id <- if (length(cluster_id_match)) cluster_id_match[[1]] else NA_character_
-
-    list(
-      status_code = 200L,
-      body_text = .registry_outer(payload, outputs[[cluster_id]]),
-      parsed = NULL
-    )
-  }
-
-  review_dir <- file.path(tempdir(), "cocktailr-registry")
-  unlink(review_dir, recursive = TRUE, force = TRUE)
-
-  run <- label_clusters(
-    x = x,
-    clusters = c("c_1", "c_2"),
+  llm1 <- list(
+    provider = "ollama",
     model = "fake-model",
     variant = "label_primary_v1",
-    timeout_sec = 1,
-    review_dir = review_dir,
-    verbose = FALSE,
-    request_fn = fake_request
+    workflow_steps = 3L,
+    output = out1
   )
+  class(llm1) <- c("cluster_label_result", "list")
+
+  llm2 <- list(
+    provider = "ollama",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    workflow_steps = 3L,
+    output = out2
+  )
+  class(llm2) <- c("cluster_label_result", "list")
+
+  run <- list(
+    summary = data.frame(
+      cluster = c("c_1", "c_2"),
+      stringsAsFactors = FALSE
+    ),
+    results = list(
+      list(
+        evidence = ev1,
+        validation = val1,
+        llm_result = llm1,
+        review = list(file = review1),
+        run_status = "success",
+        used_placeholder = FALSE,
+        repair_used = FALSE,
+        iterations_used = 1L,
+        num_predict_used = 600L
+      ),
+      list(
+        evidence = ev2,
+        validation = val2,
+        llm_result = llm2,
+        review = list(file = review2),
+        run_status = "success",
+        used_placeholder = FALSE,
+        repair_used = FALSE,
+        iterations_used = 1L,
+        num_predict_used = 600L
+      )
+    ),
+    selection = data.frame(stringsAsFactors = FALSE)
+  )
+  class(run) <- c("cluster_label_batch_result", "list")
 
   reg <- cluster_label_registry(run)
 
@@ -210,7 +240,7 @@ test_that("cluster_label_registry flattens label_clusters output into plotting-r
   expect_equal(row1$review_status[[1]], "accepted")
   expect_equal(row1$model[[1]], "fake-model")
   expect_equal(row1$variant[[1]], "label_primary_v1")
-  expect_equal(row1$workflow_steps[[1]], 1L)
+  expect_equal(row1$workflow_steps[[1]], 3L)
   expect_true(file.exists(row1$review_file[[1]]))
 
   expect_equal(row2$plot_label_id[[1]], "c_2")
@@ -223,6 +253,72 @@ test_that("cluster_label_registry flattens label_clusters output into plotting-r
   expect_equal(row2$output_status[[1]], "abstain")
   expect_equal(row2$review_status[[1]], "abstained")
   expect_true(file.exists(row2$review_file[[1]]))
+})
+
+test_that("cluster_label_registry exposes post-abstain public fallback separately from model output", {
+  x <- .build_registry_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out <- .build_registry_abstain_output(ev)
+  val <- validate_cluster_label(out, ev)
+
+  llm <- list(
+    provider = "ollama",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    workflow_steps = 3L,
+    output = out,
+    workflow = list(
+      label = list(
+        selected_public_variant = "selection_all_abstain",
+        exhausted = TRUE,
+        selection_output = list(
+          abstain_reason = out$abstain_reason
+        ),
+        failure_messages = c(
+          "label_primary_v1: abstained",
+          "label_soft_v1: abstained",
+          "label_broad_v1: abstained"
+        )
+      )
+    )
+  )
+  class(llm) <- c("cluster_label_result", "list")
+
+  batch <- list(
+    summary = data.frame(
+      cluster = "c_1",
+      stringsAsFactors = FALSE
+    ),
+    results = list(
+      list(
+        evidence = ev,
+        validation = val,
+        llm_result = llm,
+        review = list(file = "temp/reports/cluster_reviews/demo/c_1_review.md"),
+        run_status = "success",
+        used_placeholder = FALSE,
+        repair_used = FALSE,
+        iterations_used = 1L,
+        num_predict_used = 600L
+      )
+    ),
+    selection = data.frame(stringsAsFactors = FALSE)
+  )
+  class(batch) <- c("cluster_label_batch_result", "list")
+
+  reg <- cluster_label_registry(batch)
+  row <- reg[1, , drop = FALSE]
+
+  expect_equal(row$output_status[[1]], "abstain")
+  expect_true(is.na(row$display_label[[1]]))
+  expect_true(is.na(row$canonical_label[[1]]))
+  expect_equal(row$public_display_label[[1]], "Chaotic Cluster")
+  expect_equal(row$public_canonical_label[[1]], "chaotic_cluster")
+  expect_equal(row$public_label_source[[1]], "post_abstain_fallback")
+  expect_false(row$label_available[[1]])
+  expect_equal(row$plot_label_short[[1]], "Chaotic Cluster")
+  expect_equal(row$legend_label[[1]], "c_1: Chaotic Cluster")
+  expect_equal(row$review_status[[1]], "abstained")
 })
 
 test_that("cluster_label_registry returns a typed empty registry for empty batch results", {

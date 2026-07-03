@@ -165,7 +165,20 @@ test_that("validate_cluster_label flags external knowledge that poses as data", 
   expect_true(any(val$issues$code == "external_knowledge_poses_as_data"))
 })
 
-test_that("validate_cluster_label flags habitat overreach without explicit separation", {
+test_that("validate_cluster_label turns malformed scalar confidence into schema errors", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$confidence <- 0.9
+
+  expect_no_error(val <- validate_cluster_label(output, ev))
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "invalid_confidence"))
+  expect_true(any(val$issues$code == "invalid_confidence_score"))
+  expect_true(any(val$issues$code == "missing_confidence_rationale"))
+  expect_true(val$needs_human_review)
+})
+
+test_that("validate_cluster_label does not reject habitat wording via the disabled heuristic", {
   ev <- .build_validation_test_cluster_evidence()
   output <- .build_valid_label_output(ev)
   output$canonical_label <- "dry_grassland_cluster"
@@ -176,8 +189,9 @@ test_that("validate_cluster_label flags habitat overreach without explicit separ
 
   val <- validate_cluster_label(output, ev)
 
-  expect_equal(val$validation_status, "unsupported_claims")
-  expect_true(any(val$issues$code == "unsupported_habitat_overreach"))
+  expect_equal(val$validation_status, "valid")
+  expect_false(any(val$issues$code == "unsupported_habitat_overreach"))
+  expect_false(val$needs_human_review)
 })
 
 test_that("cluster label schema asset encodes label length and format limits", {

@@ -9,7 +9,8 @@
 #' For each selected cluster, the function:
 #' \enumerate{
 #'   \item builds a deterministic evidence bundle,
-#'   \item requests one structured label / abstention from the local LLM,
+#'   \item requests staged plain-text cluster-labeling decisions from the local
+#'     LLM,
 #'   \item validates the structured output against the evidence,
 #'   \item if validation fails, performs one validator-guided repair pass,
 #'   \item saves a markdown review card to disk.
@@ -41,6 +42,10 @@
 #'   \code{clusters = NULL}.
 #' @param top_n_phi,n_prototype_plots,n_borderline_plots,include_cover Evidence
 #'   extraction controls forwarded to \code{\link{cluster_evidence}}.
+#' @param user_added_data Optional extra user-supplied material forwarded to
+#'   \code{\link{cluster_evidence}} as raw \code{user_added_data}. Accepts
+#'   \code{NULL}, an in-memory object, a single supported file path, or a
+#'   single directory path scanned non-recursively.
 #' @param semantic_layer Logical. If \code{TRUE}, try to enrich each cluster's
 #'   evidence bundle with indicator-derived ecological axes from the optional
 #'   semantic layer built from files under \code{data-raw/external/}. Failures
@@ -56,11 +61,13 @@
 #'   forwarded to \code{score_cluster_semantics()}.
 #' @param provider,model,variant,base_url,schema_path,temperature,top_p,seed,
 #'   num_predict,prompt_budget_chars,keep_alive,ollama_options,timeout_sec,max_retries,
-#'   workflow_steps,label_mode,log_dir,request_fn LLM controls forwarded to
-#'   \code{\link{llm_label_cluster}}. In particular, \code{workflow_steps = 3}
-#'   enables the staged draft-analysis -> label-selection -> explanation mode,
-#'   and \code{label_mode} selects between open, constrained, and dynamic
-#'   label-space behavior.
+#'   workflow_steps,use_brainstorm,label_mode,debug,log_dir,request_fn LLM controls
+#'   forwarded to \code{\link{llm_label_cluster}}. The active runtime now
+#'   always uses the fixed draft-analysis -> label-decision ->
+#'   label-summary / abstain-reason route; \code{workflow_steps} is a
+#'   deprecated compatibility argument, \code{use_brainstorm} toggles whether
+#'   the draft-analysis stage actually runs, and \code{debug} controls whether
+#'   per-stage LLM log files are collected.
 #' @param max_iterations Integer workflow budget. Currently allowed values are
 #'   \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports
 #'   the full EOF retry ladder \code{2400 -> 4800 -> 9600}.
@@ -136,6 +143,7 @@ label_clusters <- function(
     n_prototype_plots = 5L,
     n_borderline_plots = 5L,
     include_cover = TRUE,
+    user_added_data = NULL,
     semantic_layer = FALSE,
     semantic_min_phi = NULL,
     semantic_bootstrap = 200L,
@@ -157,7 +165,9 @@ label_clusters <- function(
     ollama_options = NULL,
     timeout_sec = 600,
     max_retries = 1L,
-    workflow_steps = 1L,
+    workflow_steps = 3L,
+    use_brainstorm = TRUE,
+    debug = FALSE,
     max_iterations = 3L,
     review_dir = file.path("temp", "reports", "cluster_reviews"),
     verbose = TRUE,
@@ -172,8 +182,13 @@ label_clusters <- function(
   provider <- .arg_scalar_character(provider, "provider")
   model <- .arg_scalar_character(model, "model")
   variant <- .arg_scalar_character(variant, "variant")
-  label_mode <- .arg_cluster_label_mode(label_mode, "label_mode")
-  workflow_steps <- .arg_workflow_steps(workflow_steps, "workflow_steps")
+  label_mode <- .normalize_cluster_label_mode(label_mode, "label_mode")
+  workflow_steps <- .normalize_cluster_label_workflow_steps(
+    workflow_steps,
+    "workflow_steps"
+  )
+  use_brainstorm <- .arg_single_flag(use_brainstorm, "use_brainstorm")
+  debug <- .arg_single_flag(debug, "debug")
   max_retries <- .arg_non_negative_integer(max_retries, "max_retries")
   prompt_budget_chars <- .arg_nullable_positive_integer(
     prompt_budget_chars,
@@ -197,11 +212,12 @@ label_clusters <- function(
     "semantic_force_reference"
   )
 
-  if (identical(label_mode, "dynamic") && !identical(workflow_steps, 3L)) {
-    stop("`label_mode = \"dynamic\"` currently requires `workflow_steps = 3`.")
-  }
   speculative_fallback_mode <- match.arg(speculative_fallback_mode)
   select_mode <- match.arg(select_mode)
+  log_dir <- .cluster_label_effective_log_dir(
+    debug = debug,
+    log_dir = log_dir
+  )
 
   if (!is.null(semantic_min_phi)) {
     semantic_min_phi <- suppressWarnings(as.numeric(semantic_min_phi))
@@ -261,7 +277,8 @@ label_clusters <- function(
       top_n_phi = top_n_phi,
       n_prototype_plots = n_prototype_plots,
       n_borderline_plots = n_borderline_plots,
-      include_cover = include_cover
+      include_cover = include_cover,
+      user_added_data = user_added_data
     )
 
     semantic_step <- .label_clusters_apply_semantic_layer(
@@ -296,6 +313,7 @@ label_clusters <- function(
       timeout_sec = timeout_sec,
       max_retries = max_retries,
       workflow_steps = workflow_steps,
+      use_brainstorm = use_brainstorm,
       dry_run = TRUE,
       request_fn = request_fn
     )
@@ -320,6 +338,7 @@ label_clusters <- function(
       timeout_sec = timeout_sec,
       max_retries = max_retries,
       workflow_steps = workflow_steps,
+      use_brainstorm = use_brainstorm,
       max_iterations = max_iterations,
       review_dir = review_dir,
       verbose = verbose,
@@ -624,6 +643,7 @@ label_clusters <- function(
     timeout_sec,
     max_retries,
     workflow_steps,
+    use_brainstorm,
     max_iterations,
     review_dir,
     verbose,
@@ -718,10 +738,16 @@ label_clusters <- function(
             keep_alive = keep_alive,
             timeout_sec = timeout_sec,
             max_retries = max_retries,
+            temperature = temperature,
+            top_p = top_p,
+            seed = seed,
             num_predict = next_num_predict,
+            prompt_budget_chars = prompt_budget_chars,
             log_dir = log_dir,
             request_fn = request_fn,
             workflow_steps = workflow_steps,
+            use_brainstorm = use_brainstorm,
+            label_mode = label_mode,
             ollama_options = ollama_options
           )
         } else {
@@ -743,6 +769,7 @@ label_clusters <- function(
             timeout_sec = timeout_sec,
             max_retries = max_retries,
             workflow_steps = workflow_steps,
+            use_brainstorm = use_brainstorm,
             dry_run = FALSE,
             log_dir = log_dir,
             request_fn = request_fn
@@ -1512,153 +1539,78 @@ label_clusters <- function(
 }
 
 .cluster_label_validation_repair_guidance <- function(validation) {
-  if (!.cluster_label_has_format_issues(validation)) {
-    return(character(0))
+  issues <- validation$issues %||% .new_cluster_label_issue_table()
+  guidance <- character(0)
+
+  if (.cluster_label_has_format_issues(validation)) {
+    guidance <- c(
+      guidance,
+      "Label-format repair reminder:",
+      "- Keep the answer as one short label or `ABSTAIN`; do not return JSON or field names.",
+      "- If you keep a label, it must stay <= 80 characters and <= 6 words.",
+      "- The short label must not contain commas or brackets, and must not end with a period.",
+      "- If the current label overclaims beyond the evidence, prefer a softer shorter label or `ABSTAIN`."
+    )
   }
 
-  c(
-    "",
-    "Label-format repair reminder:",
-    "- display_label must be <= 80 characters and <= 6 words.",
-    "- display_label must not contain commas or brackets, and must not end with a period.",
-    "- canonical_label must stay lowercase snake_case and must be <= 64 characters.",
-    "- If the evidence-backed content is already valid, prefer changing only canonical_label and display_label, plus the minimum dependent wording needed for consistency."
-  )
-}
-
-.cluster_label_validation_repair_message <- function(validation, previous_output) {
-  issues <- validation$issues %||% .new_cluster_label_issue_table()
-  issue_lines <- .cluster_label_validation_issue_lines(
-    issues,
-    empty_message = paste(
-      "- No structured validator issue table was recorded,",
-      "but the previous output must still be corrected."
+  if (any(issues$category == "unsupported_claims")) {
+    guidance <- c(
+      guidance,
+      "Evidence-safety repair reminder:",
+      "- Fix ecological overreach rather than defending it.",
+      "- If the previous summary overclaimed habitat or syntaxonomy, choose a safer short label or abstain.",
+      "- Keep the next summary compact and evidence-grounded."
     )
-  )
+  }
 
-  previous_json <- jsonlite::toJSON(
-    previous_output,
-    auto_unbox = TRUE,
-    null = "null",
-    pretty = TRUE
-  )
-
-  paste(
-    c(
-      "The previous JSON output parsed, but it failed downstream validation.",
-      "Return one complete corrected JSON object only.",
-      "Keep fields that are already valid unless they depend on a corrected field.",
-      "Fix only the problematic parts listed below, but return the full JSON object.",
-      "Do not add markdown, commentary, or code fences.",
-      "Do not invent new evidence IDs, species, habitats, or external facts.",
-      "If the evidence is insufficient for a safe label, switch to `status = \"abstain\"` and make all dependent fields consistent.",
-      .cluster_label_validation_repair_guidance(validation),
-      "",
-      "Validator issues:",
-      issue_lines,
-      "",
-      "Previous JSON output:",
-      previous_json
-    ),
-    collapse = "\n"
-  )
+  unique(guidance[nzchar(guidance)])
 }
 
-.cluster_label_lightweight_repair_message <- function(validation) {
-  issues <- validation$issues %||% .new_cluster_label_issue_table()
+.cluster_label_previous_stage_text <- function(previous_result, stage_name, field_name) {
+  workflow <- previous_result$workflow %||% NULL
+  stage <- workflow[[stage_name]] %||% NULL
+  output <- stage$output %||% NULL
+  value <- .as_scalar_character(output[[field_name]] %||% NULL)
+  if (is.na(value) || !nzchar(trimws(value))) {
+    return(NULL)
+  }
+  trimws(value)
+}
+
+.cluster_label_validation_repair_message <- function(validation, previous_result) {
+  previous_output <- previous_result$output %||% list()
+  previous_status <- .as_scalar_character(previous_output$status)
+  previous_label <- .as_scalar_character(previous_output$display_label)
+  previous_summary <- .as_scalar_character(previous_output$label_summary)
+  previous_abstain_reason <- .as_scalar_character(previous_output$abstain_reason)
   issue_lines <- .cluster_label_validation_issue_lines(
-    issues,
-    empty_message = paste(
-      "- No structured validator issue table was recorded,",
-      "but the label fields must still be corrected."
-    )
+    validation$issues %||% .new_cluster_label_issue_table(),
+    empty_message = "- No validator issue table was recorded, but the previous answer still failed validation."
   )
 
-  paste(
-    c(
-      "Repair the previously parsed JSON object shown in the assistant message above.",
-      "Return one complete corrected JSON object only.",
-      "Keep fields that are already valid unless they depend on a corrected label field.",
-      "This is a lightweight label-repair pass: do not reconsider the full evidence bundle.",
-      "Do not add markdown, commentary, or code fences.",
-      "Do not invent new evidence IDs, species, habitats, or external facts.",
-      "Keep schema_version, cluster_id, basis_in_data, key_species, external_knowledge, not_confirmed_by_data, confidence, and checks_to_run unchanged unless a listed validator issue explicitly requires a dependent fix.",
-      .cluster_label_validation_repair_guidance(validation),
-      "",
-      "Validator issues:",
-      issue_lines
-    ),
-    collapse = "\n"
-  )
-}
-
-.cluster_label_lightweight_repair_prompt_bundle <- function(
-    prompt_bundle,
-    previous_output,
-    validation,
-    num_predict
-) {
-  previous_json <- jsonlite::toJSON(
-    previous_output,
-    auto_unbox = TRUE,
-    null = "null",
-    pretty = TRUE
-  )
-  system_content <- paste(
-    prompt_bundle$system,
+  parts <- c(
+    "Validator feedback from the previous attempt:",
+    if (identical(previous_status, "labeled") && .is_non_empty_scalar_character(previous_label)) {
+      paste0("- Previous short label: ", previous_label)
+    },
+    if (identical(previous_status, "labeled") && .is_non_empty_scalar_character(previous_summary)) {
+      paste0("- Previous short summary: ", previous_summary)
+    },
+    if (identical(previous_status, "abstain") && .is_non_empty_scalar_character(previous_abstain_reason)) {
+      paste0("- Previous abstain reason: ", previous_abstain_reason)
+    },
     "",
-    "Repair mode: fix a previously parsed JSON object using validator feedback.",
-    "Prefer the smallest defensible edit and keep already-valid evidence-backed fields unchanged.",
-    sep = "\n"
+    "Revise the next answer using this validator feedback.",
+    "Do not return JSON, code fences, field names, or commentary about validation.",
+    "If a safer short label is still possible, return that label only.",
+    "If the evidence does not support a safe short label after the validator feedback, return only `ABSTAIN`.",
+    "",
+    "Validator issues:",
+    issue_lines,
+    .cluster_label_validation_repair_guidance(validation)
   )
-  user_content <- .cluster_label_lightweight_repair_message(validation)
-  system_chars <- .cluster_evidence_prompt_char_count(system_content)
-  user_chars <- .cluster_evidence_prompt_char_count(user_content)
-  assistant_chars <- .cluster_evidence_prompt_char_count(previous_json)
-  prompt_budget_chars <- prompt_bundle$evidence_budget$prompt_budget_chars %||% NULL
 
-  prompt_bundle$system <- system_content
-  prompt_bundle$user <- user_content
-  prompt_bundle$messages <- list(
-    list(role = "system", content = system_content),
-    list(role = "assistant", content = previous_json),
-    list(role = "user", content = user_content)
-  )
-  prompt_bundle$generation$num_predict <- as.integer(num_predict)
-  prompt_bundle$evidence_text <- ""
-  prompt_bundle$evidence_budget <- list(
-    prompt_budget_chars = prompt_budget_chars,
-    fixed_overhead_chars = system_chars + user_chars,
-    schema_prompt_chars = .cluster_evidence_prompt_char_count(
-      prompt_bundle$schema_prompt_text %||% ""
-    ),
-    schema_text_chars = .cluster_evidence_prompt_char_count(
-      prompt_bundle$schema_text %||% ""
-    ),
-    evidence_budget_chars = 0L,
-    evidence_chars_full = 0L,
-    evidence_chars_used = 0L,
-    repair_previous_json_chars = assistant_chars,
-    total_prompt_chars = system_chars + user_chars + assistant_chars,
-    fits_within_budget = if (is.null(prompt_budget_chars)) {
-      TRUE
-    } else {
-      (system_chars + user_chars + assistant_chars) <= prompt_budget_chars
-    },
-    fixed_overhead_exceeds_budget = if (is.null(prompt_budget_chars)) {
-      FALSE
-    } else {
-      (system_chars + user_chars) > prompt_budget_chars
-    },
-    trimmed = FALSE,
-    kept_block_ids = character(0),
-    dropped_block_ids = character(0),
-    truncated_block_ids = character(0),
-    blocks = NULL,
-    repair_mode = "lightweight_label_format"
-  )
-  prompt_bundle$repair_prompt_type <- "lightweight_label_format"
-  prompt_bundle
+  paste(parts[nzchar(parts)], collapse = "\n")
 }
 
 .repair_cluster_label_result <- function(
@@ -1673,119 +1625,83 @@ label_clusters <- function(
     keep_alive,
     timeout_sec,
     max_retries,
+    temperature,
+    top_p,
+    seed,
     num_predict,
+    prompt_budget_chars,
     log_dir,
     request_fn,
     workflow_steps,
+    use_brainstorm,
+    label_mode,
     ollama_options
 ) {
-  prompt_bundle <- if (inherits(previous_result, "cluster_label_result") &&
-    is.list(previous_result$prompt)) {
-    previous_result$prompt
-  } else if (identical(workflow_steps, 2L)) {
-    template$workflow$label$prompt
-  } else {
-    template$prompt
-  }
-
   use_lightweight_repair <- .cluster_label_can_use_lightweight_repair(validation)
-
-  if (isTRUE(use_lightweight_repair)) {
-    prompt_bundle <- .cluster_label_lightweight_repair_prompt_bundle(
-      prompt_bundle = prompt_bundle,
-      previous_output = previous_result$output,
-      validation = validation,
-      num_predict = num_predict
-    )
+  repair_guidance <- .cluster_label_validation_repair_message(
+    validation = validation,
+    previous_result = previous_result
+  )
+  previous_draft_text <- .cluster_label_previous_stage_text(
+    previous_result = previous_result,
+    stage_name = "draft",
+    field_name = "draft_analysis"
+  )
+  previous_candidates <- if (.is_non_empty_scalar_character(previous_draft_text)) {
+    .extract_cluster_label_candidates_from_draft(previous_draft_text)
   } else {
-    prompt_bundle$generation$num_predict <- as.integer(num_predict)
-    prompt_bundle$messages <- c(
-      prompt_bundle$messages,
-      list(
-        list(
-          role = "assistant",
-          content = jsonlite::toJSON(
-            previous_result$output,
-            auto_unbox = TRUE,
-            null = "null",
-            pretty = TRUE
-          )
-        ),
-        list(
-          role = "user",
-          content = .cluster_label_validation_repair_message(
-            validation = validation,
-            previous_output = previous_result$output
-          )
-        )
-      )
-    )
-    prompt_bundle$repair_prompt_type <- "validator_full"
+    NULL
   }
 
-  endpoint <- paste0(sub("/+$", "", base_url), "/api/chat")
-  log_paths <- .init_cluster_label_logs(
-    log_dir = log_dir,
-    cluster_id = evidence$meta$cluster_id,
-    model = model,
-    variant = paste0(
-      variant,
-      if (isTRUE(use_lightweight_repair)) {
-        "_label_format_repair"
-      } else {
-        "_validator_repair"
-      }
-    )
-  )
-
-  out <- .run_structured_llm_stage(
+  out <- .llm_label_cluster_fixed_pipeline(
     evidence = evidence,
     provider = provider,
     model = model,
     variant = variant,
-    prompt_bundle = prompt_bundle,
+    label_mode = label_mode,
+    base_url = base_url,
+    schema_path = NULL,
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    prompt_budget_chars = prompt_budget_chars,
     keep_alive = keep_alive,
     ollama_options = ollama_options,
-    endpoint = endpoint,
     timeout_sec = timeout_sec,
     max_retries = max_retries,
+    workflow_steps = workflow_steps,
+    use_brainstorm = use_brainstorm,
+    dry_run = FALSE,
+    log_dir = log_dir,
     request_fn = request_fn,
-    log_paths = log_paths,
-    parse_output_fn = function(content) {
-      output <- .parse_cluster_label_json(
-        content = content,
-        required_fields = prompt_bundle$schema_required,
-        cluster_id = evidence$meta$cluster_id
-      )
-      .assert_cluster_label_prompt_contract(
-        output = output,
-        prompt_bundle = prompt_bundle,
-        stage_name = if (isTRUE(use_lightweight_repair)) {
-          "label_format_repair"
-        } else {
-          "validator_repair"
-        }
-      )
-    },
-    stage_name = if (isTRUE(use_lightweight_repair)) {
-      "label_format_repair"
+    draft_analysis_text_override = previous_draft_text,
+    draft_candidates_override = previous_candidates,
+    selection_context_extra_text = repair_guidance,
+    # Keep validator-repair instructions scoped to label selection only.
+    explanation_context_extra_text = NULL,
+    workflow_variant_suffix = if (isTRUE(use_lightweight_repair)) {
+      "_label_format_repair"
     } else {
-      "validator_repair"
+      "_validator_repair"
     }
   )
 
-  out$workflow_steps <- workflow_steps
-  out$workflow <- previous_result$workflow %||% NULL
   out$attempts <- as.integer((previous_result$attempts %||% 0L) + (out$attempts %||% 0L))
   out$repair <- list(
     source = if (isTRUE(use_lightweight_repair)) {
-      "validator_lightweight_label_format"
+      "validator_text_only_label_format"
     } else {
-      "validator"
+      "validator_text_only"
     },
-    prompt_type = prompt_bundle$repair_prompt_type %||% "validator_full",
+    prompt_type = if (isTRUE(use_lightweight_repair)) {
+      "validator_text_only_label_format"
+    } else {
+      "validator_text_only"
+    },
     previous_validation_status = validation$validation_status,
-    issue_count = nrow(validation$issues %||% .new_cluster_label_issue_table())
+    issue_count = nrow(validation$issues %||% .new_cluster_label_issue_table()),
+    draft_reused = .is_non_empty_scalar_character(previous_draft_text)
   )
   class(out) <- c("cluster_label_result", "list")
   out
@@ -1865,7 +1781,8 @@ label_clusters <- function(
     return(output)
   }
 
-  if (!identical(.as_scalar_character(output$status), "labeled")) {
+  status <- .as_scalar_character(output$status)
+  if (!status %in% c("labeled", "abstain")) {
     return(output)
   }
 
@@ -1878,6 +1795,19 @@ label_clusters <- function(
     )
   }
   output$confidence <- confidence
+
+  if (identical(status, "labeled") &&
+      !.is_non_empty_scalar_character(output$label_summary)) {
+    output$label_summary <- .as_scalar_character(output$interpretation_summary)
+  }
+  if (identical(status, "abstain")) {
+    output$label_summary <- NULL
+  }
+  if (!.is_non_empty_scalar_character(output$explanation)) {
+    output$explanation <- .as_scalar_character(
+      output$interpretation_summary %||% output$abstain_reason
+    )
+  }
   output
 }
 
@@ -2140,7 +2070,7 @@ label_clusters <- function(
     strict_label_mode
   }
 
-  template <- llm_label_cluster(
+  template <- .llm_label_cluster_one_step(
     evidence = evidence,
     provider = provider,
     model = model,
@@ -2157,8 +2087,8 @@ label_clusters <- function(
     ollama_options = ollama_options,
     timeout_sec = timeout_sec,
     max_retries = max_retries,
-    workflow_steps = 1L,
     dry_run = TRUE,
+    log_dir = NULL,
     request_fn = request_fn
   )
 
@@ -2346,6 +2276,7 @@ label_clusters <- function(
     status = "abstain",
     canonical_label = NULL,
     display_label = NULL,
+    label_summary = NULL,
     interpretation_summary = paste(
       "No data: no valid structured cluster label could be obtained",
       "after the bounded retry budget."
@@ -2370,7 +2301,12 @@ label_clusters <- function(
         reason = reason
       )
     ),
-    abstain_reason = "No data: no valid structured cluster label could be obtained."
+    abstain_reason = "No data: no valid structured cluster label could be obtained.",
+    explanation = paste(
+      "The workflow could not assemble a usable model explanation because no valid structured cluster label output was obtained.",
+      "Failure reason:",
+      reason
+    )
   )
 }
 

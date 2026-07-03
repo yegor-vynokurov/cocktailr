@@ -1,37 +1,29 @@
 # Labeling Step by Step
 
-This document describes the recommended end-to-end labeling workflow in
-English:
+This document describes the current cluster-labeling workflow in
+`cocktailr`.
 
-1. initialize the package
-2. generate or load a dataset
-3. run Cocktail clustering
-4. choose cluster IDs
-5. build evidence
-6. run one-step local LLM labeling
-7. validate the result
-8. save the final human-review markdown card to disk
+The public pipeline is now one fixed route:
 
-## Quick Flow Example
+1. build deterministic cluster evidence
+2. optionally run a short brainstorm pass
+3. run a lightweight label-selection step
+4. run a plain-text explanation step
+5. assemble the final output in code
 
-This is the shortest recommended end-to-end run.
+There is no longer a recommended one-step vs three-step choice. The
+pipeline is always staged; `use_brainstorm` only decides whether the
+first draft-analysis step runs.
 
-It:
+## Quick Flow
 
-- loads the current development version of the package
-- generates a synthetic dataset
-- runs Cocktail clustering
-- labels the top score-ranked clusters with the current default
-  `gemma4:12b` + `label_primary_v1` + `workflow_steps = 1`
-- saves compact markdown review cards under
-  `temp/reports/cluster_reviews/`
-
-For Ollama installation and model setup, see
-[llm_operation.md](llm_operation.md).
+This is the shortest recommended end-to-end run:
 
 ```r
 pkgload::load_all("D:/documents/coctrailr/cocktailr")
+
 syn <- generate_synthetic_vegetation_data(seed = 42)
+
 res <- cocktail_cluster(
   vegmatrix = syn$wide_matrix,
   progress = FALSE,
@@ -39,180 +31,73 @@ res <- cocktail_cluster(
   species_cluster_phi = TRUE,
   save_vegmatrix = TRUE
 )
+
 run <- label_clusters(
   x = res,
   model = "gemma4:12b",
   variant = "label_primary_v1",
-  workflow_steps = 1,
   timeout_sec = 600,
   num_predict = 2400,
+  use_brainstorm = TRUE,
   labels_for_imgs = TRUE
 )
 ```
 
-If `labels_for_imgs = TRUE`, `label_clusters()` also saves
-`cluster_label_registry.csv` next to the review cards. You can then let
-`cocktail_plot()` pick it up automatically with `label_registry = "auto"`.
-The same saved registry can also relabel a base-R `hclust` object with
-`label_hclust_leaves(hc, label_registry = "auto", x = res)`.
-If you want the full `cluster_phi_dist() -> hclust() -> relabel -> plot`
-workflow in one call, use `cluster_hclust_plot()`.
+What this does:
 
-The current default recommendation is:
+- builds evidence for the selected clusters
+- runs the fixed local LLM pipeline
+- writes review cards under `temp/reports/cluster_reviews/`
+- saves `cluster_label_registry.csv` next to those review cards when
+  `labels_for_imgs = TRUE`
 
-- one-step workflow: `workflow_steps = 1`
-- model: `gemma4:12b`
-- prompt variant: `label_primary_v1`
-- safer first-run overrides on unknown local hardware:
-  `timeout_sec = 600`, `num_predict = 2400`
-- if the model tends to turn the label itself into a paragraph, try the
-  staged mode: `workflow_steps = 3`
-- if a weaker model needs a narrower decision space, try
-  `label_mode = "constrained"`
-- final saved artifact: compact markdown review card under
-  dataset-aware subfolders of `temp/reports/cluster_reviews/`
-- no `log_dir` by default
+## What the Model Actually Has To Do
 
-## 0. Before You Start
+The model is deliberately kept on a short leash.
 
-You need:
+Step 1, brainstorm:
 
-- `cocktailr` installed or loaded from a local development checkout
-- a local Ollama installation
-- at least one local model available in Ollama
+- optional
+- plain text only
+- asks for a few interpretations, conflicts, candidate labels, and
+  things not to overclaim
 
-Working-directory recommendation:
+Step 2, selection:
 
-- open `cocktailr/cocktailr.Rproj` when possible
-- review-card paths like `temp/reports/cluster_reviews/` are now
-  resolved against the local `cocktailr` source root automatically when
-  that checkout can be detected
-- the same source-root resolution is now used for relative log paths
-  like `temp/llm_logs/`
-- the `temp/` folder itself is not required to exist in advance;
-  review-card and log directories are created automatically on demand
-- deleting `temp/` is safe; a fresh clone without that folder will
-  recreate it when you first save a review card or enable LLM logging
+- always lightweight JSON
+- the model only decides between:
+  `canonical_label`, `display_label`, `label_summary`,
+  `abstain_reason`
+- the model does not fill `status`
+- the model does not build the final report structure
 
-For Ollama setup, model installation, and troubleshooting, see
-[llm_operation.md](llm_operation.md).
+Step 3, explanation:
 
-If you work from a local source checkout and want the newest functions
-in the current R session:
+- plain text only
+- explains the already fixed selection result
+
+The final assembled object is built in code. If the model abstains on
+all three selection rungs, the internal result stays an honest
+abstention; downstream review and registry artifacts can still expose a
+separate public fallback such as `Chaotic Cluster`.
+
+## 1. Load Or Generate Data
+
+`cocktail_cluster()` does not read a file path directly. First load data
+into R, then pass the matrix or data frame.
+
+### Synthetic data
 
 ```r
-pkgload::load_all("path/to/cocktailr")
-```
-e.g. pkgload::load_all("D:/documents/coctrailr/cocktailr")
-
-Otherwise:
-
-```r
-library(cocktailr)
-```
-
-## 1. Understand What `cocktail_cluster()` Accepts
-
-`cocktail_cluster()` does **not** read a file path directly.
-
-You must first load your dataset into R, then pass the resulting object
-to `cocktail_cluster()`.
-
-Supported input types:
-
-- **wide format**
-  A matrix or data frame with plots in rows and species in columns.
-- **long format**
-  A data frame with one row per plot-species record plus a numeric value
-  column. In this case you must use `input_format = "long"`.
-
-## 2. Option A: Generate a Synthetic Dataset
-
-This is the easiest way to test the full pipeline.
-
-```r
-library(cocktailr)
-
 syn <- generate_synthetic_vegetation_data(seed = 42)
 ```
 
-Useful returned objects:
+Use:
 
-- `syn$wide_matrix`
-  Ready for `cocktail_cluster()` as wide input
-- `syn$long_table`
-  Ready for `cocktail_cluster(..., input_format = "long")`
-- `syn$plot_truth`
-  Synthetic ground truth for plots
-- `syn$species_truth`
-  Synthetic ground truth for species
-- `syn$community_profiles`
-  Human-readable community descriptions
+- `syn$wide_matrix` for wide input
+- `syn$long_table` for long input
 
-Important:
-
-- `syn` itself is a **list**
-- do **not** pass `vegmatrix = syn` to `cocktail_cluster()`
-- use `syn$wide_matrix` for wide input
-- use `syn$long_table` for long input
-
-Correct synthetic-data path:
-
-```r
-res <- cocktail_cluster(
-  vegmatrix = syn$wide_matrix,
-  progress = FALSE,
-  plot_values = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix = TRUE
-)
-```
-
-
-## 3. Option B: Load the Shipped Example Dataset
-
-The package ships with CSV exports in `inst/extdata`.
-
-### 3.1 Load the shipped wide CSV
-
-```r
-extdir <- system.file("extdata", package = "cocktailr")
-
-veg_wide <- read.csv(
-  file.path(extdir, "synthetic_vegetation_wide.csv"),
-  row.names = 1,
-  check.names = FALSE
-)
-
-vm <- as.matrix(veg_wide)
-storage.mode(vm) <- "numeric"
-```
-
-Use `vm` as the input to `cocktail_cluster()`. If you want review cards
-to remember where the data came from, later pass
-`dataset_path = file.path(extdir, "synthetic_vegetation_wide.csv")` to
-`cocktail_cluster()`.
-
-### 3.2 Load the shipped long CSV
-
-```r
-extdir <- system.file("extdata", package = "cocktailr")
-
-veg_long <- read.csv(
-  file.path(extdir, "synthetic_vegetation_long.csv"),
-  check.names = FALSE
-)
-```
-
-Use `veg_long` with `input_format = "long"`.
-If you want review cards to remember the file origin, later pass
-`dataset_path = file.path(extdir, "synthetic_vegetation_long.csv")` to
-`cocktail_cluster()`.
-
-## 4. Option C: Load Your Own Wide Dataset
-
-If your own vegetation table is already in wide format and stored as
-CSV, the usual pattern is:
+### Wide CSV
 
 ```r
 veg_wide <- read.csv(
@@ -225,24 +110,7 @@ vm <- as.matrix(veg_wide)
 storage.mode(vm) <- "numeric"
 ```
 
-When you cluster your own CSV-backed data, it is useful to also pass
-the same file path as `dataset_path = "my_vegetation_wide.csv"` to
-`cocktail_cluster()`. Then saved review cards can be grouped by dataset
-automatically.
-
-Requirements:
-
-- rows = plots
-- columns = species
-- cell values = numeric cover or abundance values
-
-If your plot IDs are not in the first CSV column, adjust the import
-first so that the final object is still a plots x species matrix or data
-frame.
-
-## 5. Option D: Load Your Own Long Dataset
-
-If your vegetation table is stored as plot-species-value rows:
+### Long CSV
 
 ```r
 veg_long <- read.csv(
@@ -251,45 +119,18 @@ veg_long <- read.csv(
 )
 ```
 
-The default expected column names are:
+Expected default columns:
 
 - `plot`
 - `species`
 - `value`
 
-If your table already uses those names, you can pass it directly as long
-input. If not, either rename the columns first or pass a custom mapping.
+If your names differ, pass a custom `long = list(...)` mapping to
+`cocktail_cluster()`.
 
-Example with custom column names:
+## 2. Run Cocktail Clustering
 
-```r
-res <- cocktail_cluster(
-  vegmatrix = veg_long,
-  input_format = "long",
-  long = list(
-    plot = "PlotObservationID",
-    species = "Harmonized_name_wfo",
-    value = "Relative_cover"
-  ),
-  progress = FALSE,
-  plot_values = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix = TRUE,
-  dataset_path = "my_vegetation_long.csv"
-)
-```
-
-## 6. Run Cocktail Clustering
-
-For labeling workflows, the recommended defaults are:
-
-- `plot_values = "rel_cover"`
-- `species_cluster_phi = TRUE`
-- `save_vegmatrix = TRUE`
-- `progress = FALSE`
-
-If you generated data with `generate_synthetic_vegetation_data()`, the
-most common next step is:
+Recommended defaults for labeling workflows:
 
 ```r
 res <- cocktail_cluster(
@@ -301,61 +142,16 @@ res <- cocktail_cluster(
 )
 ```
 
-Do not use `vegmatrix = syn`, because `syn` is a list returned by the
-generator, not a matrix or data frame.
+Why these matter:
 
-### 6.1 Wide input
+- `plot_values = "rel_cover"` keeps plot support values informative
+- `species_cluster_phi = TRUE` preserves phi-ranked species evidence
+- `save_vegmatrix = TRUE` keeps aligned vegetation data for later
+  evidence summaries
 
-```r
-res <- cocktail_cluster(
-  vegmatrix = vm,
-  progress = FALSE,
-  plot_values = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix = TRUE,
-  dataset_path = "my_vegetation_wide.csv"
-)
-```
+## 3. Choose Clusters To Label
 
-### 6.2 Long input
-
-```r
-res <- cocktail_cluster(
-  vegmatrix = veg_long,
-  input_format = "long",
-  progress = FALSE,
-  plot_values = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix = TRUE,
-  dataset_path = "my_vegetation_long.csv"
-)
-```
-
-Why these defaults matter:
-
-- `plot_values = "rel_cover"` makes plot support values more useful for
-  later evidence interpretation
-- `species_cluster_phi = TRUE` keeps species-cluster phi evidence for
-  later labeling
-- `save_vegmatrix = TRUE` keeps the aligned vegetation matrix inside the
-  Cocktail object for downstream functions
-
-## 7. Choose Cluster IDs to Label
-
-The simplest default is:
-
-```r
-cluster_ids <- clusters_at_cut(res, phi_cut = 0.25)
-cluster_ids
-```
-
-This returns cluster labels such as:
-
-```r
-[1] "c_1" "c_4" "c_9"
-```
-
-If you want a score-based alternative instead:
+Simple score-based selection:
 
 ```r
 cluster_ids <- select_clusters(
@@ -366,677 +162,276 @@ cluster_ids <- select_clusters(
   mode = "strict",
   return = "labels"
 )
-```
 
-For the rest of this document, we use one chosen cluster:
-
-```r
 cluster_id <- cluster_ids[1]
 ```
 
-## 8. Build Evidence for One Cluster
+## 4. Build Evidence
 
 ```r
-ev <- cluster_evidence(res, cluster = cluster_id)
-print(ev)
+ev <- cluster_evidence(
+  res,
+  cluster = cluster_id,
+  top_n_phi = 10,
+  n_prototype_plots = 5,
+  n_borderline_plots = 5
+)
 ```
 
-Important parts to inspect:
+Useful fields to inspect:
 
 - `ev$meta$cluster_id`
-- `ev$context$cluster_metrics`
 - `ev$summaries$species_topological`
 - `ev$summaries$species_phi`
 - `ev$summaries$plots_prototype`
 - `ev$limitations`
 
-This is the evidence bundle that will be passed to the model.
+## 5. Optional User-Added Data
 
-## 9. Run One-Step Labeling (Default)
+You can attach lightweight extra material to the evidence bundle with
+`user_added_data`.
 
-The current default recommendation is one-step labeling:
+Supported inputs:
+
+- an in-memory R object
+- one file
+- one directory scanned non-recursively
+
+Supported file extensions:
+
+- `.txt`
+- `.json`
+- `.yaml`
+- `.yml`
+
+Examples:
+
+```r
+ev <- cluster_evidence(
+  res,
+  cluster = cluster_id,
+  user_added_data = "notes/site_notes.txt"
+)
+```
+
+```r
+ev <- cluster_evidence(
+  res,
+  cluster = cluster_id,
+  user_added_data = "notes/cluster_context/"
+)
+```
+
+Rules:
+
+- files are included as raw text only
+- supported files in a directory are loaded in stable filename order
+- unsupported extensions produce a warning and are skipped
+- missing directories produce a warning and the workflow continues
+- empty or unsupported-only directories also produce a warning and the
+  workflow continues
+- the combined payload is truncated deterministically at 1000 characters
+
+In prompts, this block appears as `User-added data:`. The code does not
+try to interpret it for the model.
+
+## 6. Run One Cluster Through The Fixed Pipeline
 
 ```r
 ans <- llm_label_cluster(
   evidence = ev,
   model = "gemma4:12b",
   variant = "label_primary_v1",
-  workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 2400
+  num_predict = 2400,
+  use_brainstorm = TRUE
 )
 ```
 
-What this does:
+The default selection ladder is:
 
-- uses the evidence bundle from `cluster_evidence()`
-- calls the local Ollama model
-- asks for structured JSON output
-- does **not** save intermediate raw logs by default
+- `label_primary_v1`
+- `label_soft_v1`
+- `label_broad_v1`
 
-Why these extra arguments are recommended for the first real run:
+If the model returns malformed or incomplete lightweight selection JSON,
+the pipeline gives that rung one local repair cycle before moving on.
 
-- the package-level defaults are stricter: `timeout_sec = 120` and
-  `num_predict = 2400`
-- on slower local hardware, the model may need more than 120 seconds to
-  finish one structured response
-- keeping `num_predict = 2400` while increasing `timeout_sec` is often a
-  safer starting point than falling back to the short default timeout
-
-Short troubleshooting note:
-
-- if you get an error like
-  `Timeout was reached [localhost]: Operation timed out ... with 0 bytes received`,
-  the model usually did not finish the full response before the HTTP
-  timeout
-- this is usually a local Ollama performance or model-loading issue,
-  not a `cluster_evidence()` issue
-- first try: `timeout_sec = 600` and `num_predict = 2400`
-- if structured output still hits EOF, `label_clusters()` now retries
-  automatically at `4800` and then `9600`
-
-## 9A. Run Three-Step Labeling (Optional)
-
-If the model tends to blur the short label together with the explanation,
-you can switch to the staged workflow:
+If you want the model to skip the draft-analysis step:
 
 ```r
 ans <- llm_label_cluster(
   evidence = ev,
   model = "gemma4:12b",
   variant = "label_primary_v1",
-  workflow_steps = 3,
-  label_mode = "dynamic",
+  use_brainstorm = FALSE,
   timeout_sec = 600,
   num_predict = 2400
 )
 ```
 
-What changes in this mode:
+## 7. Run Batch Labeling
 
-- stage A writes a freeform draft analysis without the final JSON schema
-- stage B runs a short-label selection cascade:
-  `label_primary_v1 -> label_soft_v1 -> label_broad_v1`
-- stage C writes the final structured explanation while keeping the selected
-  label fixed
+For end-to-end work, `label_clusters()` is usually the better entry
+point:
 
-Use this when:
+```r
+run <- label_clusters(
+  x = res,
+  clusters = cluster_ids,
+  model = "gemma4:12b",
+  variant = "label_primary_v1",
+  timeout_sec = 600,
+  num_predict = 2400,
+  use_brainstorm = TRUE,
+  labels_for_imgs = TRUE,
+  review_dir = file.path("temp", "reports", "cluster_reviews")
+)
+```
 
-- a weaker model keeps returning paragraph-like labels
-- you want more open-ended reasoning before the final label is chosen
-- you want the explanation pass to justify an already accepted label instead
-  of renegotiating it
-- `label_mode = "dynamic"` is useful here when you want Stage B to prefer
-  short labels already proposed by Stage A instead of inventing a fresh one
+Useful optional switches:
 
-If you only want to inspect the request before calling the model:
+- `use_brainstorm = FALSE`
+  Skip the draft-analysis step and go directly to selection plus
+  explanation.
+- `label_mode = "constrained"`
+  Inject the packaged coarse vocabulary into the selection prompt.
+- `user_added_data = ...`
+  Attach raw user material to each cluster evidence bundle.
+- `semantic_layer = TRUE`
+  Add semantic enrichment when you have the optional semantic resources
+  prepared.
+
+## 8. Constrained Label Mode
+
+Use this when you want the model to choose from a controlled vocabulary
+instead of inventing a fresh label.
+
+```r
+run <- label_clusters(
+  x = res,
+  clusters = cluster_ids,
+  model = "phi4-mini:latest",
+  variant = "label_primary_v1",
+  label_mode = "constrained",
+  timeout_sec = 600,
+  num_predict = 2400
+)
+```
+
+The selection prompt will include:
+
+- `Constrained label mode is active.`
+- `Allowed labels:`
+
+You can override the packaged vocabulary with:
+
+```r
+options(cocktailr.cluster_label_vocabulary_path = "path/to/custom_vocab.json")
+```
+
+## 9. Inspect The Result
+
+For a single-cluster call:
+
+```r
+ans$output$status
+ans$output$canonical_label
+ans$output$display_label
+ans$output$label_summary
+ans$output$abstain_reason
+ans$output$explanation
+```
+
+For a batch run:
+
+```r
+run$summary
+run$results[[1]]$review$file
+run$label_registry_file
+```
+
+What to look at:
+
+- `status`
+  `labeled` or `abstain`
+- `canonical_label`
+  machine-friendly snake_case label
+- `display_label`
+  human-readable label
+- `label_summary`
+  short explanation of what the label means
+- `abstain_reason`
+  why the model declined to name the cluster
+- `explanation`
+  compact final explanation assembled after the selection step
+
+## 10. Review Cards And Plotting Registry
+
+`label_clusters()` writes compact markdown review cards. When
+`labels_for_imgs = TRUE`, it also saves `cluster_label_registry.csv`.
+
+Typical places to inspect:
+
+- `run$summary$review_file`
+- `run$label_registry_file`
+
+That registry can be reused in plotting helpers such as:
+
+- `cocktail_plot(..., label_registry = "auto")`
+- `label_hclust_leaves(..., label_registry = "auto")`
+- `cluster_hclust_plot(..., label_registry = "auto")`
+
+## 11. Honest Abstain vs Public Fallback
+
+If all three selection rungs abstain:
+
+- the internal final output stays `status = "abstain"`
+- `canonical_label`, `display_label`, and `label_summary` stay `NULL`
+- `abstain_reason` and `explanation` stay populated
+
+Downstream artifacts may also expose separate public fallback fields:
+
+- `public_canonical_label`
+- `public_display_label`
+- `public_label_source`
+
+This is intentional. It keeps the model output honest while still giving
+plots and summary tables a usable public label.
+
+## 12. Deprecated Knobs
+
+These older switches are no longer part of the recommended workflow:
+
+- `workflow_steps`
+  Still accepted as a compatibility argument, but the active pipeline is
+  always fixed to three stages.
+- `label_mode = "dynamic"`
+  Deprecated. Draft-derived candidate labels are now injected into
+  selection prompts automatically, so the runtime treats this like
+  `open`.
+- speculative strict-vs-soft branching as the main public workflow
+  No longer the recommended user path.
+
+## 13. Dry Runs
+
+If you only want to inspect the assembled prompts and request payloads:
 
 ```r
 req <- llm_label_cluster(
   evidence = ev,
   model = "gemma4:12b",
   variant = "label_primary_v1",
-  workflow_steps = 1,
   dry_run = TRUE
 )
 
 names(req)
-req$request$model
+req$workflow$label$variants[[1]]$request
 ```
 
-## 10. Read the Labeling Output
-
-The most important output fields are:
-
-```r
-ans$output$status
-ans$output$canonical_label
-ans$output$display_label
-ans$output$interpretation_summary
-```
-
-Meaning:
-
-- `status`
-  Either `labeled` or `abstain`
-- `canonical_label`
-  Machine-friendly snake_case label
-- `display_label`
-  Human-readable label for reports and review
-- `interpretation_summary`
-  Short natural-language explanation
-
-The human-readable label is usually:
-
-```r
-ans$output$display_label
-```
-
-## 11. Validate the Output
-
-```r
-val <- validate_cluster_label(ans, ev)
-print(val)
-```
-
-Important fields:
-
-```r
-val$validation_status
-val$needs_human_review
-val$evidence_coverage
-val$issues
-```
-
-This step checks:
-
-- required fields
-- evidence ID integrity
-- separation between data-backed claims and external knowledge
-- unsupported ecological overreach
-- label-shape constraints such as `display_label <= 80` characters,
-  `display_label <= 6` words, forbidden punctuation, and
-  `canonical_label <= 64` characters
-
-If validation fails only because the label fields violate these format
-limits, `label_clusters()` now uses a lightweight repair pass. That repair
-reuses the parsed JSON plus validator feedback and does not resend the full
-evidence bundle.
-
-## 12. Save the Final Review Card to Disk
-
-The recommended root location for final labeling artifacts is:
-
-```r
-temp/reports/cluster_reviews/
-```
-
-This is a generated-report location, not a stable package data
-location. `render_cluster_review()` can create dataset-aware subfolders
-there automatically.
-
-Example:
-
-```r
-review <- render_cluster_review(
-  x = ans,
-  evidence = ev,
-  validation = val,
-  review_dir = file.path("temp", "reports", "cluster_reviews")
-)
-
-review$file
-getwd()
-```
-
-Default saved file:
-
-- `<cluster_id>_review.md`
-  Compact human-review markdown card
-
-The default compact card also records:
-
-- the model used for generation
-- the prompt file paths used for that answer
-
-If dataset provenance is known:
-
-- synthetic data from `generate_synthetic_vegetation_data()` already
-  carry dataset metadata automatically
-- real datasets can be grouped by file if you pass
-  `dataset_path = ...` to `cocktail_cluster()`
-- if no dataset can be identified, `render_cluster_review()` falls back
-  to a timestamped folder
-
-If you want the expanded card plus sidecar metadata JSON:
-
-```r
-review_full <- render_cluster_review(
-  x = ans,
-  evidence = ev,
-  validation = val,
-  review_dir = file.path("temp", "reports", "cluster_reviews"),
-  full = TRUE
-)
-
-review_full$file
-review_full$metadata_file
-```
-
-The markdown card is the main final artifact of the default workflow.
-
-Important:
-
-- the folder name is `cluster_reviews` (plural), not `cluster_review`
-- if a local `cocktailr` source checkout is detected, relative
-  `review_dir` values are resolved against that package root
-- if no source checkout can be detected, relative `review_dir` still
-  falls back to the current `getwd()`
-- the most reliable way to find the written file is to inspect
-  `review$file`
-
-## 13. Run the Same Workflow for Multiple Clusters
-
-Recommended high-level shortcut:
-
-```r
-run <- label_clusters(
-  x = res,
-  model = "gemma4:12b",
-  variant = "label_primary_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 2400,
-  review_dir = file.path("temp", "reports", "cluster_reviews")
-)
-
-run$summary
-```
-
-or other example with number of clusters: 
-```r
-run <- label_clusters(
-  x = res,
-  clusters = c("c_12", "c_35"),
-  model = "gemma4:12b",
-  variant = "label_primary_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 2400
-)
-
-run$summary
-run$results$c_12$review$file
-```
-
-```r
-run <- label_clusters(
-  x = res,
-  model = "qwen3.5:9b-q4_K_M",
-  variant = "label_primary_v1",
-  workflow_steps = 2,
-  timeout_sec = 600,
-  num_predict = 2400,
-  review_dir = file.path("temp", "reports", "cluster_reviews")
-)
-```
-
-Notes:
-
-- if you omit `clusters`, `label_clusters()` processes up to the first
-  10 clusters selected by score
-- by default `verbose = TRUE`, so the function prints short progress
-  messages such as LLM start, retry/repair, EOF-triggered `num_predict`
-  increase, and saved review paths
-- use `verbose = FALSE` for quiet batch runs
-- for each cluster it builds evidence, runs the LLM, validates the
-  output, tries one validator-guided repair pass if needed, and saves a
-  review card
-- if no valid structured result is obtained after the bounded retry
-  budget, it still writes a placeholder markdown card with the cluster,
-  model, prompt provenance, and failure reason
-
-other example:
-
-```r
-run <- label_clusters(
-  x = res,
-  clusters = c("c_12", "c_26"),
-  model = "gemma4:12b",
-  variant = "label_primary_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 2400
-)
-
-run$summary
-run$results$c_12$review$file
-```
-
-Manual low-level loop:
-
-```r
-cluster_ids <- clusters_at_cut(res, phi_cut = 0.25)
-
-for (cluster_id in cluster_ids) {
-  ev <- cluster_evidence(res, cluster = cluster_id)
-
-  ans <- llm_label_cluster(
-    evidence = ev,
-    model = "gemma4:12b",
-    variant = "label_primary_v1",
-    workflow_steps = 1,
-    timeout_sec = 600,
-    num_predict = 2400
-  )
-
-  val <- validate_cluster_label(ans, ev)
-
-  review <- render_cluster_review(
-    x = ans,
-    evidence = ev,
-    validation = val,
-    review_dir = file.path("temp", "reports", "cluster_reviews")
-  )
-
-  review$file
-}
-```
-
-## 13A. Optional speculative fallback after a non-accepted strict result
-
-The default workflow keeps:
-
-```r
-speculative_fallback_mode = "off"
-```
-
-If you want cautious orientation labels for clusters that either
-
-- end in the placeholder / no-valid-label branch, or
-- produce a strict valid `abstain`,
-
-enable:
-
-```r
-run_spec <- label_clusters(
-  x = res,
-  clusters = c("c_12", "c_26"),
-  model = "gemma4:12b",
-  variant = "label_primary_v1",
-  workflow_steps = 1,
-  speculative_fallback_mode = "after_nonaccepted",
-  timeout_sec = 600,
-  num_predict = 2400,
-  labels_for_imgs = TRUE
-)
-
-run_spec$summary[, c("cluster", "run_status", "label_tier", "review_status")]
-```
-
-What this mode does:
-
-- accepted strict labels stay ordinary accepted labels
-- if the strict pass abstains or would otherwise fall into the placeholder
-  branch, `label_clusters()` starts a soft-label ladder automatically
-- the current soft-label ladder uses:
-  `phi4-mini:latest` + `ollama_options = list(num_ctx = 8192)` +
-  `num_predict = 2400`
-- the ladder tries `label_soft_v1` first
-- if the soft rung still abstains, it escalates to the more label-forcing
-  `label_broad_v1`
-- successful fallback labels are marked as speculative and still require human review
-- the final review card and registry also record:
-  `label_origin`, `species_entropy_band`, `species_entropy_text`,
-  `chaoticity_score`, and `chaoticity_label`
-
-How the main controls are split:
-
-- `speculative_fallback_mode`
-  Controls whether the soft-label ladder is disabled (`"off"`), only used
-  after the placeholder/rejection path (`"after_rejection"`), or also used
-  after a valid strict abstain (`"after_nonaccepted"`).
-- `model`
-  Controls the strict first pass and, by default, the speculative fallback
-  ladder too. If you start on one model, the fallback stays on that same
-  model unless you explicitly override it with
-  `options(cocktailr.speculative_fallback_model = "...")`. The soft ladder
-  itself was developed and tuned primarily on `phi4-mini:latest`; this does
-  not change the main project recommendation: for ordinary strict labeling,
-  keep `gemma4:12b` as the baseline and treat smaller `phi4` models as
-  experimental.
-- `variant`
-  Controls the strict first-pass prompt only. For the current recommended
-  strict path, keep `variant = "label_primary_v1"`.
-- `timeout_sec`
-  Controls the request timeout for both the strict pass and the fallback
-  ladder.
-- `num_predict`
-  Controls the strict pass. The fallback ladder uses its own larger internal
-  default, currently `2400`.
-- `prompt_budget_chars`
-  Controls the character budget for the final system + user prompt messages.
-  Default `10000`. If the evidence bundle is too large, lower-priority
-  evidence blocks are trimmed first. The full JSON schema is still enforced
-  separately through the structured-output `format` field.
-- `labels_for_imgs`
-  If `TRUE`, the resulting speculative or accepted labels are also exported
-  into `cluster_label_registry.csv` for plotting helpers.
-
-If you need to override the internal soft-ladder defaults, the current
-workflow also supports R options:
-
-```r
-options(cocktailr.speculative_fallback_model = "phi4-mini:latest")
-options(cocktailr.speculative_fallback_num_predict = 2400)
-options(cocktailr.speculative_fallback_ollama_options = list(num_ctx = 8192))
-```
-
-Those overrides are optional. If you do nothing, the soft ladder inherits the
-current `model` and any explicitly supplied `ollama_options`; otherwise it
-falls back to:
-
-- `ollama_options = list(num_ctx = 8192)`
-- `num_predict = 2400`
-- `label_soft_v1` first, then `label_broad_v1`
-
-Advanced note:
-
-- `label_mode = "constrained"` now uses the packaged coarse vocabulary
-  directly
-- if you want to test a dataset-specific label list, set:
-
-```r
-options(
-  cocktailr.cluster_label_vocabulary_path =
-    "path/to/your/custom_vocabulary.json"
-)
-```
-
-Typical display semantics:
-
-- accepted: `c_12: Mixed Deciduous Woodland`
-- speculative: `c_27: Woodland-transition assemblage*`
-- plot footnote: `* tentative / speculative label; strict validation did not accept a stable evidence-backed label`
-
-If you also saved a plotting registry:
-
-```r
-cocktail_plot(
-  x = res,
-  clusters = run_spec$summary$cluster,
-  label_clusters = TRUE,
-  label_registry = "auto"
-)
-```
-
-The dendrogram still keeps stable numeric IDs on the plot itself. The starred
-human-readable label is shown in the legend / caption layer or in relabeled
-`hclust` leaves.
-
-## 13B. Optional semantic indicator enrichment
-
-You can also enrich the evidence bundle before the LLM call with
-indicator-derived ecological axes from the external EIVE/Tichy tables.
-
-Example:
-
-```r
-run_sem <- label_clusters(
-  x = res,
-  clusters = c("c_12", "c_26"),
-  model = "gemma4:12b",
-  variant = "label_primary_v1",
-  workflow_steps = 1,
-  semantic_layer = TRUE,
-  semantic_root = "D:/documents/coctrailr/cocktailr",
-  timeout_sec = 600,
-  num_predict = 2400
-)
-
-run_sem$summary[, c(
-  "cluster",
-  "semantic_layer_used",
-  "semantic_layer_status",
-  "semantic_layer_error"
-)]
-```
-
-What this does:
-
-- keeps the ordinary `cluster_evidence()` facts intact
-- adds a semantic indicator profile with ecological axes such as light,
-  moisture, reaction, nutrients, temperature, and salinity
-- injects those semantic summaries into the final evidence text that is
-  sent to the model
-
-Current semantic-layer arguments on `label_clusters()`:
-
-- `semantic_layer`
-  Turns the auxiliary enrichment on or off. Default is `FALSE`.
-- `semantic_root`
-  Optional project-root override used to find `data-raw/external/` and
-  `cache/semantic_layer/`.
-- `semantic_min_phi`
-  Optional species-filter threshold forwarded to the semantic scorer.
-- `semantic_bootstrap`
-  Bootstrap size for the semantic axis summaries. Default is `200`.
-- `semantic_force_species`
-  Rebuild the species lookup cache for the requested species.
-- `semantic_force_reference`
-  Re-read the source workbooks and rebuild the combined reference cache.
-
-Practical notes:
-
-- the semantic layer is auxiliary ecological context, not formal habitat
-  proof
-- it expects the EIVE/Tichy source workbooks under `data-raw/external/`
-  and uses `readxl` when available, otherwise the packaged `xml2`
-  fallback reader
-- if enrichment fails, the workflow does not stop; it records
-  `semantic_layer_status = "failed"` and continues with the plain
-  evidence bundle
-- the current local smoke run with `phi4-mini:latest` showed that the
-  semantic layer was ingested successfully on several synthetic datasets,
-  but the small model still tended to abstain
-- for ordinary cautious runs, `gemma4:12b` remains the main recommended
-  baseline even when semantic enrichment is enabled
-
-## 14. Advanced Options
-
-These are **not** the default path, but you may need them later:
-
-- different prompt variants:
-  `label_primary_v1`, `label_soft_v1`, `label_broad_v1`
-- older versioned prompt IDs are still accepted as compatibility aliases,
-  but they now resolve to the public three-prompt set
-- two-step workflow:
-  `workflow_steps = 2`
-- staged draft -> label -> explanation workflow:
-  `workflow_steps = 3`
-- label-space modes:
-  `label_mode = "open"`, `"constrained"`, `"dynamic"`
-- speculative fallback ladder after strict abstain or rejection:
-  `speculative_fallback_mode = "after_nonaccepted"`
-- raw run logging for debugging:
-  `log_dir = ...`
-
-Migration note:
-
-- do not manually browse the old `v1-v9` prompt ladder anymore
-- the supported public choices are now only
-  `label_primary_v1`, `label_soft_v1`, `label_broad_v1`
-- legacy IDs still work as compatibility aliases
-- retired prompt texts are archived locally under
-  `temp/prompt_archive/cluster_labeling/`
-
-For the current project default, keep:
-
-- `workflow_steps = 1`
-- no `log_dir`
-- final saved review card only
-
-## 15. Common Problems
-
-### `could not find function "llm_label_cluster"`
-
-You are probably using an old loaded package state.
-
-Use:
-
-```r
-pkgload::load_all("path/to/cocktailr")
-```
-
-or reinstall the local package, then reload it.
-
-### `vegmatrix must be a matrix or data.frame`
-
-You probably passed:
-
-- a file path string
-- a list
-- or another unsupported object
-
-Load the dataset into R first with `read.csv()` or build a matrix/data
-frame explicitly.
-
-### `Timeout was reached ... with 0 bytes received`
-
-This usually means:
-
-- Ollama accepted the request
-- the local model did not finish the full structured response within the
-  current timeout window
-- the HTTP request expired before any final response was returned
-
-The most practical first fix is:
-
-```r
-ans <- llm_label_cluster(
-  evidence = ev,
-  model = "gemma4:12b",
-  variant = "label_primary_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 2400
-)
-```
-
-Also check:
-
-- whether this was the first run after model load or after a long idle
-  period
-- whether `ollama ps` shows heavy CPU offload
-- whether a smaller model answers faster on the same machine
-
-### The long-format table is not recognized correctly
-
-Make sure you used:
-
-```r
-input_format = "long"
-```
-
-and, if needed:
-
-```r
-long = list(plot = "...", species = "...", value = "...")
-```
-
-### The model is not available
-
-Install it first in Ollama, for example:
-
-```powershell
-ollama pull gemma4:12b
-```
-
-## Related Documents
-
-- [README.md](README.md)
-  Short project overview and the default workflow only
-- [llm_operation.md](llm_operation.md)
-  Ollama setup, model selection, and troubleshooting
-- [temp/README.md](temp/README.md)
-  Policy for temporary generated artifacts and experimental assets
+This is useful when you want to verify:
+
+- the fixed pipeline stages
+- constrained vocabulary injection
+- `User-added data:` prompt content
+- prompt budget trimming

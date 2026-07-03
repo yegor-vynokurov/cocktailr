@@ -27,6 +27,12 @@
 #'
 #' @param include_cover Logical; if \code{TRUE} (default) and \code{x$vegmatrix}
 #'   is available, compute cover summaries for the cluster's topological species.
+#' @param user_added_data Optional additional user-supplied material. Accepts
+#'   \code{NULL} (default), an in-memory object, a path to one supported file,
+#'   or a path to one directory scanned non-recursively for supported files.
+#'   Supported file extensions are \code{.txt}, \code{.json}, \code{.yaml},
+#'   and \code{.yml}. These inputs are included in the evidence object as raw
+#'   \code{user_added_data} without domain-specific preprocessing.
 #'
 #' @return
 #' A list of class \code{"cluster_evidence"} with top-level components:
@@ -65,7 +71,8 @@ cluster_evidence <- function(
     top_n_phi = 10L,
     n_prototype_plots = 5L,
     n_borderline_plots = 5L,
-    include_cover = TRUE
+    include_cover = TRUE,
+    user_added_data = NULL
 ) {
   if (!.cluster_evidence_is_cocktail_object(x)) {
     stop("`x` must be a Cocktail object with Cluster.species, Cluster.info, Cluster.height, Cluster.merged, and Plot.cluster.")
@@ -81,6 +88,9 @@ cluster_evidence <- function(
     "n_borderline_plots"
   )
   include_cover <- .arg_single_flag(include_cover, "include_cover")
+  loaded_user_added_data <- .cluster_evidence_resolve_user_added_data(
+    user_added_data
+  )
 
   CS <- x$Cluster.species
   KI <- x$Cluster.info
@@ -369,12 +379,20 @@ cluster_evidence <- function(
 
   if (!is.null(cover_summary) && nrow(cover_summary)) {
     for (i in seq_len(nrow(cover_summary))) {
+      cover_value_fields <- intersect(
+        c(
+          "species", "mean_cover", "median_cover", "freq_in_member_plots",
+          "species_freq_count", "species_freq_pct", "mean_plot_cover_share_pct",
+          "n_member_plots", "cover_scale_type", "cover_scale_label",
+          "cover_scale_min", "cover_scale_max"
+        ),
+        names(cover_summary)
+      )
       cover_summary$evidence_id[i] <- add_evidence(
         "cover_summary",
         "cover_summary",
         paste0("Cover summary for species ", cover_summary$species[i], " in ", cluster_label),
-        as.list(cover_summary[i, c("species", "mean_cover", "median_cover",
-                                   "freq_in_member_plots"), drop = FALSE]),
+        as.list(cover_summary[i, cover_value_fields, drop = FALSE]),
         "vegmatrix"
       )
     }
@@ -439,6 +457,14 @@ cluster_evidence <- function(
       cluster_id = cluster_label,
       cluster_num = cluster_id,
       generated_at = NULL,
+      user_added_data_present = !is.null(loaded_user_added_data),
+      user_added_data_source_type = loaded_user_added_data$source_type %||% NULL,
+      user_added_data_truncated = isTRUE(
+        loaded_user_added_data$truncated %||% FALSE
+      ),
+      user_added_data_entry_count = length(
+        loaded_user_added_data$entries %||% list()
+      ),
       dataset = .cluster_evidence_dataset_info(x),
       source = list(
         object_class = "cocktail",
@@ -492,7 +518,16 @@ cluster_evidence <- function(
     )
   )
 
+  if (!is.null(loaded_user_added_data)) {
+    out$user_added_data <- loaded_user_added_data
+  }
+
   class(out) <- c("cluster_evidence", class(out))
+  out <- .augment_cluster_evidence_with_quantity_context(
+    evidence = out,
+    source = x,
+    vegmatrix = vm
+  )
   out
 }
 
@@ -700,6 +735,9 @@ cluster_evidence <- function(
     x$limitations$warnings %||% character(0),
     x$limitations$unsupported_inferences %||% character(0)
   ))
+  user_added_lines <- .cluster_evidence_user_added_prompt_lines(
+    x$user_added_data %||% NULL
+  )
 
   list(
     .new_cluster_evidence_prompt_fixed_block(
@@ -776,6 +814,13 @@ cluster_evidence <- function(
       retain_rank = 100L,
       header = "Cover summary: ",
       items = cover_items
+    ),
+    .new_cluster_evidence_prompt_fixed_block(
+      id = "user_added_data",
+      label = "User-added data",
+      display_order = 85L,
+      retain_rank = 65L,
+      lines = user_added_lines
     ),
     .new_cluster_evidence_prompt_inline_block(
       id = "semantic_axes",
@@ -863,14 +908,9 @@ cluster_evidence <- function(
   )
 }
 
-.serialize_cluster_evidence_prompt <- function(x, max_chars = NULL) {
-  if (!inherits(x, "cluster_evidence")) {
-    stop("`x` must inherit from class `cluster_evidence`.")
-  }
-
+.serialize_cluster_evidence_blocks <- function(blocks, max_chars = NULL) {
   max_chars <- .arg_nullable_non_negative_integer(max_chars, "max_chars")
   remaining_chars <- if (is.null(max_chars)) Inf else as.integer(max_chars)
-  blocks <- .cluster_evidence_prompt_blocks(x)
   select_order <- order(
     vapply(blocks, `[[`, integer(1L), "retain_rank"),
     vapply(blocks, `[[`, integer(1L), "display_order")
@@ -969,8 +1009,23 @@ cluster_evidence <- function(
   )
 }
 
-.format_cluster_evidence_prompt <- function(x, max_chars = NULL) {
+.serialize_cluster_evidence_prompt <- function(x, max_chars = NULL) {
+  if (!inherits(x, "cluster_evidence")) {
+    stop("`x` must inherit from class `cluster_evidence`.")
+  }
+
+  .serialize_cluster_evidence_blocks(
+    .cluster_evidence_prompt_blocks(x),
+    max_chars = max_chars
+  )
+}
+
+.format_cluster_evidence_review_prompt <- function(x, max_chars = NULL) {
   .serialize_cluster_evidence_prompt(x, max_chars = max_chars)$text
+}
+
+.format_cluster_evidence_prompt <- function(x, max_chars = NULL) {
+  .format_cluster_evidence_review_prompt(x, max_chars = max_chars)
 }
 
 .format_cluster_evidence_debug <- function(x) {

@@ -2,8 +2,8 @@ Task mode: `draft_analysis_v1`
 
 Primary objective:
 
-Read the cluster evidence and externalize your intermediate reasoning
-before any final label is chosen.
+Read the cluster evidence and externalize intermediate reasoning before
+any final label is chosen.
 
 Output rules:
 
@@ -27,6 +27,8 @@ Please include all of the following:
    fallback.
 5. `What not to overclaim`
    Note tempting but unsupported interpretations.
+
+{{USER_ADDED_DATA_GUIDANCE_TEXT}}
 
 Cluster id:
 

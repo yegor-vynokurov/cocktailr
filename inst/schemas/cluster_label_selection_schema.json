@@ -7,7 +7,6 @@
   "required": [
     "schema_version",
     "cluster_id",
-    "status",
     "canonical_label",
     "display_label",
     "label_summary",
@@ -22,10 +21,6 @@
       "type": "string",
       "pattern": "^c_[0-9]+$"
     },
-    "status": {
-      "type": "string",
-      "enum": ["labeled", "abstain"]
-    },
     "canonical_label": {
       "type": ["string", "null"],
       "pattern": "^[a-z0-9_]+$",
@@ -38,60 +33,14 @@
       "pattern": "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$)\\S+(?:\\s+\\S+){0,5}$"
     },
     "label_summary": {
-      "type": "string",
+      "type": ["string", "null"],
       "minLength": 1,
       "maxLength": 400
     },
     "abstain_reason": {
-      "type": ["string", "null"]
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 400
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "status": {
-            "const": "labeled"
-          }
-        },
-        "required": ["status"]
-      },
-      "then": {
-        "properties": {
-          "canonical_label": {
-            "type": "string",
-            "pattern": "^[a-z0-9_]+$",
-            "maxLength": 64
-          },
-          "display_label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 80,
-            "pattern": "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$)\\S+(?:\\s+\\S+){0,5}$"
-          },
-          "abstain_reason": {
-            "type": "null"
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "status": {
-            "const": "abstain"
-          }
-        },
-        "required": ["status"]
-      },
-      "then": {
-        "properties": {
-          "abstain_reason": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      }
-    }
-  ]
+  }
 }

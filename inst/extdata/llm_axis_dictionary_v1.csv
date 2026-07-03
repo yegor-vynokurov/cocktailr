@@ -1,0 +1,61 @@
+axis,lower,upper,label,phrase
+l,0,1,very_deep_shade,prefers very deep shade
+l,1,2,deep_shade,prefers deep shade
+l,2,3,strong_shade,prefers strong shade
+l,3,4,shade,prefers shade
+l,4,5,semi_shaded,prefers semi-shaded places
+l,5,6,partly_open,prefers partly open places
+l,6,7,open,prefers open places
+l,7,8,bright,prefers bright places
+l,8,9,very_bright,prefers very bright places
+l,9,10,full_light,"prefers fully open, full-light places"
+m,0,1,extremely_dry,prefers extremely dry conditions
+m,1,2,very_dry,prefers very dry conditions
+m,2,3,dry,prefers dry conditions
+m,3,4,rather_dry,prefers rather dry conditions
+m,4,5,slightly_dry,prefers slightly dry conditions
+m,5,6,intermediate_moisture,prefers intermediate moisture
+m,6,7,slightly_moist,prefers slightly moist conditions
+m,7,8,moist,prefers moist conditions
+m,8,9,very_moist,prefers very moist conditions
+m,9,10,wet,prefers wet conditions
+n,0,1,extremely_nutrient_poor,prefers extremely nutrient-poor soils
+n,1,2,very_nutrient_poor,prefers very nutrient-poor soils
+n,2,3,nutrient_poor,prefers nutrient-poor soils
+n,3,4,rather_nutrient_poor,prefers rather nutrient-poor soils
+n,4,5,moderately_nutrient_poor,prefers moderately nutrient-poor soils
+n,5,6,intermediate_nutrients,prefers intermediate nutrient levels
+n,6,7,moderately_nutrient_rich,prefers moderately nutrient-rich soils
+n,7,8,nutrient_rich,prefers nutrient-rich soils
+n,8,9,very_nutrient_rich,prefers very nutrient-rich soils
+n,9,10,extremely_nutrient_rich,prefers extremely nutrient-rich soils
+r,0,1,extremely_acidic,prefers extremely acidic soils
+r,1,2,very_acidic,prefers very acidic soils
+r,2,3,acidic,prefers acidic soils
+r,3,4,rather_acidic,prefers rather acidic soils
+r,4,5,slightly_acidic_to_near_neutral,prefers slightly acidic to near-neutral soils
+r,5,6,near_neutral,prefers near-neutral soils
+r,6,7,slightly_base_rich,prefers slightly base-rich soils
+r,7,8,base_rich,prefers base-rich soils
+r,8,9,very_base_rich,prefers very base-rich soils
+r,9,10,extremely_base_rich,prefers extremely base-rich soils
+t,0,1,extremely_cold,typical of extremely cold conditions
+t,1,2,very_cold,typical of very cold conditions
+t,2,3,cold,typical of cold conditions
+t,3,4,cool,typical of cool conditions
+t,4,5,slightly_cool,typical of slightly cool conditions
+t,5,6,temperate,typical of temperate conditions
+t,6,7,slightly_warm,typical of slightly warm conditions
+t,7,8,warm,typical of warm conditions
+t,8,9,very_warm,typical of very warm conditions
+t,9,10,extremely_warm,typical of extremely warm conditions
+s,0,1,almost_no_salinity_preference,shows almost no salinity preference
+s,1,2,very_low_salinity,tolerates very low salinity
+s,2,3,low_salinity,tolerates low salinity
+s,3,4,slightly_saline,tolerates slightly saline conditions
+s,4,5,mildly_saline,tolerates mildly saline conditions
+s,5,6,moderately_saline,tolerates moderately saline conditions
+s,6,7,clearly_saline,tolerates clearly saline conditions
+s,7,8,high_salinity,tolerates high salinity
+s,8,9,very_high_salinity,tolerates very high salinity
+s,9,10,extreme_salinity,tolerates extreme salinity

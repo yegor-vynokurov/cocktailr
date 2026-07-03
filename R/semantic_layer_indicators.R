@@ -2396,6 +2396,71 @@ semantic_profile_for_llm <- function(
   )
 }
 
+.semantic_cluster_species_axis_values <- function(result, cluster) {
+  species_evidence <- result$species_evidence %||% NULL
+  axes <- c("l", "m", "n", "r", "t", "s")
+
+  empty <- data.frame(
+    species = character(0),
+    l = numeric(0),
+    m = numeric(0),
+    n = numeric(0),
+    r = numeric(0),
+    t = numeric(0),
+    s = numeric(0),
+    stringsAsFactors = FALSE
+  )
+
+  if (is.null(species_evidence) || !nrow(species_evidence)) {
+    return(empty)
+  }
+
+  species_order <- unique(
+    as.character(species_evidence$species[species_evidence$cluster == cluster])
+  )
+  if (!length(species_order)) {
+    return(empty)
+  }
+
+  axis_values <- species_evidence |>
+    dplyr::filter(.data$cluster == cluster) |>
+    dplyr::group_by(.data$species, .data$axis) |>
+    dplyr::summarise(
+      score_0_10 = {
+        valid <- .data$position_0_10[is.finite(.data$position_0_10)]
+        if (!length(valid)) {
+          NA_real_
+        } else {
+          as.numeric(valid[[1L]])
+        }
+      },
+      .groups = "drop"
+    ) |>
+    tidyr::pivot_wider(
+      names_from = .data$axis,
+      values_from = .data$score_0_10
+    )
+
+  axis_values <- as.data.frame(axis_values, stringsAsFactors = FALSE)
+
+  for (axis in axes) {
+    if (!axis %in% names(axis_values)) {
+      axis_values[[axis]] <- NA_real_
+    }
+  }
+
+  axis_values <- axis_values[, c("species", axes), drop = FALSE]
+  axis_values$species <- as.character(axis_values$species)
+  axis_values <- axis_values[
+    match(species_order, axis_values$species),
+    ,
+    drop = FALSE
+  ]
+  axis_values <- axis_values[!is.na(axis_values$species), , drop = FALSE]
+  rownames(axis_values) <- NULL
+  axis_values
+}
+
 
 .augment_cluster_evidence_with_semantic_layer <- function(
     evidence,
@@ -2472,6 +2537,10 @@ semantic_profile_for_llm <- function(
   evidence$evidence$items <- c(evidence$evidence$items, new_items)
   evidence$evidence$index$semantic_axes <- new_ids
   evidence$summaries$semantic_axes <- semantic_summary
+  evidence$summaries$species_axis_values <- .semantic_cluster_species_axis_values(
+    semantic_result,
+    cluster_id
+  )
   evidence$summaries$semantic_unmatched_species <- .semantic_cluster_unmatched_species(
     semantic_result,
     cluster_id

@@ -2,43 +2,39 @@ Task mode: `explanation_pass_v1`
 
 Primary objective:
 
-Expand an already selected short label into the final structured output
-without reopening the label choice unless the selected label explicitly
-abstains.
+Explain a fixed selection result in compact plain text without changing
+the selected label or abstain outcome.
 
 Decision policy:
 
-- Treat the selected label JSON as fixed.
+- Treat the selected result as fixed.
 - Do not replace a labeled selection with a different label.
-- If the selection says `status = "abstain"`, keep the final output as
-  abstain and explain why.
+- Do not lift an abstention into a label.
 - Use the draft analysis only as supporting context, not as permission
   to invent stronger claims.
+- Stay grounded in the provided evidence only.
 
-Formatting and content rules:
+Formatting rules:
 
-- Return exactly one JSON object matching the provided schema.
-- Return raw JSON only.
-- Preserve the selected `status`, `canonical_label`, `display_label`,
-  and `abstain_reason`.
-- Build `interpretation_summary`, `basis_in_data`,
-  `not_confirmed_by_data`, and `checks_to_run` around that fixed
-  selection.
-- Every evidence-backed claim must cite valid evidence IDs.
-- Keep `external_knowledge` empty unless clearly separated.
-- If the selected label is broad or fallback-like, say that explicitly.
+- Return plain text only.
+- Do not return JSON.
+- Do not use code fences.
+- Keep it compact: 1 short paragraph is enough, with optional short
+  bullets if useful.
+- If the selected result is a label, explain why that short label is
+  safe.
+- If the selected result is an abstain, explain why abstention is
+  reasonable.
+
+{{USER_ADDED_DATA_GUIDANCE_TEXT}}
 
 Cluster id:
 
 {{CLUSTER_ID}}
 
-Output schema:
+Selected selection result (fixed; do not rewrite it):
 
-{{OUTPUT_SCHEMA_JSON}}
-
-Selected label JSON:
-
-{{LABEL_SELECTION_JSON}}
+{{LABEL_SELECTION_TEXT}}
 
 Draft analysis:
 

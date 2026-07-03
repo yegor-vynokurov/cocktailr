@@ -390,7 +390,18 @@
   text <- trimws(text)
 
   word_count <- length(strsplit(text, "\\s+", perl = TRUE)[[1L]])
-  if (!nzchar(text) || nchar(text) > 80L || word_count > 6L) {
+
+  max_chars <- getOption(
+    "cocktailr.label_candidate_max_chars",
+    320L
+  )
+
+  max_words <- getOption(
+    "cocktailr.label_candidate_max_words",
+    40L
+  )
+
+  if (!nzchar(text) || nchar(text) > max_chars || word_count > max_words) {
     return(NA_character_)
   }
 
@@ -408,7 +419,12 @@
   canonical <- gsub("_+", "_", canonical, perl = TRUE)
   canonical <- gsub("^_+|_+$", "", canonical, perl = TRUE)
 
-  if (!nzchar(canonical) || nchar(canonical) > 64L) {
+  max_canonical_chars <- getOption(
+    "cocktailr.label_candidate_canonical_max_chars",
+    300L
+  )
+
+  if (!nzchar(canonical) || nchar(canonical) > max_canonical_chars) {
     return(NA_character_)
   }
 
@@ -553,6 +569,127 @@
   paste(lines, collapse = "\n")
 }
 
+.render_cluster_label_candidate_block_text <- function(candidates) {
+  if (!is.list(candidates) || !length(candidates)) {
+    return("")
+  }
+
+  lines <- c(
+    "Code-extracted candidate labels:",
+    ""
+  )
+
+  for (candidate in candidates) {
+    display_label <- .as_scalar_character(candidate$display_label)
+    canonical_label <- .as_scalar_character(candidate$canonical_label)
+    if (is.na(display_label) || is.na(canonical_label)) {
+      next
+    }
+
+    lines <- c(
+      lines,
+      paste0("- `", display_label, "` -> `", canonical_label, "`")
+    )
+  }
+
+  if (length(lines) <= 2L) {
+    return("")
+  }
+
+  paste(lines, collapse = "\n")
+}
+
+.cluster_label_brainstorm_disabled_text <- function() {
+  paste(
+    "Brainstorm was disabled for this run.",
+    "Choose and explain the final result from the cluster evidence directly."
+  )
+}
+
+.append_cluster_label_context_guidance <- function(base_text, extra_guidance_text = NULL) {
+  base_text <- .as_scalar_character(base_text)
+  extra_guidance_text <- .as_scalar_character(extra_guidance_text)
+
+  pieces <- c(
+    if (!is.na(base_text) && nzchar(trimws(base_text))) trimws(base_text),
+    if (!is.na(extra_guidance_text) && nzchar(trimws(extra_guidance_text))) {
+      trimws(extra_guidance_text)
+    }
+  )
+  pieces <- pieces[nzchar(pieces)]
+
+  if (!length(pieces)) {
+    return("")
+  }
+
+  paste(pieces, collapse = "\n\n")
+}
+
+.compose_cluster_label_selection_context_text <- function(
+    draft_analysis_text = NULL,
+    candidates = list(),
+    use_brainstorm = TRUE,
+    extra_guidance_text = NULL
+) {
+  use_brainstorm <- .arg_single_flag(use_brainstorm, "use_brainstorm")
+  candidate_block <- .render_cluster_label_candidate_block_text(candidates)
+
+  if (!isTRUE(use_brainstorm)) {
+    pieces <- c(.cluster_label_brainstorm_disabled_text(), candidate_block)
+    pieces <- pieces[nzchar(pieces)]
+    return(.append_cluster_label_context_guidance(
+      paste(pieces, collapse = "\n\n"),
+      extra_guidance_text = extra_guidance_text
+    ))
+  }
+
+  draft_analysis_text <- .as_scalar_character(draft_analysis_text)
+  if (is.na(draft_analysis_text) || !nzchar(trimws(draft_analysis_text))) {
+    draft_analysis_text <- paste(
+      "Brainstorm was enabled, but no usable draft analysis text was recovered.",
+      "Proceed from the cluster evidence directly."
+    )
+  }
+
+  pieces <- c(draft_analysis_text, candidate_block)
+  pieces <- pieces[nzchar(pieces)]
+  .append_cluster_label_context_guidance(
+    paste(pieces, collapse = "\n\n"),
+    extra_guidance_text = extra_guidance_text
+  )
+}
+
+.compose_cluster_label_explanation_context_text <- function(
+    draft_analysis_text = NULL,
+    use_brainstorm = TRUE,
+    extra_guidance_text = NULL
+) {
+  use_brainstorm <- .arg_single_flag(use_brainstorm, "use_brainstorm")
+
+  if (!isTRUE(use_brainstorm)) {
+    return(.append_cluster_label_context_guidance(
+      .cluster_label_brainstorm_disabled_text(),
+      extra_guidance_text = extra_guidance_text
+    ))
+  }
+
+  draft_analysis_text <- .as_scalar_character(draft_analysis_text)
+  if (is.na(draft_analysis_text) || !nzchar(trimws(draft_analysis_text))) {
+    return(.append_cluster_label_context_guidance(
+      paste(
+        "Brainstorm was enabled, but no usable draft analysis text was recovered.",
+        "Explain the fixed selection result from the evidence directly."
+      ),
+      extra_guidance_text = extra_guidance_text
+    ))
+  }
+
+  .append_cluster_label_context_guidance(
+    draft_analysis_text,
+    extra_guidance_text = extra_guidance_text
+  )
+}
+
 .render_constrained_label_guidance_text <- function(vocabulary) {
   rendered <- .as_scalar_character(vocabulary$rendered)
   if (is.na(rendered) || !nzchar(rendered)) {
@@ -564,10 +701,42 @@
       "Label-space guidance:",
       "",
       "Constrained label mode is active.",
-      "If you return `status = \"labeled\"`, choose both `canonical_label` and `display_label` from the allowed labels below.",
+      "If you choose a label, choose both `canonical_label` and `display_label` from the allowed labels below.",
+      "If you abstain, leave the label fields null and fill `abstain_reason`.",
       "Do not invent a different labeled answer outside this list.",
       "",
       rendered
+    ),
+    collapse = "\n"
+  )
+}
+
+.render_user_added_data_guidance_text <- function(evidence) {
+  has_user_added_data <- FALSE
+
+  direct_block <- evidence$user_added_data %||% NULL
+  if (is.list(direct_block)) {
+    has_user_added_data <- length(direct_block) > 0L
+  } else if (is.character(direct_block)) {
+    has_user_added_data <- any(nzchar(trimws(direct_block)))
+  }
+
+  meta_flag <- evidence$meta$user_added_data_present %||% NULL
+  if (!has_user_added_data && isTRUE(meta_flag)) {
+    has_user_added_data <- TRUE
+  }
+
+  if (!has_user_added_data) {
+    return("")
+  }
+
+  paste(
+    c(
+      "Optional evidence note:",
+      "",
+      "The evidence bundle includes `user_added_data` supplied by the user.",
+      "Use it only if it is explicitly shown in the evidence text.",
+      "Treat it as additional raw context, not as pre-normalized or automatically verified data."
     ),
     collapse = "\n"
   )
@@ -710,13 +879,15 @@
   } else {
     ""
   }
+  user_added_data_guidance_text <- .render_user_added_data_guidance_text(evidence)
 
   fixed_template_values <- c(
     list(
       "{{CLUSTER_ID}}" = evidence$meta$cluster_id,
       "{{OUTPUT_SCHEMA_JSON}}" = schema_prompt_text,
       "{{COARSE_LABEL_VOCABULARY_TEXT}}" = vocabulary$rendered %||% "",
-      "{{LABEL_MODE_GUIDANCE_TEXT}}" = mode_context$guidance_text %||% ""
+      "{{LABEL_MODE_GUIDANCE_TEXT}}" = mode_context$guidance_text %||% "",
+      "{{USER_ADDED_DATA_GUIDANCE_TEXT}}" = user_added_data_guidance_text
     ),
     extra_template_values
   )
@@ -743,7 +914,7 @@
   } else {
     as.integer(max(prompt_budget_chars - fixed_overhead_chars, 0L))
   }
-  evidence_render <- .serialize_cluster_evidence_prompt(
+  evidence_render <- .serialize_cluster_evidence_llm_prompt(
     evidence,
     max_chars = evidence_budget_chars
   )
@@ -912,6 +1083,34 @@
   "explanation_pass_v1"
 }
 
+.default_cluster_label_v2_label_summary_variant <- function() {
+  catalog <- tryCatch(
+    .read_cluster_label_prompt_catalog(),
+    error = function(e) NULL
+  )
+
+  summary_variant <- catalog$parsed$internal_v2_label_summary_variant %||% NULL
+  if (.is_non_empty_scalar_character(summary_variant)) {
+    return(summary_variant)
+  }
+
+  "label_summary_pass_v2"
+}
+
+.default_cluster_label_v2_abstain_reason_variant <- function() {
+  catalog <- tryCatch(
+    .read_cluster_label_prompt_catalog(),
+    error = function(e) NULL
+  )
+
+  abstain_reason_variant <- catalog$parsed$internal_v2_abstain_reason_variant %||% NULL
+  if (.is_non_empty_scalar_character(abstain_reason_variant)) {
+    return(abstain_reason_variant)
+  }
+
+  "abstain_reason_pass_v2"
+}
+
 .cluster_label_selection_cascade_variants <- function(variant) {
   catalog <- .read_cluster_label_prompt_catalog()
   catalog_def <- catalog$parsed
@@ -948,6 +1147,51 @@
       )
     }
     selection_variant
+  }, character(1))
+
+  list(
+    public_variants = unname(cascade_public),
+    internal_variants = unname(cascade_internal)
+  )
+}
+
+.cluster_label_decision_cascade_variants <- function(variant) {
+  catalog <- .read_cluster_label_prompt_catalog()
+  catalog_def <- catalog$parsed
+  resolved <- .resolve_cluster_label_prompt_variant(
+    catalog_def,
+    variant
+  )$resolved_variant
+  public_variants <- .as_character_vector(
+    catalog_def$public_label_variants %||%
+      c("label_primary_v1", "label_soft_v1", "label_broad_v1")
+  )
+
+  start_idx <- match(resolved, public_variants)
+  if (is.na(start_idx)) {
+    stop(
+      "workflow_steps = 3 requires a public label variant. Received `",
+      variant,
+      "` resolved to `",
+      resolved,
+      "`."
+    )
+  }
+
+  decision_map <- catalog_def$internal_v2_label_decision_variants %||% list()
+  cascade_public <- public_variants[start_idx:length(public_variants)]
+  cascade_internal <- vapply(cascade_public, function(public_variant) {
+    decision_variant <- .as_scalar_character(
+      decision_map[[public_variant]] %||% NA_character_
+    )
+    if (is.na(decision_variant) || !nzchar(decision_variant)) {
+      stop(
+        "Public variant `",
+        public_variant,
+        "` is missing a v2 decision-variant mapping in the prompt catalog."
+      )
+    }
+    decision_variant
   }, character(1))
 
   list(

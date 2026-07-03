@@ -28,13 +28,13 @@
 Тестируем не "голую модель", а новый рабочий каркас:
 
 - `variant = "label_primary_v1"`
-- `workflow_steps = 3`
-- `label_mode = "dynamic"`
-- `speculative_fallback_mode = "after_nonaccepted"`
+- fixed staged pipeline: brainstorm -> selection ladder -> explanation
+- `use_brainstorm = TRUE`
+- `label_mode = "open"`
 - `semantic_layer = TRUE`
 - `prompt_budget_chars = 10000`
 - `num_predict = 2400`
-- speculative fallback принудительно остаётся на той же модели, которая сейчас тестируется
+- no speculative fallback branch: if the run starts on one model, all stages finish on that same model
 - автоматический EOF retry ladder `2400 -> 4800 -> 9600`
 - repair для длинных / плохих label-полей
 - `labels_for_imgs = TRUE`
@@ -217,6 +217,10 @@ Set-Location D:\documents\coctrailr\cocktailr
 $stamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
 $REPORT_ROOT = "temp/reports/forest_steppe_universal_llm_4models/$stamp"
 $env:REPORT_ROOT = $REPORT_ROOT
+$REPORT_ROOT_FILE = "temp/reports/forest_steppe_universal_llm_4models/_ACTIVE_REPORT_ROOT.txt"
+
+New-Item -ItemType Directory -Force -Path "temp/reports/forest_steppe_universal_llm_4models" | Out-Null
+$REPORT_ROOT | Out-File $REPORT_ROOT_FILE -Encoding utf8
 
 New-Item -ItemType Directory -Force -Path `
   "$REPORT_ROOT/input", `
@@ -229,16 +233,46 @@ New-Item -ItemType Directory -Force -Path `
 ollama list | Out-File "$REPORT_ROOT/session/ollama_list.txt" -Encoding utf8
 git rev-parse HEAD | Out-File "$REPORT_ROOT/session/git_commit.txt" -Encoding utf8
 git status --short | Out-File "$REPORT_ROOT/session/git_status.txt" -Encoding utf8
+
+Write-Host "Active REPORT_ROOT: $REPORT_ROOT"
+Write-Host "Marker file: $REPORT_ROOT_FILE"
 ```
+
+Override this with the new single-source-of-truth flow:
+
+- step 1 writes the active run path to
+  `temp/reports/forest_steppe_universal_llm_4models/_ACTIVE_REPORT_ROOT.txt`
+- all R and PowerShell snippets below should resolve `REPORT_ROOT` from that
+  file when the environment variable is missing
+- do not silently fall back to `manual`; fail loudly instead
+- the older `manual` fallback note above is now obsolete
+- do not type `<stamp>` literally in R; either leave `REPORT_ROOT` unset and
+  let the snippets read `_ACTIVE_REPORT_ROOT.txt`, or set a real value such as
+  `temp/reports/forest_steppe_universal_llm_4models/2026-06-30_134305`
 
 R:
 
 ```r
 root <- normalizePath("D:/documents/coctrailr/cocktailr", winslash = "/", mustWork = TRUE)
-report_root_rel <- Sys.getenv(
-  "REPORT_ROOT",
-  unset = "temp/reports/forest_steppe_universal_llm_4models/manual"
+report_root_file <- file.path(
+  root, "temp", "reports", "forest_steppe_universal_llm_4models",
+  "_ACTIVE_REPORT_ROOT.txt"
 )
+report_root_rel <- Sys.getenv("REPORT_ROOT", unset = "")
+if (!nzchar(report_root_rel) && file.exists(report_root_file)) {
+  report_root_rel <- trimws(readLines(
+    report_root_file,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )[1])
+}
+if (!nzchar(report_root_rel)) {
+  stop(
+    "REPORT_ROOT is not set and _ACTIVE_REPORT_ROOT.txt was not found. Run step 1 first.",
+    call. = FALSE
+  )
+}
+Sys.setenv(REPORT_ROOT = report_root_rel)
 report_root <- file.path(root, report_root_rel)
 dir.create(file.path(report_root, "session"), recursive = TRUE, showWarnings = FALSE)
 writeLines(capture.output(sessionInfo()), file.path(report_root, "session", "R_sessionInfo.txt"))
@@ -250,10 +284,25 @@ R:
 
 ```r
 root <- normalizePath("D:/documents/coctrailr/cocktailr", winslash = "/", mustWork = TRUE)
-report_root_rel <- Sys.getenv(
-  "REPORT_ROOT",
-  unset = "temp/reports/forest_steppe_universal_llm_4models/manual"
+report_root_file <- file.path(
+  root, "temp", "reports", "forest_steppe_universal_llm_4models",
+  "_ACTIVE_REPORT_ROOT.txt"
 )
+report_root_rel <- Sys.getenv("REPORT_ROOT", unset = "")
+if (!nzchar(report_root_rel) && file.exists(report_root_file)) {
+  report_root_rel <- trimws(readLines(
+    report_root_file,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )[1])
+}
+if (!nzchar(report_root_rel)) {
+  stop(
+    "REPORT_ROOT is not set and _ACTIVE_REPORT_ROOT.txt was not found. Run step 1 first.",
+    call. = FALSE
+  )
+}
+Sys.setenv(REPORT_ROOT = report_root_rel)
 report_root <- normalizePath(file.path(root, report_root_rel), winslash = "/", mustWork = FALSE)
 dir.create(file.path(report_root, "input"), recursive = TRUE, showWarnings = FALSE)
 
@@ -341,11 +390,28 @@ R:
 
 ```r
 root <- normalizePath("D:/documents/coctrailr/cocktailr", winslash = "/", mustWork = TRUE)
-report_root_rel <- Sys.getenv(
-  "REPORT_ROOT",
-  unset = "temp/reports/forest_steppe_universal_llm_4models/manual"
+report_root_file <- file.path(
+  root, "temp", "reports", "forest_steppe_universal_llm_4models",
+  "_ACTIVE_REPORT_ROOT.txt"
 )
+report_root_rel <- Sys.getenv("REPORT_ROOT", unset = "")
+if (!nzchar(report_root_rel) && file.exists(report_root_file)) {
+  report_root_rel <- trimws(readLines(
+    report_root_file,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )[1])
+}
+if (!nzchar(report_root_rel)) {
+  stop(
+    "REPORT_ROOT is not set and _ACTIVE_REPORT_ROOT.txt was not found. Run step 1 first.",
+    call. = FALSE
+  )
+}
+Sys.setenv(REPORT_ROOT = report_root_rel)
 report_root <- normalizePath(file.path(root, report_root_rel), winslash = "/", mustWork = FALSE)
+dir.create(file.path(report_root, "clustering"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(report_root, "plots"), recursive = TRUE, showWarnings = FALSE)
 
 pkgload::load_all(root, quiet = TRUE)
 
@@ -415,7 +481,7 @@ cluster_hclust_plot(
 Цель smoke test:
 
 - проверить, что semantic layer реально строится
-- проверить, что `workflow_steps = 3` и `label_mode = "dynamic"` живы
+- проверить, что fixed staged pipeline жив и все стадии идут на той же модели
 - проверить, что prompt budget укладывается
 - проверить, что leakage scan пустой
 - проверить, что картинки и registry сохраняются как надо
@@ -424,11 +490,28 @@ R:
 
 ```r
 root <- normalizePath("D:/documents/coctrailr/cocktailr", winslash = "/", mustWork = TRUE)
-report_root_rel <- Sys.getenv(
-  "REPORT_ROOT",
-  unset = "temp/reports/forest_steppe_universal_llm_4models/manual"
+report_root_file <- file.path(
+  root, "temp", "reports", "forest_steppe_universal_llm_4models",
+  "_ACTIVE_REPORT_ROOT.txt"
 )
+report_root_rel <- Sys.getenv("REPORT_ROOT", unset = "")
+if (!nzchar(report_root_rel) && file.exists(report_root_file)) {
+  report_root_rel <- trimws(readLines(
+    report_root_file,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )[1])
+}
+if (!nzchar(report_root_rel)) {
+  stop(
+    "REPORT_ROOT is not set and _ACTIVE_REPORT_ROOT.txt was not found. Run step 1 first.",
+    call. = FALSE
+  )
+}
+Sys.setenv(REPORT_ROOT = report_root_rel)
 report_root <- normalizePath(file.path(root, report_root_rel), winslash = "/", mustWork = FALSE)
+dir.create(file.path(report_root, "plots"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(report_root, "evaluation"), recursive = TRUE, showWarnings = FALSE)
 pkgload::load_all(root, quiet = TRUE)
 
 res <- readRDS(file.path(report_root, "clustering", "res_forest_steppe_real_eval.rds"))
@@ -448,21 +531,13 @@ for (spec in smoke_specs) {
   run_dir <- file.path(report_root, "runs", spec$slug, "smoke")
   dir.create(run_dir, recursive = TRUE, showWarnings = FALSE)
 
-  options(
-    cocktailr.speculative_fallback_model = spec$model,
-    cocktailr.speculative_fallback_num_predict = 2400L,
-    cocktailr.speculative_fallback_ollama_options = spec$ollama_options,
-    cocktailr.speculative_fallback_variants = c("label_soft_v1", "label_broad_v1")
-  )
-
   run <- label_clusters(
     x = res,
     clusters = smoke_cluster,
     model = spec$model,
     variant = "label_primary_v1",
-    workflow_steps = 3L,
-    label_mode = "dynamic",
-    speculative_fallback_mode = "after_nonaccepted",
+    use_brainstorm = TRUE,
+    label_mode = "open",
     semantic_layer = TRUE,
     semantic_root = root,
     timeout_sec = 600,
@@ -489,12 +564,64 @@ for (spec in smoke_specs) {
 
 PowerShell leakage scan:
 
+Use this single canonical command. It refreshes `REPORT_ROOT` from
+`_ACTIVE_REPORT_ROOT.txt`, scans only the smoke `llm_logs` folders for the two
+smoke-tested models, writes exactly to
+`$REPORT_ROOT/session/smoke_leakage_scan.txt`, and prints that path in the
+console.
+
+Run this one block:
+
 ```powershell
-rg -n -S "HABITAT|SITE_ID|LOCALITY|BEDROCK|forest-steppe|Chytry|Kršlenica|Medovarce" `
-  "$REPORT_ROOT/runs/gemma4_12b/smoke/llm_logs" `
-  "$REPORT_ROOT/runs/phi4-mini-4k_latest/smoke/llm_logs" |
-  Out-File "$REPORT_ROOT/session/smoke_leakage_scan.txt" -Encoding utf8
+$REPORT_ROOT = (Get-Content "temp/reports/forest_steppe_universal_llm_4models/_ACTIVE_REPORT_ROOT.txt" -Encoding utf8 | Select-Object -First 1).Trim()
+$env:REPORT_ROOT = $REPORT_ROOT
+
+$pattern = "HABITAT|SITE_ID|LOCALITY|BEDROCK|forest-steppe|Chytry|Kršlenica|Medovarce"
+$scan_out = Join-Path $REPORT_ROOT "session/smoke_leakage_scan.txt"
+$scan_dirs = @(
+  (Join-Path $REPORT_ROOT "runs/gemma4_12b/smoke/llm_logs"),
+  (Join-Path $REPORT_ROOT "runs/phi4-mini-4k_latest/smoke/llm_logs")
+)
+
+New-Item -ItemType Directory -Force -Path (Split-Path $scan_out -Parent) | Out-Null
+
+$scan_hits = Get-ChildItem $scan_dirs -Recurse -File |
+  Select-String -Pattern $pattern -Encoding UTF8 -CaseSensitive
+
+$scan_lines = @(
+  $scan_hits | ForEach-Object {
+    "{0}:{1}:{2}" -f $_.Path, $_.LineNumber, $_.Line.TrimEnd()
+  }
+)
+
+Set-Content -Path $scan_out -Value $scan_lines -Encoding UTF8
+Write-Host "Saved smoke leakage scan to: $scan_out"
+
+if ($scan_lines.Count -eq 0) {
+  Write-Host "No smoke leakage hits found."
+} else {
+  $scan_lines
+}
 ```
+
+How to inspect smoke outputs:
+
+- Open `$REPORT_ROOT/session/smoke_leakage_scan.txt`.
+  Good: the file exists and is empty.
+  Bad: the file contains hits. Investigate them before starting the full benchmark.
+- Open `$REPORT_ROOT/runs/gemma4_12b/smoke/gemma4_12b_smoke_summary.csv`.
+  Look at `semantic_layer_status`, `run_status`, `failure_reason`, and `review_file`.
+  Good: `semantic_layer_status` is not `failed`, `run_status` is `success` or `speculative`, and `failure_reason` is `NA`.
+  Bad: `semantic_layer_status == failed`, `run_status == placeholder`, or `failure_reason` is filled.
+- Open `$REPORT_ROOT/runs/phi4-mini-4k_latest/smoke/phi4-mini-4k_latest_smoke_summary.csv`.
+  Use the same checks.
+- Open the review card path from the `review_file` column in each smoke summary.
+  For the current dataset this will typically be `$REPORT_ROOT/runs/<model_slug>/smoke/cluster_reviews/real_eval_long_numeric_v1/c_475_review.md`.
+  Good: the review card exists and looks like a normal label review.
+  Bad: the file is missing, empty, or only records a placeholder/failure.
+- Open `$REPORT_ROOT/runs/<model_slug>/smoke/cluster_reviews/real_eval_long_numeric_v1/cluster_label_registry.csv`.
+  Good: the file exists and contains the smoke cluster row.
+  Bad: the file is missing.
 
 Критерий перехода к full benchmark:
 
@@ -509,10 +636,25 @@ R:
 
 ```r
 root <- normalizePath("D:/documents/coctrailr/cocktailr", winslash = "/", mustWork = TRUE)
-report_root_rel <- Sys.getenv(
-  "REPORT_ROOT",
-  unset = "temp/reports/forest_steppe_universal_llm_4models/manual"
+report_root_file <- file.path(
+  root, "temp", "reports", "forest_steppe_universal_llm_4models",
+  "_ACTIVE_REPORT_ROOT.txt"
 )
+report_root_rel <- Sys.getenv("REPORT_ROOT", unset = "")
+if (!nzchar(report_root_rel) && file.exists(report_root_file)) {
+  report_root_rel <- trimws(readLines(
+    report_root_file,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )[1])
+}
+if (!nzchar(report_root_rel)) {
+  stop(
+    "REPORT_ROOT is not set and _ACTIVE_REPORT_ROOT.txt was not found. Run step 1 first.",
+    call. = FALSE
+  )
+}
+Sys.setenv(REPORT_ROOT = report_root_rel)
 report_root <- normalizePath(file.path(root, report_root_rel), winslash = "/", mustWork = FALSE)
 pkgload::load_all(root, quiet = TRUE)
 
@@ -535,21 +677,13 @@ for (spec in model_grid) {
   model_root <- file.path(report_root, "runs", spec$slug)
   dir.create(model_root, recursive = TRUE, showWarnings = FALSE)
 
-  options(
-    cocktailr.speculative_fallback_model = spec$model,
-    cocktailr.speculative_fallback_num_predict = 2400L,
-    cocktailr.speculative_fallback_ollama_options = spec$ollama_options,
-    cocktailr.speculative_fallback_variants = c("label_soft_v1", "label_broad_v1")
-  )
-
   run <- label_clusters(
     x = res,
     clusters = selected_clusters,
     model = spec$model,
     variant = "label_primary_v1",
-    workflow_steps = 3L,
-    label_mode = "dynamic",
-    speculative_fallback_mode = "after_nonaccepted",
+    use_brainstorm = TRUE,
+    label_mode = "open",
     semantic_layer = TRUE,
     semantic_root = root,
     timeout_sec = 600,
@@ -624,11 +758,49 @@ utils::write.csv(
 
 PowerShell:
 
+Use this single canonical command for a fresh full-run leakage scan.
+It refreshes `REPORT_ROOT` from `_ACTIVE_REPORT_ROOT.txt`, scans the whole
+`$REPORT_ROOT/runs` tree, writes exactly to
+`$REPORT_ROOT/evaluation/full_leakage_scan.txt`, and prints that path in the
+console.
+
+Run this one block:
+
 ```powershell
-rg -n -S "HABITAT|SITE_ID|LOCALITY|BEDROCK|forest-steppe|Chytry|Kršlenica|Medovarce" `
-  "$REPORT_ROOT/runs" |
-  Out-File "$REPORT_ROOT/evaluation/full_leakage_scan.txt" -Encoding utf8
+$REPORT_ROOT = (Get-Content "temp/reports/forest_steppe_universal_llm_4models/_ACTIVE_REPORT_ROOT.txt" -Encoding utf8 | Select-Object -First 1).Trim()
+$env:REPORT_ROOT = $REPORT_ROOT
+
+$pattern = "HABITAT|SITE_ID|LOCALITY|BEDROCK|forest-steppe|Chytry|Kršlenica|Medovarce"
+$scan_out = Join-Path $REPORT_ROOT "evaluation/full_leakage_scan.txt"
+$scan_root = Join-Path $REPORT_ROOT "runs"
+
+New-Item -ItemType Directory -Force -Path (Split-Path $scan_out -Parent) | Out-Null
+
+$scan_hits = Get-ChildItem $scan_root -Recurse -File |
+  Select-String -Pattern $pattern -Encoding UTF8 -CaseSensitive
+
+$scan_lines = @(
+  $scan_hits | ForEach-Object {
+    "{0}:{1}:{2}" -f $_.Path, $_.LineNumber, $_.Line.TrimEnd()
+  }
+)
+
+Set-Content -Path $scan_out -Value $scan_lines -Encoding UTF8
+Write-Host "Saved full leakage scan to: $scan_out"
+
+if ($scan_lines.Count -eq 0) {
+  Write-Host "No full-run leakage hits found."
+} else {
+  $scan_lines
+}
 ```
+
+How to inspect the full leakage scan:
+
+- Open `$REPORT_ROOT/evaluation/full_leakage_scan.txt`.
+  Good: the file exists and is empty.
+  Bad: the file contains hits. Each line shows `path:line:text`, so you can tell where the suspicious token appeared.
+- If the file is not empty, decide whether the hit came from a true leakage token such as `SITE_ID`, `LOCALITY`, `BEDROCK`, `forest-steppe`, `Chytry`, `Kršlenica`, or `Medovarce`, or from harmless prompt wording.
 
 Если scan не пустой, в финальный отчёт нужно явно вынести:
 
@@ -646,11 +818,27 @@ R:
 
 ```r
 root <- normalizePath("D:/documents/coctrailr/cocktailr", winslash = "/", mustWork = TRUE)
-report_root_rel <- Sys.getenv(
-  "REPORT_ROOT",
-  unset = "temp/reports/forest_steppe_universal_llm_4models/manual"
+report_root_file <- file.path(
+  root, "temp", "reports", "forest_steppe_universal_llm_4models",
+  "_ACTIVE_REPORT_ROOT.txt"
 )
+report_root_rel <- Sys.getenv("REPORT_ROOT", unset = "")
+if (!nzchar(report_root_rel) && file.exists(report_root_file)) {
+  report_root_rel <- trimws(readLines(
+    report_root_file,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )[1])
+}
+if (!nzchar(report_root_rel)) {
+  stop(
+    "REPORT_ROOT is not set and _ACTIVE_REPORT_ROOT.txt was not found. Run step 1 first.",
+    call. = FALSE
+  )
+}
+Sys.setenv(REPORT_ROOT = report_root_rel)
 report_root <- normalizePath(file.path(root, report_root_rel), winslash = "/", mustWork = FALSE)
+dir.create(file.path(report_root, "evaluation"), recursive = TRUE, showWarnings = FALSE)
 
 res <- readRDS(file.path(report_root, "clustering", "res_forest_steppe_real_eval.rds"))
 selected_clusters <- utils::read.csv(
@@ -791,11 +979,27 @@ R:
 
 ```r
 root <- normalizePath("D:/documents/coctrailr/cocktailr", winslash = "/", mustWork = TRUE)
-report_root_rel <- Sys.getenv(
-  "REPORT_ROOT",
-  unset = "temp/reports/forest_steppe_universal_llm_4models/manual"
+report_root_file <- file.path(
+  root, "temp", "reports", "forest_steppe_universal_llm_4models",
+  "_ACTIVE_REPORT_ROOT.txt"
 )
+report_root_rel <- Sys.getenv("REPORT_ROOT", unset = "")
+if (!nzchar(report_root_rel) && file.exists(report_root_file)) {
+  report_root_rel <- trimws(readLines(
+    report_root_file,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )[1])
+}
+if (!nzchar(report_root_rel)) {
+  stop(
+    "REPORT_ROOT is not set and _ACTIVE_REPORT_ROOT.txt was not found. Run step 1 first.",
+    call. = FALSE
+  )
+}
+Sys.setenv(REPORT_ROOT = report_root_rel)
 report_root <- normalizePath(file.path(root, report_root_rel), winslash = "/", mustWork = FALSE)
+dir.create(file.path(report_root, "evaluation"), recursive = TRUE, showWarnings = FALSE)
 
 summary_all <- utils::read.csv(
   file.path(report_root, "evaluation", "summary_4models.csv"),
@@ -854,11 +1058,27 @@ R:
 
 ```r
 root <- normalizePath("D:/documents/coctrailr/cocktailr", winslash = "/", mustWork = TRUE)
-report_root_rel <- Sys.getenv(
-  "REPORT_ROOT",
-  unset = "temp/reports/forest_steppe_universal_llm_4models/manual"
+report_root_file <- file.path(
+  root, "temp", "reports", "forest_steppe_universal_llm_4models",
+  "_ACTIVE_REPORT_ROOT.txt"
 )
+report_root_rel <- Sys.getenv("REPORT_ROOT", unset = "")
+if (!nzchar(report_root_rel) && file.exists(report_root_file)) {
+  report_root_rel <- trimws(readLines(
+    report_root_file,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )[1])
+}
+if (!nzchar(report_root_rel)) {
+  stop(
+    "REPORT_ROOT is not set and _ACTIVE_REPORT_ROOT.txt was not found. Run step 1 first.",
+    call. = FALSE
+  )
+}
+Sys.setenv(REPORT_ROOT = report_root_rel)
 report_root <- normalizePath(file.path(root, report_root_rel), winslash = "/", mustWork = FALSE)
+dir.create(file.path(report_root, "evaluation"), recursive = TRUE, showWarnings = FALSE)
 
 summary_all <- utils::read.csv(
   file.path(report_root, "evaluation", "summary_4models.csv"),

@@ -180,6 +180,7 @@ render_cluster_review <- function(
     evidence = evidence,
     validation = validation,
     metadata = metadata,
+    source = x,
     full = full,
     include_front_matter = include_front_matter,
     manual_notes = manual_notes,
@@ -202,6 +203,17 @@ render_cluster_review <- function(
     file_out <- normalizePath(resolved_paths$file, winslash = "/", mustWork = TRUE)
   }
 
+  model_logs_out <- NULL
+  if (!is.null(file_out)) {
+    model_logs_out <- .write_cluster_review_model_logs(
+      x = x,
+      review_file = file_out
+    )
+  }
+  if (!is.null(model_logs_out)) {
+    metadata$review_model_logs_dir <- model_logs_out
+  }
+
   metadata_out <- NULL
   if (isTRUE(write_metadata) && !is.null(resolved_paths$metadata_file)) {
     dir.create(dirname(resolved_paths$metadata_file), recursive = TRUE, showWarnings = FALSE)
@@ -220,7 +232,8 @@ render_cluster_review <- function(
     lines = lines,
     metadata = metadata,
     file = file_out,
-    metadata_file = metadata_out
+    metadata_file = metadata_out,
+    model_logs_dir = model_logs_out
   )
   class(out) <- c("cluster_review_artifact", "list")
   out
@@ -236,6 +249,7 @@ print.cluster_review_artifact <- function(x, ...) {
   output <- validation$output %||% .extract_cluster_label_output(x)
   issues <- validation$issues %||% .new_cluster_label_issue_table()
   provenance <- .cluster_review_provenance(x)
+  public_label <- .cluster_label_public_fields(output, provenance)
   coverage <- validation$evidence_coverage %||% list(
     score = NA_real_,
     n_valid_citations = NA_integer_,
@@ -275,6 +289,19 @@ print.cluster_review_artifact <- function(x, ...) {
     unsupported_claim_issue_count = sum(issues$category == "unsupported_claims"),
     proposed_canonical_label = .as_scalar_character(output$canonical_label),
     proposed_display_label = .as_scalar_character(output$display_label),
+    public_canonical_label = public_label$public_canonical_label %||% NA_character_,
+    public_display_label = public_label$public_display_label %||% NA_character_,
+    public_label_source = public_label$public_label_source %||% NA_character_,
+    brainstorm_used = if (is.null(provenance$brainstorm_skipped)) {
+      NA
+    } else {
+      !isTRUE(provenance$brainstorm_skipped)
+    },
+    brainstorm_candidate_count = length(provenance$brainstorm_candidates %||% list()),
+    user_added_data_present = isTRUE(evidence$meta$user_added_data_present %||% FALSE),
+    user_added_data_entry_count = as.integer(
+      evidence$meta$user_added_data_entry_count %||% 0L
+    ),
     provider = provenance$provider,
     model = provenance$model,
     variant = provenance$variant,
@@ -322,6 +349,10 @@ print.cluster_review_artifact <- function(x, ...) {
       prompt_user_path = NULL,
       gate_prompt_system_path = NULL,
       gate_prompt_user_path = NULL,
+      draft_analysis = NULL,
+      brainstorm_skipped = NULL,
+      brainstorm_candidates = list(),
+      explanation_fallback_used = NULL,
       source_class = class(x)[1L] %||% "list"
     ))
   }
@@ -329,9 +360,27 @@ print.cluster_review_artifact <- function(x, ...) {
   workflow <- x$workflow %||% list()
   gate_stage <- if (is.list(workflow)) workflow$gate else NULL
   label_stage <- if (is.list(workflow)) workflow$label else NULL
+  draft_stage <- if (is.list(workflow)) workflow$draft else NULL
+  explanation_stage <- if (is.list(workflow)) workflow$explanation else NULL
   gate_output <- if (is.list(gate_stage)) gate_stage$output %||% NULL else NULL
   main_prompt <- x$prompt %||% list()
   gate_prompt <- if (is.list(gate_stage)) gate_stage$prompt %||% list() else list()
+  draft_analysis <- if (is.list(draft_stage)) {
+    .as_scalar_character(draft_stage$output$draft_analysis %||% NULL)
+  } else {
+    NA_character_
+  }
+  brainstorm_skipped <- if (is.list(draft_stage)) {
+    isTRUE(draft_stage$skipped)
+  } else {
+    NULL
+  }
+  brainstorm_candidates <- if (!isTRUE(brainstorm_skipped) &&
+      .is_non_empty_scalar_character(draft_analysis)) {
+    .extract_cluster_label_candidates_from_draft(draft_analysis)
+  } else {
+    list()
+  }
   label_stage_failure_reason <- if (is.list(label_stage)) {
     .as_scalar_character(
       label_stage$selection_output$fallback_reason %||%
@@ -371,6 +420,18 @@ print.cluster_review_artifact <- function(x, ...) {
     prompt_user_path = main_prompt$user_path %||% NULL,
     gate_prompt_system_path = gate_prompt$system_path %||% NULL,
     gate_prompt_user_path = gate_prompt$user_path %||% NULL,
+    draft_analysis = if (.is_non_empty_scalar_character(draft_analysis)) {
+      draft_analysis
+    } else {
+      NULL
+    },
+    brainstorm_skipped = brainstorm_skipped,
+    brainstorm_candidates = brainstorm_candidates,
+    explanation_fallback_used = if (is.list(explanation_stage)) {
+      isTRUE(explanation_stage$fallback_used)
+    } else {
+      NULL
+    },
     source_class = "cluster_label_result"
   )
 }
@@ -526,6 +587,7 @@ print.cluster_review_artifact <- function(x, ...) {
     evidence,
     validation,
     metadata,
+    source,
     full,
     include_front_matter,
     manual_notes,
@@ -536,6 +598,9 @@ print.cluster_review_artifact <- function(x, ...) {
   summary_lines <- .cluster_review_summary_lines(validation, metadata)
   label_lines <- .cluster_review_label_lines(output, metadata)
   tentative_lines <- .cluster_review_tentative_lines(metadata)
+  brainstorm_lines <- .cluster_review_brainstorm_lines(source)
+  workflow_trace_lines <- .cluster_review_workflow_trace_lines(source)
+  user_added_data_lines <- .cluster_review_user_added_data_lines(evidence)
   claims_lines <- .cluster_review_claim_lines(output$basis_in_data)
   key_species_lines <- .cluster_review_key_species_lines(output$key_species)
   external_lines <- .cluster_review_external_knowledge_lines(output$external_knowledge)
@@ -543,7 +608,9 @@ print.cluster_review_artifact <- function(x, ...) {
   confidence_lines <- .cluster_review_confidence_lines(output$confidence)
   issue_lines <- .cluster_review_issue_lines(validation$issues)
   checks_lines <- .cluster_review_check_lines(output$checks_to_run)
-  evidence_snapshot <- .format_cluster_evidence_prompt(evidence)
+  explanation_lines <- .cluster_review_explanation_lines(output)
+  interpretation_summary_text <- .cluster_label_output_summary_text(output)
+  evidence_snapshot <- .format_cluster_evidence_review_prompt(evidence)
   evidence_limitations <- .cluster_review_evidence_limitation_lines(evidence)
   manual_note_lines <- .cluster_review_manual_notes_lines(manual_notes)
 
@@ -563,6 +630,12 @@ print.cluster_review_artifact <- function(x, ...) {
       "",
       "## Generation setup",
       generation_lines,
+      if (length(brainstorm_lines)) "" else NULL,
+      if (length(brainstorm_lines)) "## Brainstorm trace" else NULL,
+      brainstorm_lines,
+      if (length(user_added_data_lines)) "" else NULL,
+      if (length(user_added_data_lines)) "## User-added context" else NULL,
+      user_added_data_lines,
       "",
       "## Review summary",
       summary_lines,
@@ -572,9 +645,15 @@ print.cluster_review_artifact <- function(x, ...) {
       if (length(tentative_lines)) "" else NULL,
       if (length(tentative_lines)) "## Why tentative" else NULL,
       tentative_lines,
+      if (length(workflow_trace_lines)) "" else NULL,
+      if (length(workflow_trace_lines)) "## Workflow trace" else NULL,
+      workflow_trace_lines,
+      "",
+      "## Final explanation",
+      explanation_lines,
       "",
       "## Interpretation summary",
-      .paragraph_or_placeholder(.as_scalar_character(output$interpretation_summary)),
+      .paragraph_or_placeholder(interpretation_summary_text),
       "",
       "## Evidence-backed claims",
       claims_lines,
@@ -623,8 +702,11 @@ print.cluster_review_artifact <- function(x, ...) {
       if (length(tentative_lines)) "## Why tentative" else NULL,
       tentative_lines,
       "",
+      "## Final explanation",
+      explanation_lines,
+      "",
       "## Interpretation summary",
-      .paragraph_or_placeholder(.as_scalar_character(output$interpretation_summary)),
+      .paragraph_or_placeholder(interpretation_summary_text),
       "",
       "## Evidence-backed claims",
       claims_lines,
@@ -764,6 +846,7 @@ print.cluster_review_artifact <- function(x, ...) {
   selected_label_variant <- .as_scalar_character(metadata$selected_label_variant)
   label_stage_failure_reason <- .as_scalar_character(metadata$label_stage_failure_reason)
   label_stage_exhausted <- metadata$label_stage_exhausted %||% NULL
+  brainstorm_used <- metadata$brainstorm_used %||% NULL
   system_prompt <- .as_scalar_character(metadata$prompt_system_path)
   user_prompt <- .as_scalar_character(metadata$prompt_user_path)
   gate_variant <- .as_scalar_character(metadata$gate_variant)
@@ -782,6 +865,15 @@ print.cluster_review_artifact <- function(x, ...) {
 
   if (!is.na(variant) && nzchar(variant)) {
     lines <- c(lines, paste0("- Prompt variant: ", .md_code(variant)))
+  }
+  if (isTRUE(brainstorm_used) || identical(brainstorm_used, FALSE)) {
+    lines <- c(
+      lines,
+      paste0(
+        "- Brainstorm used: ",
+        .md_code(tolower(as.character(isTRUE(brainstorm_used))))
+      )
+    )
   }
   if (!is.na(selected_label_variant) && nzchar(selected_label_variant)) {
     lines <- c(
@@ -831,15 +923,42 @@ print.cluster_review_artifact <- function(x, ...) {
 
 .cluster_review_label_lines <- function(output, metadata) {
   status <- .as_scalar_character(output$status)
+  label_summary <- .as_scalar_character(output$label_summary)
+  public_display_label <- .as_scalar_character(metadata$public_display_label)
+  public_canonical_label <- .as_scalar_character(metadata$public_canonical_label)
+  public_label_source <- .as_scalar_character(metadata$public_label_source)
 
   if (identical(status, "abstain")) {
     lines <- c(
       "- Status: `abstain`",
+      "- Model output: no stable short label was produced.",
       paste0(
         "- Abstain reason: ",
         .paragraph_or_placeholder(.as_scalar_character(output$abstain_reason))
       )
     )
+    if (!is.na(public_label_source) &&
+        identical(public_label_source, "post_abstain_fallback")) {
+      lines <- c(
+        lines,
+        paste0(
+          "- Programmatic public fallback display label: ",
+          .md_code(public_display_label)
+        ),
+        paste0(
+          "- Programmatic public fallback canonical label: ",
+          .md_code(public_canonical_label)
+        ),
+        paste0(
+          "- Public label source: ",
+          .md_code(public_label_source)
+        ),
+        paste(
+          "- Note: this fallback label is injected downstream for review,",
+          "registry, and plotting convenience only; it is not the model's label."
+        )
+      )
+    }
     if (!is.na(metadata$label_origin) && nzchar(metadata$label_origin)) {
       lines <- c(lines, paste0("- Label origin: `", metadata$label_origin, "`"))
     }
@@ -886,6 +1005,9 @@ print.cluster_review_artifact <- function(x, ...) {
     lines,
     paste0("- Canonical label: ", .md_code(.as_scalar_character(output$canonical_label))),
     paste0("- Display label: ", .md_code(display_label)),
+    if (!is.na(label_summary) && nzchar(label_summary)) {
+      paste0("- Label summary: ", label_summary)
+    },
     if (isTRUE(metadata$label_stage_exhausted)) {
       paste(
         "- Cascade note: all public label-selection rungs were exhausted,",
@@ -911,6 +1033,383 @@ print.cluster_review_artifact <- function(x, ...) {
       )
     }
   )
+}
+
+.cluster_review_brainstorm_lines <- function(x) {
+  provenance <- .cluster_review_provenance(x)
+  draft_analysis <- .as_scalar_character(provenance$draft_analysis)
+  brainstorm_candidates <- provenance$brainstorm_candidates %||% list()
+
+  if (isTRUE(provenance$brainstorm_skipped)) {
+    return(
+      "- Brainstorm step was skipped; selection and explanation used the cluster evidence directly."
+    )
+  }
+
+  lines <- character()
+
+  if (is.list(brainstorm_candidates) && length(brainstorm_candidates)) {
+    for (candidate in brainstorm_candidates) {
+      display_label <- .as_scalar_character(candidate$display_label)
+      canonical_label <- .as_scalar_character(candidate$canonical_label)
+      if (!.is_non_empty_scalar_character(display_label) ||
+          !.is_non_empty_scalar_character(canonical_label)) {
+        next
+      }
+      lines <- c(
+        lines,
+        paste0(
+          "- Candidate label: ",
+          .md_code(display_label),
+          " -> ",
+          .md_code(canonical_label)
+        )
+      )
+    }
+  }
+
+  main_signal_lines <- .cluster_label_draft_section_lines(
+    draft_analysis,
+    "main signal"
+  )
+  if (length(main_signal_lines)) {
+    lines <- c(
+      lines,
+      paste0("- Main signal: ", main_signal_lines)
+    )
+  }
+
+  conflict_lines <- .cluster_label_draft_section_lines(
+    draft_analysis,
+    "noise or conflicts"
+  )
+  if (length(conflict_lines)) {
+    lines <- c(
+      lines,
+      paste0("- Conflict or noise: ", conflict_lines)
+    )
+  }
+
+  overclaim_lines <- .cluster_label_draft_section_lines(
+    draft_analysis,
+    "what not to overclaim"
+  )
+  if (length(overclaim_lines)) {
+    lines <- c(
+      lines,
+      paste0("- Overclaim warning: ", overclaim_lines)
+    )
+  }
+
+  if (!length(lines) && .is_non_empty_scalar_character(draft_analysis)) {
+    lines <- c(lines, "- Brainstorm ran, but no compact candidate trace was recovered.")
+  }
+
+  lines
+}
+
+.cluster_review_stage_raw_evidence_used <- function(stage) {
+  if (!is.list(stage) || !length(stage)) {
+    return(NA)
+  }
+
+  prompt <- stage$prompt %||% list()
+  evidence_text <- .as_scalar_character(prompt$evidence_text %||% NULL)
+  user_text <- .as_scalar_character(prompt$user %||% NULL)
+
+  if (.is_non_empty_scalar_character(evidence_text)) {
+    return(TRUE)
+  }
+
+  if (.is_non_empty_scalar_character(user_text) &&
+      grepl("Cluster evidence:", user_text, fixed = TRUE)) {
+    return(TRUE)
+  }
+
+  FALSE
+}
+
+.cluster_review_workflow_trace_lines <- function(x) {
+  if (!inherits(x, "cluster_label_result")) {
+    return(character(0))
+  }
+
+  workflow <- x$workflow %||% NULL
+  if (!is.list(workflow) || !length(workflow)) {
+    return(character(0))
+  }
+
+  label_stage <- workflow$label %||% NULL
+  summary_stage <- workflow$summary %||% NULL
+  abstain_reason_stage <- workflow$abstain_reason %||% NULL
+  output <- x$output %||% list()
+  attempts <- if (is.list(label_stage)) label_stage$attempts %||% list() else list()
+
+  lines <- character()
+
+  if (is.list(attempts) && length(attempts)) {
+    for (attempt in attempts) {
+      public_variant <- .as_scalar_character(
+        attempt$public_variant %||% attempt$variant %||% NULL
+      )
+      selection_variant <- .as_scalar_character(
+        attempt$selection_variant %||% NULL
+      )
+      result <- .as_scalar_character(
+        attempt$result %||% attempt$output$status %||% NULL
+      )
+      attempts_used <- attempt$attempts %||% NULL
+      raw_response <- .as_scalar_character(
+        attempt$response$content %||% NULL
+      )
+      parsed_output <- attempt$output %||% list()
+      error_text <- .as_scalar_character(attempt$error %||% NULL)
+
+      heading <- if (.is_non_empty_scalar_character(public_variant)) {
+        paste0("### ", .md_code(public_variant))
+      } else {
+        "### Label-decision rung"
+      }
+      lines <- c(lines, heading)
+
+      if (.is_non_empty_scalar_character(selection_variant)) {
+        lines <- c(
+          lines,
+          paste0("- Internal label-decision prompt: ", .md_code(selection_variant))
+        )
+      }
+      if (.is_non_empty_scalar_character(result)) {
+        lines <- c(lines, paste0("- Result: ", .md_code(result)))
+      }
+      if (!is.null(attempts_used) && !is.na(attempts_used)) {
+        lines <- c(
+          lines,
+          paste0("- Attempts used: ", .md_code(as.character(attempts_used)))
+        )
+      }
+      if (.is_non_empty_scalar_character(error_text)) {
+        lines <- c(lines, paste0("- Error: ", error_text))
+      }
+
+      lines <- c(lines, "", "#### Raw label-only answer")
+      if (.is_non_empty_scalar_character(raw_response)) {
+        lines <- c(lines, .md_text_block_lines(raw_response))
+      } else {
+        lines <- c(
+          lines,
+          "- Raw label-only answer is not available in-memory for this rung; inspect debug logs if they were written."
+        )
+      }
+
+      lines <- c(lines, "", "#### Parsed label decision")
+      if (is.list(parsed_output) && length(parsed_output)) {
+        lines <- c(
+          lines,
+          paste0("- Status: ", .md_code(.as_scalar_character(parsed_output$status %||% NULL))),
+          paste0("- Label decision text: ", .md_code(.empty_string_if_na(.as_scalar_character(parsed_output$label_decision_text %||% NULL)))),
+          paste0("- Canonical label: ", .md_code(.empty_string_if_na(.as_scalar_character(parsed_output$canonical_label %||% NULL)))),
+          paste0("- Display label: ", .md_code(.empty_string_if_na(.as_scalar_character(parsed_output$display_label %||% NULL))))
+        )
+
+        if (identical(.as_scalar_character(parsed_output$status %||% NULL), "abstain")) {
+          lines <- c(
+            lines,
+            "- This is the model's abstain decision at the label-only step; any public fallback label shown elsewhere is added later by code."
+          )
+        }
+      } else {
+        lines <- c(lines, "- Parsed label decision was not recovered for this rung.")
+      }
+
+      lines <- c(lines, "")
+    }
+  }
+
+  if (is.list(summary_stage) && length(summary_stage)) {
+    lines <- c(lines, "### `label_summary_pass_v2`")
+    if (.is_non_empty_scalar_character(.as_scalar_character(summary_stage$variant %||% NULL))) {
+      lines <- c(
+        lines,
+        paste0("- Summary variant: ", .md_code(.as_scalar_character(summary_stage$variant %||% NULL)))
+      )
+    }
+    if (isTRUE(summary_stage$skipped)) {
+      lines <- c(
+        lines,
+        paste0("- Stage skipped: ", .md_code("true")),
+        paste0("- Skip reason: ", .md_code(.empty_string_if_na(.as_scalar_character(summary_stage$skip_reason %||% NULL)))),
+        ""
+      )
+    } else {
+      lines <- c(
+        lines,
+        paste0(
+          "- Raw cluster evidence re-read: ",
+          .md_code(tolower(as.character(isTRUE(.cluster_review_stage_raw_evidence_used(summary_stage)))))
+        ),
+        "- Summary input scope: `label + brainstorm only`",
+        "",
+        "#### Raw summary answer"
+      )
+
+      raw_summary <- .as_scalar_character(summary_stage$response$content %||% NULL)
+      if (.is_non_empty_scalar_character(raw_summary)) {
+        lines <- c(lines, .md_text_block_lines(raw_summary))
+      } else if (isTRUE(summary_stage$fallback_used)) {
+        lines <- c(lines, "- No raw summary answer is attached because code assembled a programmatic fallback summary after the stage failed.")
+      } else {
+        lines <- c(lines, "- Raw summary answer is not available in-memory for this stage; inspect debug logs if they were written.")
+      }
+
+      lines <- c(lines, "", "#### Parsed summary")
+      if (is.list(summary_stage$output) && length(summary_stage$output)) {
+        lines <- c(
+          lines,
+          paste0("- Status: ", .md_code(.as_scalar_character(summary_stage$output$status %||% NULL))),
+          paste0("- Label summary: ", .paragraph_or_placeholder(.as_scalar_character(summary_stage$output$label_summary %||% NULL)))
+        )
+      } else {
+        lines <- c(lines, "- Parsed summary was not recovered.")
+      }
+
+      if (isTRUE(summary_stage$fallback_used)) {
+        lines <- c(
+          lines,
+          paste0("- Programmatic fallback used: ", .md_code("true")),
+          paste0("- Fallback reason: ", .paragraph_or_placeholder(.as_scalar_character(summary_stage$fallback_reason %||% NULL)))
+        )
+      }
+
+      lines <- c(lines, "")
+    }
+  }
+
+  if (is.list(abstain_reason_stage) && length(abstain_reason_stage)) {
+    lines <- c(lines, "### `abstain_reason_pass_v2`")
+    if (.is_non_empty_scalar_character(.as_scalar_character(abstain_reason_stage$variant %||% NULL))) {
+      lines <- c(
+        lines,
+        paste0("- Abstain-reason variant: ", .md_code(.as_scalar_character(abstain_reason_stage$variant %||% NULL)))
+      )
+    }
+    if (isTRUE(abstain_reason_stage$skipped)) {
+      lines <- c(
+        lines,
+        paste0("- Stage skipped: ", .md_code("true")),
+        paste0("- Skip reason: ", .md_code(.empty_string_if_na(.as_scalar_character(abstain_reason_stage$skip_reason %||% NULL)))),
+        ""
+      )
+    } else {
+      lines <- c(
+        lines,
+        "- This stage explains the already fixed label-only abstain decision; it does not create the downstream public fallback label.",
+        "",
+        "#### Raw abstain-reason answer"
+      )
+
+      raw_abstain_reason <- .as_scalar_character(
+        abstain_reason_stage$response$content %||% NULL
+      )
+      if (.is_non_empty_scalar_character(raw_abstain_reason)) {
+        lines <- c(lines, .md_text_block_lines(raw_abstain_reason))
+      } else if (isTRUE(abstain_reason_stage$fallback_used)) {
+        lines <- c(lines, "- No raw abstain-reason answer is attached because code assembled a programmatic fallback reason after the stage failed.")
+      } else {
+        lines <- c(lines, "- Raw abstain-reason answer is not available in-memory for this stage; inspect debug logs if they were written.")
+      }
+
+      lines <- c(lines, "", "#### Parsed abstain reason")
+      if (is.list(abstain_reason_stage$output) && length(abstain_reason_stage$output)) {
+        lines <- c(
+          lines,
+          paste0("- Status: ", .md_code(.as_scalar_character(abstain_reason_stage$output$status %||% NULL))),
+          paste0("- Abstain reason: ", .paragraph_or_placeholder(.as_scalar_character(abstain_reason_stage$output$abstain_reason %||% NULL)))
+        )
+      } else {
+        lines <- c(lines, "- Parsed abstain reason was not recovered.")
+      }
+
+      if (isTRUE(abstain_reason_stage$fallback_used)) {
+        lines <- c(
+          lines,
+          paste0("- Programmatic fallback used: ", .md_code("true")),
+          paste0("- Fallback reason: ", .paragraph_or_placeholder(.as_scalar_character(abstain_reason_stage$fallback_reason %||% NULL)))
+        )
+      }
+
+      lines <- c(lines, "")
+    }
+  }
+
+  if (identical(.as_scalar_character(output$status %||% NULL), "abstain") &&
+      identical(.as_scalar_character(label_stage$selected_public_variant %||% NULL), "selection_all_abstain")) {
+    lines <- c(
+      lines,
+      "### Model abstain vs public fallback",
+      "- Model abstain: all label-decision rungs ended in abstain or failed to yield a usable short label.",
+      "- Public fallback: any review-facing label such as `Chaotic Cluster` is injected downstream by code for registry / plotting convenience only.",
+      ""
+    )
+  }
+
+  lines
+}
+
+.cluster_review_user_added_data_lines <- function(evidence) {
+  user_added_data <- evidence$user_added_data %||% NULL
+  entries <- user_added_data$entries %||% list()
+  if (!is.list(entries) || !length(entries)) {
+    return(character(0))
+  }
+
+  source_type <- .as_scalar_character(user_added_data$source_type)
+  if (is.na(source_type) || !nzchar(source_type)) {
+    source_type <- "unknown"
+  }
+
+  lines <- c(
+    paste0(
+      "- Source type: ",
+      .md_code(source_type)
+    )
+  )
+
+  source_path <- .as_scalar_character(user_added_data$source_path)
+  if (!is.na(source_path) && nzchar(source_path)) {
+    lines <- c(lines, paste0("- Source path: ", .md_code(source_path)))
+  }
+
+  lines <- c(
+    lines,
+    paste0("- Loaded entries: ", .md_code(as.character(length(entries)))),
+    paste0(
+      "- Truncated: ",
+      .md_code(tolower(as.character(isTRUE(user_added_data$truncated))))
+    )
+  )
+
+  for (entry in entries) {
+    name <- .as_scalar_character(entry$name)
+    format <- .as_scalar_character(entry$format)
+    label <- if (.is_non_empty_scalar_character(name)) {
+      name
+    } else {
+      "inline_object"
+    }
+    if (.is_non_empty_scalar_character(format)) {
+      label <- paste0(label, " [", format, "]")
+    }
+    if (isTRUE(entry$truncated)) {
+      label <- paste0(label, " (truncated)")
+    }
+    lines <- c(lines, paste0("- Included user-added entry: ", label))
+  }
+
+  lines
+}
+
+.cluster_review_explanation_lines <- function(output) {
+  .paragraph_or_placeholder(.cluster_label_output_explanation_text(output))
 }
 
 .cluster_review_tentative_lines <- function(metadata) {
@@ -1141,11 +1640,465 @@ print.cluster_review_artifact <- function(x, ...) {
   paste0(file, ".meta.json")
 }
 
+.cluster_review_has_model_trace <- function(x) {
+  if (!is.list(x)) {
+    return(FALSE)
+  }
+
+  if (inherits(x, "cluster_label_result")) {
+    return(TRUE)
+  }
+
+  is.list(x$prompt %||% NULL) ||
+    is.list(x$request %||% NULL) ||
+    is.list(x$response %||% NULL) ||
+    (is.list(x$workflow %||% NULL) && length(x$workflow %||% NULL)) ||
+    .is_non_empty_scalar_character(.as_scalar_character(x$logs$run_dir %||% NULL))
+}
+
+.cluster_review_model_logs_dir <- function(review_file) {
+  review_file <- .as_scalar_character(review_file)
+  if (is.na(review_file) || !nzchar(review_file)) {
+    return(NULL)
+  }
+
+  stem <- if (grepl("\\.[Rr]?[Mm][Dd]$", review_file)) {
+    sub("\\.[Rr]?[Mm][Dd]$", "", review_file)
+  } else {
+    review_file
+  }
+
+  paste0(stem, "_model_logs")
+}
+
+.write_cluster_review_model_logs <- function(x, review_file) {
+  if (!.cluster_review_has_model_trace(x)) {
+    return(NULL)
+  }
+
+  target_dir <- .cluster_review_model_logs_dir(review_file)
+  if (is.null(target_dir)) {
+    return(NULL)
+  }
+
+  if (dir.exists(target_dir)) {
+    unlink(target_dir, recursive = TRUE, force = TRUE)
+  }
+  dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
+
+  root_debug_run_dir <- .cluster_review_stage_debug_run_dir(x)
+  if (.is_non_empty_scalar_character(root_debug_run_dir)) {
+    .write_text_file(
+      file.path(target_dir, "workflow_debug_run_dir.txt"),
+      root_debug_run_dir
+    )
+    .copy_cluster_review_debug_snapshot(
+      from_dir = root_debug_run_dir,
+      to_dir = target_dir
+    )
+  }
+
+  stage_specs <- .cluster_review_model_log_stage_specs(x)
+  for (spec in stage_specs) {
+    if (identical(spec$kind, "label_ladder")) {
+      .write_cluster_review_label_ladder_logs(
+        label_stage = spec$payload,
+        stage_dir = file.path(target_dir, spec$dir_name),
+        stage_name = spec$stage_name
+      )
+    } else {
+      .write_cluster_review_single_stage_logs(
+        stage = spec$payload,
+        stage_dir = file.path(target_dir, spec$dir_name),
+        stage_name = spec$stage_name
+      )
+    }
+  }
+
+  .write_cluster_review_json_artifact(
+    file.path(target_dir, "manifest.json"),
+    list(
+      generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+      review_file = review_file,
+      cluster_id = .as_scalar_character(
+        x$cluster_id %||% x$output$cluster_id %||% NULL
+      ),
+      provider = .as_scalar_character(x$provider %||% NULL),
+      model = .as_scalar_character(x$model %||% NULL),
+      variant = .as_scalar_character(x$variant %||% NULL),
+      workflow_steps = as.integer(x$workflow_steps %||% NA_integer_),
+      workflow_debug_run_dir = root_debug_run_dir,
+      stages = lapply(stage_specs, function(spec) {
+        list(
+          stage_name = spec$stage_name,
+          kind = spec$kind,
+          dir = spec$dir_name
+        )
+      })
+    )
+  )
+
+  normalizePath(target_dir, winslash = "/", mustWork = TRUE)
+}
+
+.cluster_review_model_log_stage_specs <- function(x) {
+  workflow <- x$workflow %||% NULL
+
+  if (is.list(workflow) &&
+      (is.list(workflow$draft) || is.list(workflow$label))) {
+    return(Filter(Negate(is.null), list(
+      if (is.list(workflow$draft)) {
+        list(
+          kind = "stage",
+          dir_name = "stage1_brainstorm",
+          stage_name = "brainstorm",
+          payload = workflow$draft
+        )
+      },
+      if (is.list(workflow$label)) {
+        list(
+          kind = "label_ladder",
+          dir_name = "stage2_label_decision",
+          stage_name = "label_decision",
+          payload = workflow$label
+        )
+      },
+      if (is.list(workflow$summary)) {
+        list(
+          kind = "stage",
+          dir_name = "stage3_label_summary",
+          stage_name = "label_summary",
+          payload = workflow$summary
+        )
+      },
+      if (is.list(workflow$abstain_reason)) {
+        list(
+          kind = "stage",
+          dir_name = "stage3_abstain_reason",
+          stage_name = "abstain_reason",
+          payload = workflow$abstain_reason
+        )
+      }
+    )))
+  }
+
+  if (is.list(workflow) &&
+      (is.list(workflow$gate) || is.list(workflow$label))) {
+    return(Filter(Negate(is.null), list(
+      if (is.list(workflow$gate)) {
+        list(
+          kind = "stage",
+          dir_name = "stage1_gate",
+          stage_name = "gate",
+          payload = workflow$gate
+        )
+      },
+      if (is.list(workflow$label)) {
+        list(
+          kind = "stage",
+          dir_name = "stage2_label",
+          stage_name = "label",
+          payload = workflow$label
+        )
+      }
+    )))
+  }
+
+  list(
+    list(
+      kind = "stage",
+      dir_name = if (isTRUE(x$speculative$used %||% FALSE)) {
+        "stage1_speculative_fallback"
+      } else {
+        "stage1_label"
+      },
+      stage_name = if (isTRUE(x$speculative$used %||% FALSE)) {
+        "speculative_fallback"
+      } else {
+        "label"
+      },
+      payload = x
+    )
+  )
+}
+
+.write_cluster_review_label_ladder_logs <- function(label_stage, stage_dir, stage_name) {
+  dir.create(stage_dir, recursive = TRUE, showWarnings = FALSE)
+
+  debug_run_dir <- .cluster_review_stage_debug_run_dir(label_stage)
+  if (.is_non_empty_scalar_character(debug_run_dir)) {
+    .write_text_file(
+      file.path(stage_dir, "debug_run_dir.txt"),
+      debug_run_dir
+    )
+    .copy_cluster_review_debug_snapshot(
+      from_dir = debug_run_dir,
+      to_dir = stage_dir
+    )
+  }
+
+  .write_cluster_review_json_artifact(
+    file.path(stage_dir, "stage_info.json"),
+    list(
+      stage_name = stage_name,
+      selected_public_variant = .as_scalar_character(
+        label_stage$selected_public_variant %||% NULL
+      ),
+      selected_selection_variant = .as_scalar_character(
+        label_stage$selected_selection_variant %||% NULL
+      ),
+      exhausted = isTRUE(label_stage$exhausted),
+      failure_messages = label_stage$failure_messages %||% character(0),
+      debug_run_dir = debug_run_dir
+    )
+  )
+
+  attempts <- label_stage$attempts %||% list()
+  if (!is.list(attempts) || !length(attempts)) {
+    return(invisible(NULL))
+  }
+
+  for (i in seq_along(attempts)) {
+    attempt <- attempts[[i]]
+    attempt_variant <- .as_scalar_character(
+      attempt$public_variant %||% attempt$variant %||% attempt$selection_variant %||% NULL
+    )
+    if (is.na(attempt_variant) || !nzchar(attempt_variant)) {
+      attempt_variant <- paste0("attempt", i)
+    }
+
+    .write_cluster_review_single_stage_logs(
+      stage = attempt,
+      stage_dir = file.path(
+        stage_dir,
+        paste0("attempt", i, "_", .safe_file_stub(attempt_variant))
+      ),
+      stage_name = stage_name
+    )
+  }
+
+  invisible(NULL)
+}
+
+.write_cluster_review_single_stage_logs <- function(stage, stage_dir, stage_name) {
+  dir.create(stage_dir, recursive = TRUE, showWarnings = FALSE)
+
+  debug_run_dir <- .cluster_review_stage_debug_run_dir(stage)
+  if (.is_non_empty_scalar_character(debug_run_dir)) {
+    .write_text_file(
+      file.path(stage_dir, "debug_run_dir.txt"),
+      debug_run_dir
+    )
+    .copy_cluster_review_debug_snapshot(
+      from_dir = debug_run_dir,
+      to_dir = stage_dir
+    )
+  }
+
+  .write_cluster_review_json_artifact(
+    file.path(stage_dir, "stage_info.json"),
+    .cluster_review_stage_info(stage, stage_name)
+  )
+
+  .write_cluster_review_stage_snapshot_files(stage, stage_dir)
+  invisible(NULL)
+}
+
+.cluster_review_stage_info <- function(stage, stage_name) {
+  list(
+    stage_name = stage_name,
+    variant = .as_scalar_character(stage$variant %||% NULL),
+    public_variant = .as_scalar_character(stage$public_variant %||% NULL),
+    selection_variant = .as_scalar_character(stage$selection_variant %||% NULL),
+    result = .as_scalar_character(stage$result %||% NULL),
+    output_status = .cluster_review_stage_output_status(stage),
+    skipped = isTRUE(stage$skipped),
+    skip_reason = .as_scalar_character(stage$skip_reason %||% NULL),
+    attempts = as.integer(stage$attempts %||% NA_integer_),
+    retry_exhausted = isTRUE(stage$retry_exhausted),
+    fallback_used = isTRUE(stage$fallback_used),
+    fallback_reason = .as_scalar_character(stage$fallback_reason %||% NULL),
+    error = .as_scalar_character(stage$error %||% NULL),
+    debug_run_dir = .cluster_review_stage_debug_run_dir(stage)
+  )
+}
+
+.cluster_review_stage_output_status <- function(stage) {
+  output <- stage$output %||% NULL
+  .as_scalar_character(output$status %||% output$decision %||% NULL)
+}
+
+.cluster_review_stage_debug_run_dir <- function(stage) {
+  path <- .as_scalar_character(stage$logs$run_dir %||% NULL)
+  if (!.is_non_empty_scalar_character(path)) {
+    return(NULL)
+  }
+  normalizePath(path, winslash = "/", mustWork = FALSE)
+}
+
+.copy_cluster_review_debug_snapshot <- function(from_dir, to_dir) {
+  from_dir <- .as_scalar_character(from_dir)
+  to_dir <- .as_scalar_character(to_dir)
+
+  if (is.na(from_dir) || !nzchar(from_dir) || !dir.exists(from_dir)) {
+    return(invisible(FALSE))
+  }
+  if (is.na(to_dir) || !nzchar(to_dir)) {
+    return(invisible(FALSE))
+  }
+
+  files <- list.files(
+    from_dir,
+    recursive = FALSE,
+    full.names = TRUE,
+    all.files = TRUE,
+    no.. = TRUE
+  )
+  if (!length(files)) {
+    return(invisible(FALSE))
+  }
+
+  info <- file.info(files)
+  files <- files[!is.na(info$isdir) & !info$isdir]
+  if (!length(files)) {
+    return(invisible(FALSE))
+  }
+
+  keep_pattern <- paste0(
+    "^(",
+    paste(
+      c(
+        "metadata\\.json",
+        "system_prompt\\.md",
+        "user_prompt\\.md",
+        "request(?:_attempt[0-9]+)?\\.json",
+        "response_content(?:_attempt[0-9]+)?\\.txt",
+        "response(?:_attempt[0-9]+_envelope)?\\.json",
+        "parsed_output\\.json",
+        "parsed_text_fields\\.json",
+        "attempt_diagnostics_attempt[0-9]+\\.json",
+        "error\\.txt"
+      ),
+      collapse = "|"
+    ),
+    ")$"
+  )
+
+  files <- files[grepl(keep_pattern, basename(files), perl = TRUE)]
+  if (!length(files)) {
+    return(invisible(FALSE))
+  }
+
+  dir.create(to_dir, recursive = TRUE, showWarnings = FALSE)
+  copied <- file.copy(
+    from = files,
+    to = file.path(to_dir, basename(files)),
+    overwrite = TRUE
+  )
+  invisible(all(copied))
+}
+
+.write_cluster_review_stage_snapshot_files <- function(stage, stage_dir) {
+  prompt <- stage$prompt %||% NULL
+  request <- stage$request %||% NULL
+  response <- stage$response %||% NULL
+  output <- stage$output %||% NULL
+
+  if (is.list(prompt)) {
+    .write_cluster_review_text_artifact_if_missing(
+      file.path(stage_dir, "system_prompt.md"),
+      .as_scalar_character(prompt$system %||% NULL)
+    )
+    .write_cluster_review_text_artifact_if_missing(
+      file.path(stage_dir, "user_prompt.md"),
+      .as_scalar_character(prompt$user %||% NULL)
+    )
+  }
+
+  if (is.list(request) && !file.exists(file.path(stage_dir, "request.json"))) {
+    .write_cluster_review_json_artifact(
+      file.path(stage_dir, "request.json"),
+      request
+    )
+  }
+
+  if (is.list(response)) {
+    .write_cluster_review_text_artifact_if_missing(
+      file.path(stage_dir, "response_content.txt"),
+      .as_scalar_character(response$content %||% NULL)
+    )
+
+    response_raw <- .as_scalar_character(response$raw %||% NULL)
+    response_envelope_path <- file.path(stage_dir, "response_envelope.json")
+    if (!file.exists(response_envelope_path)) {
+      if (.is_non_empty_scalar_character(response_raw)) {
+        .write_text_file(response_envelope_path, response_raw)
+      } else if (is.list(response$envelope)) {
+        .write_cluster_review_json_artifact(
+          response_envelope_path,
+          response$envelope
+        )
+      }
+    }
+  }
+
+  if (is.list(output) && !file.exists(file.path(stage_dir, "parsed_output.json"))) {
+    .write_cluster_review_json_artifact(
+      file.path(stage_dir, "parsed_output.json"),
+      output
+    )
+  }
+
+  error_text <- .as_scalar_character(stage$error %||% NULL)
+  if (.is_non_empty_scalar_character(error_text) &&
+      !file.exists(file.path(stage_dir, "error.txt"))) {
+    .write_text_file(file.path(stage_dir, "error.txt"), error_text)
+  }
+}
+
+.write_cluster_review_json_artifact <- function(path, x) {
+  .write_text_file(
+    path,
+    jsonlite::toJSON(
+      x,
+      auto_unbox = TRUE,
+      null = "null",
+      pretty = TRUE
+    )
+  )
+}
+
+.write_cluster_review_text_artifact_if_missing <- function(path, text) {
+  text <- .as_scalar_character(text)
+  if (!.is_non_empty_scalar_character(text) || file.exists(path)) {
+    return(invisible(NULL))
+  }
+
+  .write_text_file(path, text)
+  invisible(NULL)
+}
+
 .md_code <- function(x) {
   if (is.null(x) || length(x) == 0L || is.na(x) || !nzchar(x)) {
     return("`<missing>`")
   }
   paste0("`", x, "`")
+}
+
+.empty_string_if_na <- function(x) {
+  if (is.null(x) || length(x) == 0L || is.na(x)) {
+    return("")
+  }
+  x
+}
+
+.md_text_block_lines <- function(x) {
+  x <- .as_scalar_character(x)
+  if (is.na(x) || !nzchar(x)) {
+    return("Not provided.")
+  }
+
+  c("````text", strsplit(x, "\n", fixed = TRUE)[[1]], "````")
 }
 
 .collapse_md_codes <- function(x) {

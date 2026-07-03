@@ -9,8 +9,11 @@
     "{{CLUSTER_EVIDENCE_TEXT}}",
     "{{COARSE_LABEL_VOCABULARY_TEXT}}",
     "{{LABEL_MODE_GUIDANCE_TEXT}}",
+    "{{USER_ADDED_DATA_GUIDANCE_TEXT}}",
     "{{DRAFT_ANALYSIS_TEXT}}",
-    "{{LABEL_SELECTION_JSON}}"
+    "{{LABEL_SELECTION_TEXT}}",
+    "{{SELECTED_LABEL_TEXT}}",
+    "{{LABEL_DECISION_TEXT}}"
   ],
   "default_generation": {
     "temperature": 0.1,
@@ -34,10 +37,22 @@
     "label_selection_primary_v1",
     "label_selection_soft_v1",
     "label_selection_broad_v1",
-    "explanation_pass_v1"
+    "explanation_pass_v1",
+    "label_decision_primary_v2",
+    "label_decision_soft_v2",
+    "label_decision_broad_v2",
+    "label_summary_pass_v2",
+    "abstain_reason_pass_v2"
   ],
   "internal_draft_variant": "draft_analysis_v1",
   "internal_explanation_variant": "explanation_pass_v1",
+  "internal_v2_label_decision_variants": {
+    "label_primary_v1": "label_decision_primary_v2",
+    "label_soft_v1": "label_decision_soft_v2",
+    "label_broad_v1": "label_decision_broad_v2"
+  },
+  "internal_v2_label_summary_variant": "label_summary_pass_v2",
+  "internal_v2_abstain_reason_variant": "abstain_reason_pass_v2",
   "legacy_variant_aliases": {
     "concise_label_v1": "label_primary_v1",
     "conservative_interpretation_v1": "label_soft_v1",
@@ -95,28 +110,63 @@
     },
     "label_selection_primary_v1": {
       "user_prompt_path": "../internal_cluster_labeling/user_label_selection_primary_v1.md",
-      "description": "Internal cautious label-selection prompt for the first structured selection rung.",
+      "description": "Internal cautious label-selection prompt for the first text-only selection rung.",
       "task_type": "label_selection",
       "temperature": 0.0,
       "top_p": 0.8
     },
     "label_selection_soft_v1": {
       "user_prompt_path": "../internal_cluster_labeling/user_label_selection_soft_v1.md",
-      "description": "Internal soft label-selection prompt for the second structured selection rung.",
+      "description": "Internal soft label-selection prompt for the second text-only selection rung.",
       "task_type": "label_selection",
       "temperature": 0.08,
       "top_p": 0.92
     },
     "label_selection_broad_v1": {
       "user_prompt_path": "../internal_cluster_labeling/user_label_selection_broad_v1.md",
-      "description": "Internal broad label-selection prompt for the final structured selection rung.",
+      "description": "Internal broad label-selection prompt for the final text-only selection rung.",
       "task_type": "label_selection",
       "temperature": 0.12,
       "top_p": 0.95
     },
+    "label_decision_primary_v2": {
+      "user_prompt_path": "../internal_cluster_labeling/user_label_decision_primary_v2.md",
+      "description": "Staged v2 internal cautious label-decision prompt. Ask for one short label or one short abstain answer only.",
+      "task_type": "label_decision",
+      "temperature": 0.0,
+      "top_p": 0.8
+    },
+    "label_decision_soft_v2": {
+      "user_prompt_path": "../internal_cluster_labeling/user_label_decision_soft_v2.md",
+      "description": "Staged v2 internal soft label-decision prompt. Ask for one broad useful label or one short abstain answer only.",
+      "task_type": "label_decision",
+      "temperature": 0.08,
+      "top_p": 0.92
+    },
+    "label_decision_broad_v2": {
+      "user_prompt_path": "../internal_cluster_labeling/user_label_decision_broad_v2.md",
+      "description": "Staged v2 internal broad label-decision prompt. Ask for the least specific defensible label or one short abstain answer only.",
+      "task_type": "label_decision",
+      "temperature": 0.12,
+      "top_p": 0.95
+    },
+    "label_summary_pass_v2": {
+      "user_prompt_path": "../internal_cluster_labeling/user_label_summary_pass_v2.md",
+      "description": "Staged v2 internal summary prompt. Explain a fixed short label using brainstorm context only.",
+      "task_type": "label_summary",
+      "temperature": 0.04,
+      "top_p": 0.9
+    },
+    "abstain_reason_pass_v2": {
+      "user_prompt_path": "../internal_cluster_labeling/user_abstain_reason_pass_v2.md",
+      "description": "Staged v2 internal abstain-reason prompt. Explain a fixed abstain decision in compact plain text.",
+      "task_type": "abstain_reason",
+      "temperature": 0.04,
+      "top_p": 0.9
+    },
     "explanation_pass_v1": {
       "user_prompt_path": "../internal_cluster_labeling/user_explanation_pass_v1.md",
-      "description": "Internal explanation pass that expands a fixed short label into the final structured output.",
+      "description": "Internal explanation pass that explains a fixed short label or abstain result in compact plain text.",
       "task_type": "explanation",
       "temperature": 0.04,
       "top_p": 0.9

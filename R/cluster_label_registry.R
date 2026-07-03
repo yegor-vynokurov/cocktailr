@@ -24,6 +24,7 @@
 #'     \item{plot_label_short}{Human-readable short label when available, otherwise the cluster ID.}
 #'     \item{legend_label}{Preformatted `cluster: label` text for legends or captions.}
 #'     \item{display_label, canonical_label}{Structured labels returned by the LLM.}
+#'     \item{public_display_label, public_canonical_label, public_label_source}{Downstream-only public label projection, including the post-abstain fallback when applicable.}
 #'     \item{label_available}{Whether a non-empty labeled output is available.}
 #'     \item{accepted_label}{Whether a labeled output is available and the review status is `"accepted"`.}
 #'     \item{review_status, validation_status, output_status}{Review and validation summaries.}
@@ -167,6 +168,9 @@ cluster_label_registry <- function(x) {
     legend_label = character(),
     display_label = character(),
     canonical_label = character(),
+    public_display_label = character(),
+    public_canonical_label = character(),
+    public_label_source = character(),
     label_available = logical(),
     accepted_label = logical(),
     label_tier = character(),
@@ -264,6 +268,10 @@ cluster_label_registry <- function(x) {
 
   display_label <- .as_scalar_character(output$display_label)
   canonical_label <- .as_scalar_character(output$canonical_label)
+  public_label <- .cluster_label_public_fields(output, provenance)
+  public_display_label <- .as_scalar_character(public_label$public_display_label)
+  public_canonical_label <- .as_scalar_character(public_label$public_canonical_label)
+  public_label_source <- .as_scalar_character(public_label$public_label_source)
   output_status <- .null_default(validation$output_status, .as_scalar_character(output$status))
   review_status <- .cluster_review_status(validation)
   label_tier <- .cluster_label_validation_label_tier(validation)
@@ -276,6 +284,10 @@ cluster_label_registry <- function(x) {
     !used_placeholder
   accepted_label <- label_available && identical(review_status, "accepted")
   display_label_plot <- .cluster_label_display_with_marker(display_label, plot_marker)
+  public_display_label_plot <- .cluster_label_display_with_marker(
+    public_display_label,
+    if (identical(public_label_source, "model_output")) plot_marker else ""
+  )
 
   confidence <- output$confidence %||% list()
   basis_in_data <- output$basis_in_data %||% list()
@@ -289,15 +301,27 @@ cluster_label_registry <- function(x) {
     m = .cluster_label_registry_integer(summary_row$m),
     score = .cluster_label_registry_numeric(summary_row$score),
     plot_label_id = cluster_id,
-    plot_label_short = if (label_available) display_label_plot else cluster_id,
+    plot_label_short = if (label_available) {
+      display_label_plot
+    } else if (.is_non_empty_scalar_character(public_display_label_plot) &&
+        identical(public_label_source, "post_abstain_fallback")) {
+      public_display_label_plot
+    } else {
+      cluster_id
+    },
     legend_label = .cluster_label_registry_legend_label(
       cluster_id = cluster_id,
       display_label = display_label_plot,
       output_status = output_status,
-      used_placeholder = used_placeholder
+      used_placeholder = used_placeholder,
+      public_display_label = public_display_label_plot,
+      public_label_source = public_label_source
     ),
     display_label = .cluster_label_registry_character(display_label),
     canonical_label = .cluster_label_registry_character(canonical_label),
+    public_display_label = .cluster_label_registry_character(public_display_label),
+    public_canonical_label = .cluster_label_registry_character(public_canonical_label),
+    public_label_source = .cluster_label_registry_character(public_label_source),
     label_available = label_available,
     accepted_label = accepted_label,
     label_tier = .cluster_label_registry_character(label_tier),
@@ -432,11 +456,19 @@ cluster_label_registry <- function(x) {
     cluster_id,
     display_label,
     output_status,
-    used_placeholder
+    used_placeholder,
+    public_display_label = NULL,
+    public_label_source = NULL
 ) {
   if (.is_non_empty_scalar_character(display_label) && identical(output_status, "labeled") &&
       !isTRUE(used_placeholder)) {
     return(paste0(cluster_id, ": ", display_label))
+  }
+
+  if (identical(output_status, "abstain") &&
+      .is_non_empty_scalar_character(public_display_label) &&
+      identical(public_label_source, "post_abstain_fallback")) {
+    return(paste0(cluster_id, ": ", public_display_label))
   }
 
   if (identical(output_status, "abstain")) {
