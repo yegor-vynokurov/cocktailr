@@ -1,0 +1,628 @@
+cha,TAXON,FREQUENCY,USED_IN_ANALYSIS,EIV_Light,EIV_Temperature,EIV_Moisture,EIV_Reaction,EIV_Nutrients,PLANT_HEIGHT,RANGE_TYPE,RANGE_TYPE_AGG
+1,Abies alba,0,TRUE,3,5,6,5,6,NA,08ce,Central European
+2,Acer campestre,66,TRUE,5,6,5,7,6,NA,5,Submediterranean
+3,Acer platanoides,9,TRUE,4,6,5,7,6,NA,7,NA
+4,Acer pseudoplatanus,16,TRUE,4,5,6,6,7,NA,08ce,Central European
+5,Acer tataricum,5,TRUE,5,7,4,7,4,NA,5,Submediterranean
+6,Achillea millefolium agg.,55,TRUE,7,5,5,6,5,NA,NA,NA
+7,Achillea nobilis,11,TRUE,8,7,3,8,2,0.38,4,Continental
+8,Aconitum anthora,4,TRUE,7,7,4,7,4,0.63,9,NA
+9,Aconitum lycoctonum,0,TRUE,4,5,7,7,7,0.85,08ce,Central European
+10,Adonis vernalis,24,TRUE,8,7,3,8,2,0.25,4,Continental
+11,Aegonychon purpurocaeruleum,35,TRUE,5,7,4,8,4,0.4,5,Submediterranean
+12,Aegopodium podagraria,0,TRUE,6,5,6,7,8,0.75,10,NA
+13,Aethionema saxatile,5,TRUE,9,8,1,9,1,0.125,1,Mediterranean
+14,Aethusa sp.,1,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+15,Agrimonia eupatoria,9,TRUE,7,6,4,8,4,0.83,10,NA
+16,Agrostis vinealis,1,TRUE,8,6,3,3,2,0.3,10,NA
+17,Ajuga genevensis,29,TRUE,7,6,4,7,3,0.2,5,Submediterranean
+18,Ajuga reptans,4,TRUE,5,5,6,6,6,0.17,08ce,Central European
+19,Alliaria petiolata,59,TRUE,5,6,5,7,8,0.55,08ce,Central European
+20,Allium ericetorum,0,TRUE,NA,NA,NA,NA,NA,0.25,1,Mediterranean
+21,Allium flavum,20,TRUE,8,7,2,7,2,0.4,5,Submediterranean
+22,Allium lusitanicum,10,TRUE,8,7,2,6,3,0.19,4,Continental
+23,Allium oleraceum,5,TRUE,6,6,4,7,4,0.53,08ce,Central European
+24,Allium scorodoprasum,1,TRUE,6,6,6,7,7,0.75,5,Submediterranean
+25,Allium sp.,23,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+26,Allium sphaerocephalon,10,TRUE,8,8,3,8,3,0.55,5,Submediterranean
+27,Allium vineale,1,TRUE,6,7,4,7,6,0.55,7,NA
+28,Alyssum alyssoides,18,TRUE,9,6,3,8,3,0.18,5,Submediterranean
+29,Alyssum gmelinii,5,TRUE,9,7,2,8,2,0.2,5,Submediterranean
+30,Amaranthus sp.,1,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+31,Amelanchier ovalis,0,TRUE,7,7,3,8,3,NA,08pa,Submediterranean
+32,Anacamptis pyramidalis,0,TRUE,7,7,4,9,3,0.35,1,Mediterranean
+33,Anagallis arvensis,1,TRUE,7,6,5,7,6,0.28,1,Mediterranean
+34,Androsace elongata,1,TRUE,9,7,2,7,3,0.07,4,Continental
+35,Anemone nemorosa,1,TRUE,4,5,5,6,5,0.18,08ce,Central European
+36,Anemone ranunculoides,2,TRUE,4,6,6,7,7,0.18,08sc,Central European
+37,Anemone sylvestris,1,TRUE,6,7,3,8,3,0.33,10,NA
+38,Anisantha sterilis,18,TRUE,7,6,4,6,7,0.5,08ce,Central European
+39,Anisantha tectorum,9,TRUE,8,6,3,8,5,0.3,2,Mediterranean
+40,Anthericum ramosum,62,TRUE,7,6,3,7,3,0.55,5,Submediterranean
+41,Anthriscus cerefolium,5,TRUE,6,7,5,7,8,0.45,2,Mediterranean
+42,Anthriscus sylvestris,2,TRUE,7,5,5,7,8,1,10,NA
+43,Anthyllis vulneraria,11,TRUE,8,5,4,7,3,0.33,1,Mediterranean
+44,Apiaceae,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+45,Aquilegia vulgaris,1,TRUE,6,5,5,7,5,0.55,08sc,Central European
+46,Arabidopsis arenosa,11,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+47,Arabidopsis petraea,1,TRUE,7,4,3,8,2,0.2,08sa,Central European
+48,Arabidopsis thaliana,1,TRUE,7,6,4,4,4,0.18,7,NA
+49,Arabis auriculata,4,TRUE,7,7,3,8,3,0.25,2,Mediterranean
+50,Arabis hirsuta agg.,27,TRUE,7,6,4,7,5,NA,NA,NA
+51,Arabis sp.,5,FALSE,7,5,4,6,3,NA,08sc,Central European
+52,Arctium sp.,1,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+53,Arenaria serpyllifolia,53,TRUE,8,5,4,6,4,0.22,10,NA
+54,Arrhenatherum elatius,25,TRUE,7,5,5,7,7,0.9,08ce,Central European
+55,Artemisia absinthium,3,TRUE,8,6,4,7,7,1,10,NA
+56,Artemisia campestris,6,TRUE,8,7,2,6,3,0.55,4,Continental
+57,Artemisia pontica,2,TRUE,9,7,3,8,4,0.45,4,Continental
+58,Arum cylindraceum,2,TRUE,3,5,6,7,8,0.23,08ce,Central European
+59,Asarum europaeum,16,TRUE,3,5,5,7,6,0.08,08sc,Central European
+60,Asparagus officinalis,3,TRUE,7,7,3,7,4,0.95,4,Continental
+61,Asperula cynanchica,44,TRUE,8,7,3,8,3,0.25,08ce,Central European
+62,Asperula tinctoria,19,TRUE,6,6,4,8,3,0.4,08sc,Central European
+63,Asplenium adiantum-nigrum,1,TRUE,6,7,4,2,3,0.18,1,Mediterranean
+64,Asplenium ruta-muraria,7,TRUE,8,5,3,8,3,0.13,10,NA
+65,Asplenium septentrionale,1,TRUE,8,6,2,2,2,0.1,10,NA
+66,Asplenium trichomanes,7,TRUE,5,5,4,6,3,0.14,7,NA
+67,Aster amellus,7,TRUE,8,6,3,8,3,0.4,5,Submediterranean
+68,Asteraceae,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+69,Astragalus austriacus,4,TRUE,8,7,3,9,3,0.23,4,Continental
+70,Astragalus exscapus,2,TRUE,9,7,2,9,3,0.07,5,Submediterranean
+71,Astragalus glycyphyllos,4,TRUE,6,6,4,7,4,1.05,08ce,Central European
+72,Astragalus onobrychis,9,TRUE,8,7,2,9,3,0.4,4,Continental
+73,Atriplex sp.,9,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+74,Ballota nigra,7,TRUE,7,6,5,7,8,0.5,1,Mediterranean
+75,Berberis vulgaris,7,TRUE,7,6,4,8,4,NA,5,Submediterranean
+76,Biscutella laevigata,0,TRUE,8,5,3,7,2,0.3,9,NA
+77,Bothriochloa ischaemum,31,TRUE,9,7,3,8,3,0.38,4,Continental
+78,Brachypodium pinnatum,61,TRUE,6,6,4,7,4,0.7,10,NA
+79,Brachypodium sylvaticum,40,TRUE,4,5,5,6,7,0.9,08ce,Central European
+80,Brassicaceae,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+81,Bromopsis benekenii,7,TRUE,5,5,5,7,6,1.15,08ce,Central European
+82,Bromopsis erecta,16,TRUE,8,5,3,8,4,0.65,5,Submediterranean
+83,Bromopsis intermis,16,TRUE,8,6,4,8,6,0.8,10,NA
+84,Bromopsis pannonica,2,TRUE,8,8,3,8,3,0.5,5,Submediterranean
+85,Bromus japonicus,5,TRUE,8,7,4,8,5,0.4,2,Mediterranean
+86,Bromus sp.,3,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+87,Bromus squarrosus,10,TRUE,9,8,3,8,3,0.45,2,Mediterranean
+88,Buglossoides incrassata,4,TRUE,7,6,4,7,5,0.33,2,Mediterranean
+89,Bupleurum affine,3,TRUE,8,7,3,8,4,0.75,5,Submediterranean
+90,Bupleurum falcatum,22,TRUE,6,6,3,8,3,0.75,4,Continental
+91,Bupleurum longifolium,7,TRUE,5,5,5,8,5,0.58,9,NA
+92,Calamagrostis arundinacea,2,TRUE,5,5,5,4,5,1.05,10,NA
+93,Calamagrostis epigejos,1,TRUE,7,5,5,6,6,NA,NA,NA
+94,Camelina microcarpa,1,TRUE,7,6,4,8,5,0.4,4,Continental
+95,Campanula bononiensis,3,TRUE,7,6,3,8,3,0.5,4,Continental
+96,Campanula glomerata,5,TRUE,7,6,4,7,4,0.4,10,NA
+97,Campanula persicifolia,9,TRUE,5,6,4,7,5,0.65,08sc,Central European
+98,Campanula rapunculoides,23,TRUE,6,6,5,7,6,0.55,10,NA
+99,Campanula rapunculus,2,TRUE,8,7,3,8,5,0.45,1,Mediterranean
+100,Campanula rotundifolia agg.,7,TRUE,7,5,4,5,3,NA,NA,NA
+101,Campanula sibirica,1,TRUE,8,8,2,8,3,0.28,4,Continental
+102,Campanula sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+103,Campanula trachelium,4,TRUE,4,5,6,7,7,0.6,08ce,Central European
+104,Capsella bursa-pastoris,2,TRUE,7,5,5,6,7,0.28,1,Mediterranean
+105,Cardamine bulbifera,2,TRUE,3,5,5,6,6,0.45,08sc,Central European
+106,Carduus acanthoides,3,TRUE,9,6,4,8,7,1.15,08sc,Central European
+107,Carduus collinus,5,TRUE,8,8,4,7,5,0.75,5,Submediterranean
+108,Carduus crispus,2,TRUE,6,5,6,6,9,1.3,10,NA
+109,Carduus nutans,1,TRUE,8,6,4,8,6,0.9,10,NA
+110,Carex alba,3,TRUE,5,5,4,8,4,0.2,10,NA
+111,Carex caryophyllea,3,TRUE,8,6,4,6,3,0.3,10,NA
+112,Carex curvata,1,TRUE,6,6,6,6,4,0.35,08ce,Central European
+113,Carex digitata,3,TRUE,4,5,5,6,6,0.2,08ce,Central European
+114,Carex halleriana,1,TRUE,7,8,3,9,3,0.25,1,Mediterranean
+115,Carex humilis,88,TRUE,7,6,2,8,3,0.13,4,Continental
+116,Carex michelii,39,TRUE,6,7,3,7,4,0.3,5,Submediterranean
+117,Carex montana,4,TRUE,5,5,4,7,4,0.25,08sc,Central European
+118,Carex muricata agg.,10,FALSE,5,5,5,6,5,NA,NA,NA
+119,Carex pilosa,1,TRUE,3,5,5,7,6,0.4,5,Submediterranean
+120,Carex praecox,11,TRUE,8,6,4,6,4,0.23,10,NA
+121,Carex sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+122,Carex supina,1,TRUE,9,7,2,7,2,0.15,4,Continental
+123,Carpinus betulus,31,TRUE,4,6,5,6,5,NA,5,Submediterranean
+124,Centaurea scabiosa,8,TRUE,7,6,4,8,4,0.85,10,NA
+125,Centaurea sp.,1,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+126,Centaurea stoebe,33,TRUE,8,7,2,6,4,NA,5,Submediterranean
+127,Cephalanthera damasonium,7,TRUE,5,6,4,7,4,0.4,08ce,Central European
+128,Cephalanthera longifolia,0,TRUE,5,5,5,6,5,0.35,2,Mediterranean
+129,Cephalanthera rubra,2,TRUE,4,5,4,8,4,0.5,5,Submediterranean
+130,Cerastium arvense,14,TRUE,8,6,4,6,4,0.18,10,NA
+131,Cerastium brachypetalum,17,TRUE,9,7,3,7,3,0.25,1,Mediterranean
+132,Cerastium fontanum subsp. vulgare,1,TRUE,7,5,5,6,6,NA,10,NA
+133,Cerastium pumilum subsp. glutinosum,3,TRUE,9,7,3,6,4,0.13,1,Mediterranean
+134,Cerastium pumilum subsp. pumilum,5,TRUE,9,8,3,8,3,0.13,2,Mediterranean
+135,Cerastium semidecandrum,3,TRUE,9,7,3,6,3,0.1,08ce,Central European
+136,Cerinthe minor,2,TRUE,7,6,4,8,4,0.38,1,Mediterranean
+137,Chaerophyllum sp.,1,TRUE,6,4,8,6,7,NA,NA,NA
+138,Chaerophyllum temulum,10,TRUE,5,6,5,7,8,0.6,08ce,Central European
+139,Chamaecytisus virescens,3,TRUE,7,6,4,7,3,0.45,5,Submediterranean
+140,Chelidonium majus,3,TRUE,6,6,5,7,8,0.6,10,NA
+141,Chenopodiastrum hybridum,3,TRUE,7,6,5,7,8,0.7,10,NA
+142,Chenopodium album agg.,4,TRUE,7,6,5,6,7,NA,NA,NA
+143,Chondrilla juncea,2,TRUE,8,7,2,6,3,0.65,2,Mediterranean
+144,Chrysopogon gryllus,5,TRUE,9,8,3,7,2,0.9,2,Mediterranean
+145,Cirsium eriophorum,1,TRUE,8,6,4,8,5,1,08pa,Submediterranean
+146,Cirsium pannonicum,1,TRUE,7,7,4,8,4,0.75,5,Submediterranean
+147,Cleistogenes serotina,7,TRUE,9,8,1,8,2,0.45,2,Mediterranean
+148,Clematis recta,4,TRUE,6,7,3,8,4,1.15,7,NA
+149,Clematis vitalba,5,TRUE,7,7,5,7,7,NA,5,Submediterranean
+150,Clinopodium acinos,35,TRUE,9,7,2,7,2,0.24,08ce,Central European
+151,Clinopodium alpinum,5,TRUE,NA,NA,NA,NA,NA,0.15,6,Submediterranean
+152,Clinopodium vulgare,30,TRUE,6,6,4,7,4,0.45,08ce,Central European
+153,Convallaria majalis,9,TRUE,4,5,5,5,4,0.2,08ce,Central European
+154,Convolvulus arvensis,10,TRUE,7,6,4,7,6,0.4,2,Mediterranean
+155,Cornus mas,74,TRUE,6,7,4,8,5,NA,5,Submediterranean
+156,Cornus sanguinea,16,TRUE,6,6,5,7,5,NA,08ce,Central European
+157,Coronilla coronata,1,TRUE,7,6,4,9,1,0.45,6,Submediterranean
+158,Coronilla sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+159,Corydalis sp.,6,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+160,Corylus avellana,5,TRUE,6,5,5,6,6,NA,08ce,Central European
+161,Cota tinctoria,5,TRUE,8,6,3,6,4,0.48,5,Submediterranean
+162,Cota tinctoria,5,TRUE,8,6,3,6,4,0.48,5,Submediterranean
+163,Cotinus coggygria,4,TRUE,6,8,3,7,4,NA,2,Mediterranean
+164,Cotoneaster integerrimus,17,TRUE,8,6,3,7,3,NA,08pa,Submediterranean
+165,Crataegus sp.,76,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+166,Crepis praemorsa,0,TRUE,6,7,4,8,3,0.43,10,NA
+167,Crepis pulchra,1,TRUE,7,8,4,8,5,0.425,2,Mediterranean
+168,Cruciata glabra,1,TRUE,7,6,5,6,5,0.23,5,Submediterranean
+169,Cruciata laevipes,4,TRUE,7,5,6,7,7,0.4,5,Submediterranean
+170,Cruciata pedemontana,6,TRUE,8,7,3,7,3,0.25,5,Submediterranean
+171,Cuscuta sp.,7,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+172,Cyanus triumfettii,12,TRUE,7,7,3,8,3,0.25,5,Submediterranean
+173,Cyclamen purpurascens,0,TRUE,4,6,5,7,5,0.09,9,NA
+174,Cynoglossum officinale,7,TRUE,8,6,4,7,6,0.6,08ce,Central European
+175,Cynoglottis barrelieri,5,TRUE,9,8,3,9,4,0.45,5,Submediterranean
+176,Cytisus austriacus,5,TRUE,7,8,3,9,3,0.5,5,Submediterranean
+177,Cytisus hirsutus,2,TRUE,7,7,4,6,2,0.4,5,Submediterranean
+178,Cytisus hirsutus,2,TRUE,7,6,4,6,3,0.45,5,Submediterranean
+179,Cytisus procumbens,12,TRUE,8,8,3,8,3,0.45,5,Submediterranean
+180,Cytisus ratisbonensis,4,TRUE,7,7,3,7,3,0.2,08sc,Central European
+181,Cytisus sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+182,Dactylis glomerata,42,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+183,Daphne cneorum,2,TRUE,6,6,4,7,2,0.2,9,NA
+184,Daphne mezereum,0,TRUE,4,5,5,7,6,0.65,11,NA
+185,Descurainia sophia,1,TRUE,8,6,4,7,6,0.5,2,Mediterranean
+186,Dianthus carthusianorum agg.,19,TRUE,8,6,3,7,3,NA,NA,NA
+187,Dianthus praecox subsp. lumnitzeri,5,TRUE,9,7,2,9,2,0.18,6,Submediterranean
+188,Dictamnus albus,33,TRUE,7,8,3,8,3,0.7,4,Continental
+189,Digitalis grandiflora,1,TRUE,6,5,5,6,5,0.7,08sc,Central European
+190,Digitaria sp.,3,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+191,Doronicum hungaricum,2,TRUE,7,8,4,7,3,0.4,5,Submediterranean
+192,Dorycnium pentaphyllum,0,TRUE,7,6,3,8,3,NA,NA,NA
+193,Draba lasiocarpa,1,TRUE,8,8,1,9,1,0.125,5,Submediterranean
+194,Dryopteris filix-mas,0,TRUE,3,5,5,5,6,0.8,10,NA
+195,Echium vulgare,25,TRUE,9,5,4,6,4,0.95,10,NA
+196,Elymus caninus,4,TRUE,5,5,6,7,7,0.75,10,NA
+197,Elytrigia intermedia,45,TRUE,7,7,3,7,4,0.7,4,Continental
+198,Elytrigia repens,2,TRUE,7,5,5,6,7,0.9,10,NA
+199,Epipactis microphylla,1,TRUE,2,6,5,8,6,0.23,1,Mediterranean
+200,Epipactis sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+201,Erigeron annuus,5,TRUE,8,5,5,6,6,0.95,NA,NA
+202,Erodium cicutarium,3,TRUE,8,6,4,6,6,0.3,1,Mediterranean
+203,Erophila verna s.l.,4,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+204,Eryngium campestre,34,TRUE,9,7,3,7,3,0.45,1,Mediterranean
+205,Erysimum crepidifolium,1,TRUE,9,7,2,7,3,0.38,08ce,Central European
+206,Erysimum diffusum,3,TRUE,9,7,2,6,3,0.55,5,Submediterranean
+207,Erysimum odoratum,2,TRUE,7,7,3,8,3,0.6,5,Submediterranean
+208,Erysimum sp.,8,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+209,Euonymus europaeus,26,TRUE,5,5,5,7,6,NA,08ce,Central European
+210,Euonymus verrucosus,20,TRUE,5,6,4,7,6,NA,5,Submediterranean
+211,Euphorbia angulata,3,TRUE,6,7,5,6,5,0.4,9,NA
+212,Euphorbia cyparissias,121,TRUE,8,6,3,6,3,0.23,08ce,Central European
+213,Euphorbia dulcis,1,TRUE,4,6,5,7,6,0.35,08ce,Central European
+214,Euphorbia epithymoides,13,TRUE,6,7,3,8,3,0.35,5,Submediterranean
+215,Euphorbia esula subsp. esula,0,TRUE,8,6,4,7,4,0.65,08ce,Central European
+216,Euphorbia esula subsp. tommasiniana,1,TRUE,8,7,4,8,3,0.55,4,Continental
+217,Euphorbia salicifolia,1,TRUE,7,7,4,8,3,0.5,5,Submediterranean
+218,Fagus sylvatica,13,TRUE,3,5,5,6,5,NA,08ce,Central European
+219,Falcaria vulgaris,16,TRUE,7,7,3,8,5,0.65,5,Submediterranean
+220,Fallopia sp.,63,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+221,Festuca heterophylla,1,TRUE,4,6,4,5,4,0.85,5,Submediterranean
+222,Festuca pallens s.l.,17,TRUE,8,7,2,6,1,NA,NA,NA
+223,Festuca sp.,4,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+224,Festuca stricta subsp. sulcata,46,TRUE,8,6,3,8,3,0.45,4,Continental
+225,Festuca valesiaca,63,TRUE,8,7,2,7,2,0.4,4,Continental
+226,Filago arvensis,1,TRUE,8,7,3,4,3,0.25,10,NA
+227,Filago sp.,2,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+228,Filipendula vulgaris,7,TRUE,7,6,4,8,3,0.55,10,NA
+229,Fourraea alpina,5,TRUE,5,6,4,8,4,0.65,08pa,Submediterranean
+230,Fragaria moschata,12,TRUE,6,6,5,6,6,0.23,5,Submediterranean
+231,Fragaria vesca,2,TRUE,6,5,5,6,5,0.15,10,NA
+232,Fragaria viridis,68,TRUE,7,5,3,7,4,0.13,10,NA
+233,Fraxinus excelsior,67,TRUE,4,5,6,7,7,NA,08ce,Central European
+234,Fraxinus ornus,29,TRUE,4,8,3,8,3,NA,5,Submediterranean
+235,Fraxinus sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+236,Fumana procumbens,12,TRUE,9,8,1,9,2,0.2,1,Mediterranean
+237,Fumaria officinalis,2,TRUE,7,6,5,6,7,0.25,1,Mediterranean
+238,Fumaria sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+239,Gagea minima,1,TRUE,6,6,5,7,7,0.13,08sc,Central European
+240,Galatella linosyris,27,TRUE,8,7,2,8,3,0.28,5,Submediterranean
+241,Galeopsis sp.,0,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+242,Galium album,29,TRUE,7,6,4,6,6,NA,08sc,Central European
+243,Galium aparine,64,TRUE,6,6,5,6,8,1.3,2,Mediterranean
+244,Galium austriacum,0,TRUE,7,6,4,9,2,0.2,6,Submediterranean
+245,Galium boreale,1,TRUE,6,6,6,7,4,0.45,10,NA
+246,Galium glaucum,56,TRUE,8,7,2,8,3,0.6,5,Submediterranean
+247,Galium odoratum,2,TRUE,3,5,5,6,6,0.25,08ce,Central European
+248,Galium sp.,2,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+249,Galium sylvaticum agg.,10,TRUE,5,5,5,6,5,0.85,5,Submediterranean
+250,Galium verum,26,TRUE,7,6,4,5,3,0.75,10,NA
+251,Genista pilosa,4,TRUE,7,6,3,4,2,0.23,08ce,Central European
+252,Genista tinctoria,15,TRUE,7,6,4,6,3,0.65,08ce,Central European
+253,Geranium columbinum,19,TRUE,7,6,4,7,6,0.3,1,Mediterranean
+254,Geranium lucidum,2,TRUE,4,7,5,8,7,0.23,2,Mediterranean
+255,Geranium pusillum,6,TRUE,7,6,4,6,7,0.25,08ce,Central European
+256,Geranium robertianum,13,TRUE,5,5,6,6,7,0.3,08ce,Central European
+257,Geranium sanguineum,20,TRUE,7,6,3,8,3,0.35,5,Submediterranean
+258,Geranium sp.,3,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+259,Geum urbanum,44,TRUE,5,5,5,6,7,0.55,10,NA
+260,Glechoma hederacea,4,TRUE,5,6,6,6,7,NA,10,NA
+261,Glechoma hirsuta,6,TRUE,5,7,5,7,6,NA,NA,NA
+262,Globularia bisnagarica,18,TRUE,9,6,2,9,2,0.18,5,Submediterranean
+263,Gymnadenia sp.,0,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+264,Gypsophila muralis,2,TRUE,8,6,6,3,4,0.12,08ce,Central European
+265,Hacquetia epipactis,1,TRUE,4,6,5,7,6,0.2,5,Submediterranean
+266,Hedera helix,9,TRUE,4,5,5,6,6,NA,08sa,Central European
+267,Helianthemum canum,3,TRUE,9,7,2,9,1,0.13,1,Mediterranean
+268,Helianthemum nummularium subsp. grandiflorum,41,TRUE,8,5,3,7,3,NA,08ce,Central European
+269,Helictochloa pratensis,4,TRUE,8,6,3,6,2,0.55,08sa,Central European
+270,Helictochloa pubescens,8,TRUE,7,6,4,6,4,0.6,08ce,Central European
+271,Hepatica nobilis,13,TRUE,4,6,5,7,5,0.1,08sc,Central European
+272,Hieracium lachenalii,2,TRUE,5,5,5,4,3,0.6,10,NA
+273,Hieracium maculatum,2,TRUE,5,7,4,5,4,0.55,5,Submediterranean
+274,Hieracium murorum,8,TRUE,5,5,5,5,4,0.4,08sc,Central European
+275,Hieracium sabaudum,4,TRUE,5,6,5,4,4,1,5,Submediterranean
+276,Hieracium sp.,26,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+277,Hieracium umbellatum,1,TRUE,7,6,4,6,3,0.6,10,NA
+278,Hierochloe sp.,0,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+279,Himantoglossum adriaticum,1,TRUE,7,7,4,8,3,0.45,5,Submediterranean
+280,Hippocrepis comosa,12,TRUE,7,6,3,8,3,0.2,08pa,Submediterranean
+281,Holosteum umbellatum,20,TRUE,9,6,3,7,3,0.2,2,Mediterranean
+282,Hylotelephium maximum,28,TRUE,7,6,4,5,3,0.65,08ce,Central European
+283,Hypericum montanum,0,TRUE,5,6,4,7,4,0.55,08ce,Central European
+284,Hypericum perforatum,50,TRUE,7,5,4,6,4,0.65,2,Mediterranean
+285,Hypochaeris maculata,0,TRUE,8,6,4,7,3,NA,NA,NA
+286,Hypochaeris radicata,1,TRUE,8,5,5,4,3,0.45,1,Mediterranean
+287,Impatiens parviflora,9,TRUE,4,5,5,7,7,0.55,NA,NA
+288,Inula conyzae,13,TRUE,6,6,4,7,3,0.65,5,Submediterranean
+289,Inula ensifolia,30,TRUE,8,7,3,8,3,0.2,5,Submediterranean
+290,Inula germanica,3,TRUE,8,7,3,8,3,0.4,4,Continental
+291,Inula hirta,11,TRUE,7,6,3,8,3,0.28,08sc,Central European
+292,Inula oculus-christi,15,TRUE,9,8,2,8,3,0.3,4,Continental
+293,Inula salicina,2,TRUE,7,6,5,8,4,0.45,10,NA
+294,Iris pumila,10,TRUE,9,8,2,9,2,0.13,4,Continental
+295,Iris sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+296,Iris variegata,1,TRUE,6,7,3,8,4,0.3,5,Submediterranean
+297,Isatis tinctoria,2,TRUE,9,7,3,8,3,0.6,1,Mediterranean
+298,Isopyrum thalictroides,1,TRUE,4,6,6,7,7,0.23,08sc,Central European
+299,Jacobaea vulgaris,3,TRUE,8,6,4,7,4,0.65,10,NA
+300,Jovibarba globifera,8,TRUE,9,6,2,7,2,0.23,5,Submediterranean
+301,Juglans regia,1,TRUE,6,7,5,7,7,NA,NA,NA
+302,Juniperus communis,4,TRUE,7,4,4,5,3,NA,10,NA
+303,Jurinea mollis,8,TRUE,8,7,2,9,3,0.5,5,Submediterranean
+304,Knautia arvensis,1,TRUE,7,6,4,6,4,0.58,08sc,Central European
+305,Knautia x posoniensis,1,TRUE,NA,NA,NA,NA,NA,0.75,5,Submediterranean
+306,Koeleria macrantha,45,TRUE,8,6,3,8,2,0.4,10,NA
+307,Koeleria pyramidata,0,TRUE,7,6,4,7,3,0.65,08ce,Central European
+308,Lactuca muralis,8,TRUE,4,5,5,6,6,0.55,08ce,Central European
+309,Lactuca perennis,9,TRUE,9,7,2,8,2,0.45,5,Submediterranean
+310,Lactuca quercina,3,TRUE,6,7,4,7,6,1.05,5,Submediterranean
+311,Lactuca serriola,6,TRUE,8,7,4,6,6,0.85,2,Mediterranean
+312,Lactuca sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+313,Lactuca viminea,6,TRUE,8,7,3,7,3,0.45,1,Mediterranean
+314,Lamium amplexicaule,8,TRUE,7,6,4,7,7,0.15,1,Mediterranean
+315,Lamium galeobdolon subsp. montanum,0,TRUE,3,5,6,6,7,0.35,08pa,Submediterranean
+316,Lamium maculatum,3,TRUE,4,5,6,7,8,0.35,08sc,Central European
+317,Lamium purpureum,7,TRUE,7,5,5,7,7,0.2,08ce,Central European
+318,Lappula heteracantha,2,TRUE,8,6,3,7,3,NA,5,Submediterranean
+319,Lappula squarrosa,2,TRUE,8,6,3,7,6,0.4,10,NA
+320,Lapsana communis,16,TRUE,5,6,5,6,7,0.7,08ce,Central European
+321,Lathyrus niger,0,TRUE,5,6,4,7,4,0.65,08sc,Central European
+322,Lathyrus pannonicus,4,TRUE,6,7,4,8,3,0.35,5,Submediterranean
+323,Lathyrus sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+324,Lathyrus vernus,5,TRUE,4,6,5,7,5,0.33,10,NA
+325,Lembotropis nigricans,3,TRUE,6,6,4,6,3,0.5,5,Submediterranean
+326,Leontodon hispidus,1,TRUE,7,5,5,6,6,0.3,08ce,Central European
+327,Leontodon incanus,12,TRUE,8,5,1,9,1,0.225,6,Submediterranean
+328,Leontodon sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+329,Leopoldia comosa,2,TRUE,7,7,3,7,4,0.5,1,Mediterranean
+330,Leopoldia tenuiflora,8,TRUE,7,8,3,8,3,0.4,5,Submediterranean
+331,Lepidium campestre,3,TRUE,7,6,4,8,5,0.35,08ce,Central European
+332,Leucanthemum adustum subsp. margaritae,0,TRUE,7,5,5,7,5,0.6,5,Submediterranean
+333,Leucanthemum sp.,2,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+334,Ligustrum vulgare,68,TRUE,6,6,4,7,5,NA,5,Submediterranean
+335,Lilium martagon,2,TRUE,4,5,5,7,6,0.95,10,NA
+336,Linaria biebersteinii,1,TRUE,9,6,2,8,1,NA,5,Submediterranean
+337,Linaria genistifolia,10,TRUE,8,7,2,5,2,0.65,4,Continental
+338,Linaria vulgaris,1,TRUE,8,6,4,7,5,0.35,10,NA
+339,Linum austriacum,1,TRUE,9,7,3,8,2,0.4,NA,NA
+340,Linum catharticum,1,TRUE,7,5,5,7,3,0.18,08ce,Central European
+341,Linum tenuifolium,9,TRUE,9,8,2,8,2,0.28,1,Mediterranean
+342,Lonicera caprifolium,0,TRUE,6,7,4,8,5,NA,5,Submediterranean
+343,Lonicera xylosteum,0,TRUE,4,6,5,7,6,NA,08ce,Central European
+344,Loranthus europaeus,3,TRUE,9,6,3,0,0,NA,5,Submediterranean
+345,Lotus borbasii,1,TRUE,8,7,3,8,3,0.25,5,Submediterranean
+346,Lotus corniculatus,7,TRUE,7,5,4,7,4,0.38,08ce,Central European
+347,Luzula sp.,0,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+348,Medicago falcata,30,TRUE,8,6,3,8,3,0.53,10,NA
+349,Medicago lupulina,2,TRUE,7,5,4,7,4,0.35,10,NA
+350,Medicago minima,14,TRUE,9,7,3,7,3,0.15,2,Mediterranean
+351,Medicago prostrata,3,TRUE,9,8,2,8,2,0.35,5,Submediterranean
+352,Medicago sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+353,Medicago x varia,0,TRUE,7,6,4,7,4,0.65,NA,NA
+354,Melampyrum arvense,1,TRUE,7,7,3,8,4,0.35,5,Submediterranean
+355,Melampyrum cristatum,11,TRUE,6,7,3,7,3,0.3,10,NA
+356,Melampyrum nemorosum,0,TRUE,5,6,4,6,4,0.4,08sc,Central European
+357,Melampyrum sp.,2,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+358,Melica ciliata,27,TRUE,9,8,1,8,2,0.45,5,Submediterranean
+359,Melica nutans,13,TRUE,4,6,5,6,4,0.45,10,NA
+360,Melica picta,2,TRUE,5,7,4,7,4,0.45,4,Continental
+361,Melica transsilvanica,16,TRUE,7,7,3,7,4,NA,4,Continental
+362,Melica uniflora,24,TRUE,3,5,5,6,6,0.4,08ce,Central European
+363,Melilotus sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+364,Melittis melissophyllum,18,TRUE,6,7,4,7,4,0.4,5,Submediterranean
+365,Mercurialis perennis,19,TRUE,3,5,5,7,7,0.25,08ce,Central European
+366,Minuartia rubra,2,TRUE,9,7,2,9,2,NA,NA,NA
+367,Minuartia setacea,6,TRUE,8,7,2,8,2,0.11,5,Submediterranean
+368,Moehringia trinervia,1,TRUE,4,5,5,6,7,0.2,08ce,Central European
+369,Muscari neglectum,9,TRUE,7,8,3,7,4,0.18,1,Mediterranean
+370,Muscari sp.,5,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+371,Myosotis arvensis,12,TRUE,7,6,5,5,6,0.38,10,NA
+372,Myosotis ramosissima,12,TRUE,9,6,3,6,3,0.25,1,Mediterranean
+373,Myosotis sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+374,Myosotis stricta,5,TRUE,8,6,3,6,2,0.19,08sc,Central European
+375,Myosotis sylvatica,8,TRUE,6,5,5,6,7,0.4,10,NA
+376,Neottia nidus-avis,3,TRUE,3,6,5,7,5,0.28,08ce,Central European
+377,Nepeta nuda,1,TRUE,7,7,4,8,4,0.7,4,Continental
+378,Noccaea montana,1,TRUE,6,5,4,8,3,0.15,08pa,Submediterranean
+379,Noccaea perfoliata,11,TRUE,8,6,4,8,4,0.19,2,Mediterranean
+380,Ochlopoa annua,4,TRUE,7,5,6,6,8,0.15,10,NA
+381,Odontites luteus,1,TRUE,8,7,3,8,2,NA,NA,NA
+382,Omphalodes scorpioides,2,TRUE,4,6,6,7,7,0.25,08sc,Central European
+383,Onobrychis arenaria,1,TRUE,8,7,3,8,3,0.35,4,Continental
+384,Onosma visianii,1,TRUE,9,8,1,9,1,0.275,5,Submediterranean
+385,Ophrys insectifera,1,TRUE,7,5,4,8,3,0.24,5,Submediterranean
+386,Orchis pallens,0,TRUE,5,5,5,7,4,0.23,5,Submediterranean
+387,Orchis purpurea,1,TRUE,6,7,4,8,3,0.5,5,Submediterranean
+388,Origanum vulgare,15,TRUE,7,6,3,7,3,0.48,10,NA
+389,Orlaya grandiflora,22,TRUE,8,7,3,9,4,0.25,1,Mediterranean
+390,Ornithogalum orthophyllum subsp. kochii,7,TRUE,7,7,3,7,4,0.15,5,Submediterranean
+391,Orobanche alba,1,TRUE,8,7,3,8,3,0.37,2,Mediterranean
+392,Orobanche sp.,2,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+393,Oxytropis pilosa,3,TRUE,9,7,2,8,2,0.3,4,Continental
+394,Papaver albiflorum subsp. austromoravicum,2,TRUE,7,7,4,7,4,0.5,5,Submediterranean
+395,Papaver dubium subsp. confine,2,TRUE,7,6,4,8,5,NA,1,Mediterranean
+396,Papaver rhoeas,0,TRUE,7,6,4,7,6,0.55,1,Mediterranean
+397,Papaver sp.,2,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+398,Parietaria officinalis,2,TRUE,5,7,6,7,7,0.55,1,Mediterranean
+399,Paronychia cephalotes,1,TRUE,9,8,1,9,1,0.1,5,Submediterranean
+400,Petrorhagia prolifera,6,TRUE,8,7,3,5,3,0.35,1,Mediterranean
+401,Petrorhagia saxifraga,3,TRUE,9,7,2,5,2,0.18,1,Mediterranean
+402,Peucedanum cervaria,29,TRUE,7,6,3,7,3,0.8,5,Submediterranean
+403,Peucedanum oreoselinum,4,TRUE,6,6,4,6,3,0.65,08sc,Central European
+404,Phleum phleoides,18,TRUE,8,6,3,7,3,0.45,4,Continental
+405,Phyteuma orbiculare,6,TRUE,7,4,5,7,3,0.18,08pa,Submediterranean
+406,Picris hieracioides,0,TRUE,8,6,4,7,5,0.9,10,NA
+407,Pilosella bauhini,13,TRUE,8,7,3,7,3,0.55,5,Submediterranean
+408,Pilosella officinarum,2,TRUE,7,5,4,5,2,0.18,08sc,Central European
+409,Pilosella sp.,4,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+410,Pimpinella saxifraga,19,TRUE,7,5,3,6,3,NA,08ce,Central European
+411,Pinus nigra,2,TRUE,7,6,3,8,3,NA,NA,NA
+412,Pinus sylvestris,0,TRUE,6,5,5,5,2,NA,10,NA
+413,Piptatherum virescens,8,TRUE,6,8,4,8,4,0.75,5,Submediterranean
+414,Plantago lanceolata,1,TRUE,7,5,5,6,5,0.19,10,NA
+415,Plantago major,1,TRUE,7,5,5,6,6,0.25,10,NA
+416,Plantago media+B380,0,TRUE,7,6,4,7,4,0.23,10,NA
+417,Plantago sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+418,Platanthera bifolia,1,TRUE,6,6,5,6,4,0.35,10,NA
+419,Poa angustifolia,74,TRUE,7,6,4,6,4,NA,10,NA
+420,Poa badensis,2,TRUE,9,7,2,9,2,0.23,5,Submediterranean
+421,Poa bulbosa,8,TRUE,8,7,3,6,3,0.22,2,Mediterranean
+422,Poa compressa,8,TRUE,9,6,3,7,3,0.45,08ce,Central European
+423,Poa nemoralis,22,TRUE,5,5,5,6,5,0.55,10,NA
+424,Poa pannonica,7,TRUE,7,6,4,5,3,NA,5,Submediterranean
+425,Polycnemum majus,10,NA,9,7,3,6,3,0.22,2,Mediterranean
+426,Polygala amara,0,TRUE,8,5,4,8,2,0.18,08pa,Submediterranean
+427,Polygala major,1,TRUE,8,7,3,8,3,0.28,5,Submediterranean
+428,Polygonatum hirtum,2,TRUE,4,7,5,7,6,0.575,5,Submediterranean
+429,Polygonatum multiflorum,0,TRUE,3,6,5,6,5,0.5,08ce,Central European
+430,Polygonatum odoratum,50,TRUE,6,6,3,7,3,0.45,10,NA
+431,Polygonum aviculare agg.,13,TRUE,7,6,4,6,7,NA,NA,NA
+432,Portulaca oleracea,3,TRUE,8,8,4,7,7,0.18,1,Mediterranean
+433,Potentilla argentea,9,TRUE,9,6,2,5,3,0.33,10,NA
+434,Potentilla heptaphylla,14,TRUE,7,6,3,8,4,0.11,08ce,Central European
+435,Potentilla incana,59,TRUE,9,7,2,8,2,0.09,4,Continental
+436,Potentilla micrantha,1,TRUE,5,7,4,7,5,0.06,1,Mediterranean
+437,Potentilla sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+438,Potentilla tabernaemontani,1,TRUE,8,6,3,6,2,0.11,08ce,Central European
+439,Prenanthes purpurea,0,TRUE,4,4,5,5,6,0.95,08ce,Central European
+440,Primula acaulis,5,TRUE,5,6,5,7,5,0.08,1,Mediterranean
+441,Primula veris,21,TRUE,7,6,4,7,4,0.12,10,NA
+442,Prunus avium,5,TRUE,6,5,5,7,5,NA,5,Submediterranean
+443,Prunus cerasifera,1,TRUE,6,6,5,7,6,NA,NA,NA
+444,Prunus domestica subsp. insititia,1,TRUE,6,6,5,7,5,NA,NA,NA
+445,Prunus fruticosa,4,TRUE,8,7,3,8,3,0.9,4,Continental
+446,Prunus mahaleb,22,TRUE,7,7,3,8,4,NA,2,Mediterranean
+447,Prunus sp.,16,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+448,Prunus spinosa,35,TRUE,7,6,4,7,5,NA,08ce,Central European
+449,Prunus tenella,1,TRUE,9,7,3,8,4,0.85,4,Continental
+450,Pseudoturritis turrita,11,TRUE,6,6,4,8,6,0.8,5,Submediterranean
+451,Pseudoturritis turrita,11,TRUE,6,6,4,8,6,0.55,5,Submediterranean
+452,Pulmonaria mollis,3,TRUE,6,6,4,8,5,0.35,5,Submediterranean
+453,Pulmonaria officinalis agg.,4,TRUE,4,6,5,7,6,NA,NA,NA
+454,Pulmonaria sp.,0,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+455,Pulsatilla halleri subsp. styriaca,6,TRUE,NA,NA,NA,NA,NA,0.125,6,Submediterranean
+456,Pulsatilla pratensis,6,TRUE,8,6,3,7,2,0.17,08sc,Central European
+457,Pulsatilla vulgaris subsp. grandis,1,TRUE,8,7,3,7,2,0.23,5,Submediterranean
+458,Pyrus communis subsp. communis,1,TRUE,6,6,5,7,5,NA,NA,NA
+459,Pyrus communis subsp. pyraster,6,TRUE,6,6,4,7,5,NA,5,Submediterranean
+460,Pyrus sp.,2,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+461,Quercus cerris,23,TRUE,6,8,4,6,4,NA,5,Submediterranean
+462,Quercus petraea,22,TRUE,6,6,5,5,4,NA,08ce,Central European
+463,Quercus pubescens,105,TRUE,7,8,3,7,3,NA,5,Submediterranean
+464,Quercus robur,2,TRUE,6,6,6,6,5,NA,08ce,Central European
+465,Quercus sp.,7,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+466,Ranunculus auricomus agg.,0,TRUE,5,5,6,6,6,NA,NA,NA
+467,Ranunculus bulbosus,4,TRUE,8,6,4,7,3,0.28,08ce,Central European
+468,Ranunculus illyricus,2,TRUE,8,7,3,7,3,0.35,5,Submediterranean
+469,Ranunculus polyanthemos,2,TRUE,6,6,4,7,3,0.5,10,NA
+470,Rapistrum perenne,1,TRUE,8,7,3,8,5,0.55,5,Submediterranean
+471,Reseda lutea,0,TRUE,8,6,3,8,5,0.4,1,Mediterranean
+472,Rhamnus cathartica,35,TRUE,7,5,4,8,5,NA,10,NA
+473,Ribes sp.,1,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+474,Robinia pseudoacacia,13,TRUE,6,6,4,6,7,NA,NA,NA
+475,Rosa canina s.l.,101,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+476,Rosa gallica,0,TRUE,7,7,4,7,4,NA,NA,NA
+477,Rosa rubiginosa,1,TRUE,7,6,4,8,4,NA,08ce,Central European
+478,Rosa spinosissima,2,TRUE,8,6,4,8,3,NA,10,NA
+479,Rubus sp.,4,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+480,Rumex acetosella,1,TRUE,8,5,3,4,2,0.2,10,NA
+481,Salvia austriaca,2,TRUE,9,8,2,8,4,0.7,5,Submediterranean
+482,Salvia nemorosa,7,TRUE,8,7,3,8,4,0.6,4,Continental
+483,Salvia pratensis,47,TRUE,7,6,3,8,4,0.5,5,Submediterranean
+484,Salvia verticillata,0,TRUE,7,6,4,7,5,0.6,08ce,Central European
+485,Sambucus nigra,2,TRUE,6,5,6,6,8,NA,08ce,Central European
+486,Sanguisorba minor,36,TRUE,7,6,3,7,3,0.55,10,NA
+487,Sanicula europaea,0,TRUE,3,5,5,7,6,0.3,08sa,Central European
+488,Saxifraga tridactylites,4,TRUE,9,6,2,7,3,0.09,1,Mediterranean
+489,Scabiosa canescens,2,TRUE,7,7,3,8,3,0.38,08sc,Central European
+490,Scabiosa ochroleuca,25,TRUE,8,6,3,8,3,0.55,4,Continental
+491,Scleranthus annuus,0,TRUE,7,5,5,4,4,0.13,1,Mediterranean
+492,Scleranthus sp.,2,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+493,Scorzonera austriaca,19,TRUE,8,7,3,8,2,0.25,4,Continental
+494,Scorzonera hispanica,4,TRUE,7,7,4,8,3,0.65,4,Continental
+495,Securigera varia,25,TRUE,7,5,4,7,4,NA,5,Submediterranean
+496,Sedum acre,7,TRUE,8,6,2,6,2,0.1,08sc,Central European
+497,Sedum album,12,TRUE,8,6,2,8,3,0.13,1,Mediterranean
+498,Sedum sexangulare,22,TRUE,8,6,2,6,3,0.1,5,Submediterranean
+499,Senecio nemorensis agg.,0,TRUE,5,5,5,5,6,NA,NA,NA
+500,Senecio sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+501,Senecio umbrosus,1,TRUE,7,6,6,7,5,1,08pa,Submediterranean
+502,Senecio vulgaris,3,TRUE,7,5,5,6,7,0.3,1,Mediterranean
+503,Seseli hippomarathrum,7,TRUE,9,7,2,9,1,0.38,4,Continental
+504,Seseli leucospermum,1,TRUE,9,8,1,9,1,0.75,5,Submediterranean
+505,Seseli libanotis,4,TRUE,7,6,3,8,3,NA,10,NA
+506,Seseli osseum,19,TRUE,9,7,2,7,2,0.9,5,Submediterranean
+507,Seseli pallasii,1,TRUE,8,8,3,8,3,0.75,5,Submediterranean
+508,Sesleria caerulea,14,TRUE,7,4,4,9,3,NA,08pa,Submediterranean
+509,Setaria viridis,3,TRUE,7,6,4,6,6,1.1,10,NA
+510,Sideritis montana,6,TRUE,9,7,3,7,5,0.23,2,Mediterranean
+511,Silene coronaria,0,TRUE,6,7,4,7,5,0.45,2,Mediterranean
+512,Silene latifolia,4,TRUE,7,6,4,7,7,NA,11,NA
+513,Silene nemoralis,1,TRUE,7,6,3,8,3,0.6,5,Submediterranean
+514,Silene nutans,14,TRUE,6,6,3,6,3,0.35,10,NA
+515,Silene otites,8,TRUE,9,7,2,7,2,0.58,4,Continental
+516,Silene sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+517,Silene viscaria,1,TRUE,7,6,3,4,3,NA,08sc,Central European
+518,Silene viscosa,1,TRUE,8,6,3,6,3,0.7,4,Continental
+519,Silene vulgaris,3,TRUE,6,6,4,6,4,0.65,10,NA
+520,Sisymbrium sp.,5,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+521,Sisymbrium strictissimum,4,TRUE,6,7,6,7,7,1,5,Submediterranean
+522,Smyrnium perfoliatum,2,TRUE,4,7,5,8,6,0.85,1,Mediterranean
+523,Solanum sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+524,Solidago gigantea,1,TRUE,7,6,6,6,7,1.25,NA,NA
+525,Solidago virgaurea,1,TRUE,6,5,5,5,4,0.55,10,NA
+526,Sorbus aria agg.,27,TRUE,6,6,4,7,3,NA,NA,NA
+527,Sorbus torminalis,41,TRUE,4,7,4,7,4,NA,5,Submediterranean
+528,Spiraea media,1,TRUE,NA,NA,NA,NA,NA,NA,4,Continental
+529,Stachys officinalis,13,TRUE,6,6,4,7,4,0.5,08ce,Central European
+530,Stachys recta,38,TRUE,7,6,3,8,3,0.5,5,Submediterranean
+531,Stachys sylvatica,0,TRUE,4,5,7,7,7,0.75,08ce,Central European
+532,Stellaria holostea,10,TRUE,5,6,5,6,5,0.2,10,NA
+533,Stellaria media,9,TRUE,6,5,5,6,8,0.43,10,NA
+534,Stipa capillata,18,TRUE,9,7,2,8,2,0.65,4,Continental
+535,Stipa dasyphylla,6,TRUE,9,7,2,7,2,0.53,4,Continental
+536,Stipa eriocaulis,11,TRUE,9,8,1,9,2,0.5,2,Mediterranean
+537,Stipa pennata,15,TRUE,8,7,2,7,2,NA,4,Continental
+538,Stipa pulcherrima,15,TRUE,9,7,2,8,2,0.53,5,Submediterranean
+539,Stipa tirsa,2,TRUE,8,7,3,7,3,0.65,4,Continental
+540,Stipa zalesskii,0,TRUE,9,7,2,8,2,0.7,4,Continental
+541,Symphytum tuberosum,3,TRUE,4,6,5,7,6,NA,NA,NA
+542,tady jsem skoncil,3,TRUE,6,6,3,8,2,0.33,2,Mediterranean
+543,Tanacetum corymbosum,41,TRUE,6,7,4,7,4,0.8,5,Submediterranean
+544,Taraxacum sect. Erythrosperma,8,TRUE,8,6,3,7,3,0.17,08sa,Central European
+545,Taraxacum sect. Taraxacum,21,TRUE,7,5,5,7,7,NA,NA,NA
+546,Taraxacum sp.,0,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+547,Teucrium botrys,2,TRUE,9,6,2,8,3,0.25,1,Mediterranean
+548,Teucrium chamaedrys,118,TRUE,7,7,3,8,3,0.25,1,Mediterranean
+549,Teucrium montanum,20,TRUE,9,7,1,9,2,0.18,6,Submediterranean
+550,Thalictrum minus,10,TRUE,6,7,3,8,3,0.9,10,NA
+551,Thesium linophyllon,8,TRUE,7,7,3,8,3,0.3,5,Submediterranean
+552,Thlaspi perfoliatum,28,TRUE,8,6,4,8,4,0.2,2,Mediterranean
+553,Thuja occidentalis,1,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+554,Thymus pannonicus agg.,23,TRUE,8,7,3,7,3,NA,NA,NA
+555,Thymus praecox,39,TRUE,8,6,2,7,2,0.07,08pa,Submediterranean
+556,Thymus pulegioides,1,TRUE,7,6,4,6,3,0.23,08ce,Central European
+557,Thymus sp.,8,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+558,Tilia cordata,2,TRUE,4,6,5,6,5,NA,08ce,Central European
+559,Tilia platyphyllos,14,TRUE,4,6,5,7,7,NA,08ce,Central European
+560,Tilia sp.,0,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+561,Tordylium maximum,1,TRUE,7,8,3,6,6,0.65,1,Mediterranean
+562,Torilis japonica,2,TRUE,6,6,5,7,8,0.65,7,NA
+563,Tragopogon dubius,1,TRUE,8,7,4,7,5,0.5,4,Continental
+564,Tragopogon pratensis subsp. orientalis,1,TRUE,7,6,4,7,6,0.7,10,NA
+565,Tragopogon sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+566,Tragus racemosus,1,TRUE,8,8,3,6,6,0.2,1,Mediterranean
+567,Trifolium alpestre,24,TRUE,7,6,3,7,3,0.35,5,Submediterranean
+568,Trifolium arvense,19,TRUE,8,5,3,4,2,0.2,1,Mediterranean
+569,Trifolium campestre,2,TRUE,8,6,4,6,4,0.2,1,Mediterranean
+570,Trifolium medium,2,TRUE,7,6,4,6,4,0.35,08ce,Central European
+571,Trifolium montanum,2,TRUE,7,6,3,8,3,0.43,08sc,Central European
+572,Trifolium ochroleucon,0,TRUE,7,6,4,8,3,0.3,1,Mediterranean
+573,Trifolium repens,1,TRUE,7,5,5,6,6,0.15,10,NA
+574,Trifolium retusum,2,TRUE,8,7,3,7,3,0.15,5,Submediterranean
+575,Trifolium rubens,1,TRUE,7,6,3,8,3,0.55,5,Submediterranean
+576,Trifolium sp.,3,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+577,Trinia glauca,1,TRUE,9,8,2,8,2,0.24,1,Mediterranean
+578,Turritis glabra,0,TRUE,6,6,3,7,5,0.8,10,NA
+579,Ulmus glabra,4,TRUE,4,5,6,7,7,NA,08ce,Central European
+580,Ulmus minor,4,TRUE,5,7,5,8,7,NA,08ce,Central European
+581,Urtica dioica,1,TRUE,5,5,6,7,9,1.45,10,NA
+582,Valeriana stolonifera subsp. angustifolia,3,TRUE,7,7,4,7,4,0.85,08ce,Central European
+583,Valerianella dentata,5,TRUE,7,6,4,7,6,0.25,5,Submediterranean
+584,Valerianella locusta,3,TRUE,7,6,4,7,6,0.26,1,Mediterranean
+585,Valerianella sp.,5,TRUE,NA,NA,NA,NA,NA,NA,NA,NA
+586,Veratrum nigrum,0,TRUE,6,6,4,7,5,1.1,4,Continental
+587,Verbascum chaixii subsp. austriacum,4,TRUE,7,6,3,7,5,NA,5,Submediterranean
+588,Verbascum lychnitis,29,TRUE,7,6,3,7,5,1.2,08sc,Central European
+589,Verbascum nigrum,1,TRUE,7,5,5,6,6,1,10,NA
+590,Verbascum phoeniceum,4,TRUE,8,7,3,7,3,0.5,4,Continental
+591,Verbascum sp.,2,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+592,Verbascum thapsus,1,TRUE,8,6,4,7,6,1,10,NA
+593,Veronica arvensis,16,TRUE,7,6,5,6,6,0.18,1,Mediterranean
+594,Veronica austriaca subsp. austriaca,5,TRUE,8,7,3,8,3,0.28,5,Submediterranean
+595,Veronica austriaca subsp. teucrium,4,TRUE,7,6,3,7,4,0.6,5,Submediterranean
+596,Veronica chamaedrys agg.,29,TRUE,6,5,5,7,6,NA,NA,NA
+597,Veronica hederifolia agg.,18,TRUE,6,6,5,7,7,NA,NA,NA
+598,Veronica officinalis,0,TRUE,5,5,4,4,4,0.08,08sc,Central European
+599,Veronica orchidea,1,TRUE,8,7,3,8,3,0.45,5,Submediterranean
+600,Veronica praecox,3,TRUE,9,7,2,8,2,0.1,08pa,Submediterranean
+601,Veronica prostrata,7,TRUE,8,7,2,8,3,0.1,4,Continental
+602,Veronica spicata,21,TRUE,7,6,3,7,2,0.3,10,NA
+603,Veronica verna agg.,5,TRUE,8,7,2,4,2,NA,NA,NA
+604,Viburnum lantana,10,TRUE,7,7,4,7,5,NA,5,Submediterranean
+605,Vicia hirsuta,15,TRUE,7,6,4,5,5,0.55,10,NA
+607,Vicia sativa subsp. nigra,6,TRUE,7,6,4,5,5,0.35,10,NA
+606,Vicia sativa subsp. sativa,0,TRUE,7,6,5,7,6,NA,NA,NA
+608,Vicia sp.,9,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+609,Vicia tenuifolia,6,TRUE,7,6,4,8,4,0.95,4,Continental
+610,Vicia tetrasperma,1,TRUE,7,6,4,5,5,0.4,10,NA
+611,Vinca herbacea,4,TRUE,8,8,2,8,1,0.35,5,Submediterranean
+612,Vincetoxicum hirundinaria,74,TRUE,6,6,3,7,3,0.7,5,Submediterranean
+613,Viola alba,14,TRUE,5,7,5,7,6,0.15,1,Mediterranean
+614,Viola ambigua,11,TRUE,7,7,3,8,3,0.1,5,Submediterranean
+615,Viola arvensis,23,TRUE,7,5,5,6,6,0.18,08sc,Central European
+616,Viola collina,14,TRUE,6,5,3,8,3,0.13,08sc,Central European
+617,Viola hirta,39,TRUE,6,5,3,8,3,0.15,10,NA
+618,Viola kitaibeliana,1,TRUE,9,8,2,8,2,0.1,1,Mediterranean
+619,Viola mirabilis,3,TRUE,4,6,5,8,5,0.2,10,NA
+620,Viola odorata,33,TRUE,5,6,5,7,7,0.15,5,Submediterranean
+621,Viola reichenbachiana,6,TRUE,3,5,5,7,6,0.15,08ce,Central European
+622,Viola riviniana,1,TRUE,4,6,5,6,6,0.23,08ce,Central European
+623,Viola sp.,1,FALSE,NA,NA,NA,NA,NA,NA,NA,NA
+624,Viola tricolor subsp. alpestris,8,TRUE,7,7,3,5,3,NA,9,NA
+625,Viscum album,0,TRUE,8,6,3,0,0,NA,08ce,Central European
+626,Vulpia myuros,1,TRUE,9,7,2,4,3,0.45,2,Mediterranean
+627,Xeranthemum annuum,3,TRUE,8,8,2,6,3,0.29,2,Mediterranean
