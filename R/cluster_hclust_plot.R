@@ -39,7 +39,7 @@
 #' @param main Optional plot title. Default:
 #'   `"Cluster dendrogram (co-membership phi distance)"`.
 #' @param width_in,height_in Plot size in inches for saved PDF/PNG output.
-#'   Defaults: `width_in = 10`, `height_in = 10`.
+#'   Defaults: `width_in = 10`, `height_in = 12`.
 #' @param png_res Resolution in dpi for PNG output.
 #' @param ... Additional graphical arguments forwarded to [graphics::plot()].
 #'
@@ -90,7 +90,7 @@ cluster_hclust_plot <- function(
     file = NULL,
     main = "Cluster dendrogram (co-membership phi distance)",
     width_in = 10,
-    height_in = 10,
+    height_in = 12,
     png_res = 150,
     ...
 ) {
@@ -226,8 +226,22 @@ cluster_hclust_plot <- function(
     png_res,
     ...
 ) {
+  plot_args <- list(...)
+  if (!"cex" %in% names(plot_args)) {
+    plot_args$cex <- 0.8
+  }
+
   if (is.null(file)) {
-    graphics::plot(stats::as.dendrogram(hc), main = main, ...)
+    old_par <- graphics::par(no.readonly = TRUE)
+    on.exit(graphics::par(old_par), add = TRUE)
+    graphics::par(
+      mar = c(.cluster_hclust_plot_bottom_margin(hc), 4.5, 4, 1) + 0.1,
+      xpd = NA
+    )
+    do.call(
+      graphics::plot,
+      c(list(stats::as.dendrogram(hc), main = main), plot_args)
+    )
     return(NULL)
   }
 
@@ -253,7 +267,27 @@ cluster_hclust_plot <- function(
   }
 
   on.exit(grDevices::dev.off(), add = TRUE)
-  graphics::plot(stats::as.dendrogram(hc), main = main, ...)
+  graphics::par(
+    mar = c(.cluster_hclust_plot_bottom_margin(hc), 4.5, 4, 1) + 0.1,
+    xpd = NA
+  )
+  do.call(
+    graphics::plot,
+    c(list(stats::as.dendrogram(hc), main = main), plot_args)
+  )
 
   normalizePath(file, winslash = "/", mustWork = TRUE)
+}
+
+.cluster_hclust_plot_bottom_margin <- function(hc) {
+  labels <- as.character(hc$labels %||% character(0))
+  if (!length(labels)) {
+    return(8)
+  }
+
+  label_chars <- max(nchar(labels, type = "chars"), na.rm = TRUE)
+  margin <- 5 + 0.22 * label_chars
+  margin <- max(8, margin)
+  margin <- min(18, margin)
+  as.numeric(margin)
 }

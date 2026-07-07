@@ -551,7 +551,7 @@ cluster_label_registry <- function(x) {
   if (.is_non_empty_scalar_character(display_label) &&
       identical(output_status, "labeled") &&
       !isTRUE(used_placeholder)) {
-    return(display_label)
+    return(.cluster_label_registry_simplify_hclust_text(display_label))
   }
 
   if (identical(output_status, "abstain") &&
@@ -569,6 +569,56 @@ cluster_label_registry <- function(x) {
   }
 
   "[unlabeled]"
+}
+
+.cluster_label_registry_hclust_generic_terms_pattern <- function() {
+  paste(
+    c(
+      "cluster",
+      "community",
+      "assemblage",
+      "association",
+      "alliance",
+      "interface",
+      "complex",
+      "ensemble",
+      "mosaic"
+    ),
+    collapse = "|"
+  )
+}
+
+.cluster_label_registry_simplify_hclust_text <- function(text) {
+  text <- .as_scalar_character(text)
+  if (is.na(text) || !nzchar(text)) {
+    return(text)
+  }
+
+  marker_suffix <- ""
+  if (grepl("\\*$", text, perl = TRUE)) {
+    marker_suffix <- "*"
+    text <- sub("\\*$", "", text, perl = TRUE)
+  }
+
+  simplified <- gsub(
+    paste0("\\b(", .cluster_label_registry_hclust_generic_terms_pattern(), ")\\b"),
+    "",
+    text,
+    ignore.case = TRUE,
+    perl = TRUE
+  )
+  simplified <- gsub("[[:space:]]+", " ", simplified, perl = TRUE)
+  simplified <- gsub("[[:space:]]+([,;:/)])", "\\1", simplified, perl = TRUE)
+  simplified <- gsub("([(])\\s+", "\\1", simplified, perl = TRUE)
+  simplified <- gsub("([-/])\\s+|\\s+([-/])", "\\1\\2", simplified, perl = TRUE)
+  simplified <- gsub("[[:space:][:punct:]]+$", "", simplified, perl = TRUE)
+  simplified <- trimws(simplified)
+
+  if (!nzchar(simplified)) {
+    simplified <- trimws(text)
+  }
+
+  paste0(simplified, marker_suffix)
 }
 
 .cluster_label_registry_truncate_hclust_text <- function(
@@ -618,7 +668,21 @@ cluster_label_registry <- function(x) {
 }
 
 .cluster_label_registry_add_hclust_label_compact <- function(reg) {
-  if (!is.data.frame(reg) || "hclust_label_compact" %in% names(reg)) {
+  if (!is.data.frame(reg)) {
+    return(reg)
+  }
+
+  can_rebuild <- "cluster" %in% names(reg) &&
+    "output_status" %in% names(reg) &&
+    any(c(
+      "display_label",
+      "public_display_label",
+      "public_label_source",
+      "used_placeholder",
+      "plot_marker"
+    ) %in% names(reg))
+
+  if ("hclust_label_compact" %in% names(reg) && !can_rebuild) {
     return(reg)
   }
 

@@ -224,25 +224,60 @@ test_that("cocktail plot legend layout keeps short pages in one column and trunc
 
 test_that("cocktail plot legend layout switches dense pages to two columns and keeps footer notes full width", {
   reg <- data.frame(
-    cluster = paste0("c_", 1:5),
-    legend_label = paste0("c_", 1:5, ": label ", 1:5, c("", "", "", "", "*")),
+    cluster = paste0("c_", 1:8),
+    legend_label = paste0("c_", 1:8, ": label ", 1:8, c("", "", "", "", "", "", "", "*")),
     review_file = file.path(
       "temp/reports/cluster_reviews/my_dataset",
-      paste0("c_", 1:5, "_review.md")
+      paste0("c_", 1:8, "_review.md")
     ),
-    is_speculative = c(FALSE, FALSE, FALSE, FALSE, TRUE),
-    plot_marker = c(NA_character_, NA_character_, NA_character_, NA_character_, "*"),
-    review_status = c("accepted", "accepted", "accepted", "accepted", "speculative"),
+    is_speculative = c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE),
+    plot_marker = c(
+      NA_character_, NA_character_, NA_character_, NA_character_,
+      NA_character_, NA_character_, NA_character_, "*"
+    ),
+    review_status = c(
+      "accepted", "accepted", "accepted", "accepted",
+      "accepted", "accepted", "accepted", "speculative"
+    ),
     stringsAsFactors = FALSE
   )
 
-  layout <- cocktailr:::.cocktail_plot_legend_layout(reg, max_entries = 5L)
+  layout <- cocktailr:::.cocktail_plot_legend_layout(reg, max_entries = 8L)
 
   expect_equal(layout$n_columns, 2L)
   expect_equal(layout$header_lines[[1]], "Label reviews: temp/reports/cluster_reviews/my_dataset/")
   expect_true(any(grepl("c_1: label 1", layout$body_columns[[1L]], fixed = TRUE)))
-  expect_true(any(grepl("c_5: label 5\\*", layout$body_columns[[2L]])))
+  expect_true(any(grepl("c_8: label 8\\*", layout$body_columns[[2L]])))
   expect_true(any(grepl("tentative / speculative label", layout$footer_lines, fixed = TRUE)))
+})
+
+test_that("cocktail plot footer height shrinks for sparse pages and caps for dense pages", {
+  sparse_layout <- list(
+    header_lines = "Label reviews: temp/reports/cluster_reviews/my_dataset/",
+    body_columns = list(
+      c("c_1: mesic woodland (c_1_review.md)", "c_2: wet meadow edge (c_2_review.md)"),
+      character(0)
+    ),
+    footer_lines = character(0),
+    n_columns = 1L
+  )
+
+  dense_layout <- list(
+    header_lines = "Label reviews: temp/reports/cluster_reviews/my_dataset/",
+    body_columns = list(
+      paste0("c_", 1:6, ": label ", 1:6, " (c_", 1:6, "_review.md)"),
+      paste0("c_", 7:12, ": label ", 7:12, " (c_", 7:12, "_review.md)")
+    ),
+    footer_lines = "* tentative / speculative label",
+    n_columns = 2L
+  )
+
+  sparse_height <- cocktailr:::.cocktail_plot_footer_panel_height(sparse_layout)
+  dense_height <- cocktailr:::.cocktail_plot_footer_panel_height(dense_layout)
+
+  expect_lt(sparse_height, 1.5)
+  expect_equal(dense_height, 2.1)
+  expect_lt(sparse_height, dense_height)
 })
 
 test_that("cocktail plot legend layout keeps abstained entries alongside speculative notes", {
@@ -680,7 +715,8 @@ test_that("cluster_hclust_plot draws a one-call hclust figure", {
 
 test_that("cluster_hclust_plot defaults keep the taller compact-label layout", {
   expect_equal(formals(cluster_hclust_plot)$label_field, "hclust_label_compact")
-  expect_equal(formals(cluster_hclust_plot)$height_in, 10)
+  expect_equal(formals(cluster_hclust_plot)$height_in, 12)
+  expect_equal(formals(label_hclust_leaves)$label_field, "hclust_label_compact")
 })
 
 test_that("cluster_hclust_plot still accepts explicit label_field overrides", {

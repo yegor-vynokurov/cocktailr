@@ -22,7 +22,7 @@
 #' @param label_field Character scalar naming the registry column to use for
 #'   replacement. Common choices are `"hclust_label_compact"`,
 #'   `"plot_label_short"`, `"legend_label"`, and `"display_label"`. Default:
-#'   `"plot_label_short"`.
+#'   `"hclust_label_compact"`.
 #' @param fallback One of `"keep"` or `"cluster"`. `"keep"` leaves unmatched or
 #'   empty replacements unchanged. `"cluster"` falls back to normalized cluster
 #'   IDs such as `"c_12"`.
@@ -63,7 +63,7 @@ label_hclust_leaves <- function(
     hc,
     label_registry = "auto",
     x = NULL,
-    label_field = "plot_label_short",
+    label_field = "hclust_label_compact",
     fallback = c("keep", "cluster"),
     warn_missing = TRUE
 ) {

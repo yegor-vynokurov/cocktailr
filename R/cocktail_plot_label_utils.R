@@ -324,12 +324,9 @@
 .cocktail_plot_legend_layout <- function(
     label_registry_page,
     max_entries = 12L,
-    two_column_threshold = 5L,
-    header_wrap_width = 96L,
-    entry_label_width_one_col = 72L,
-    entry_label_width_two_col = 36L,
-    entry_wrap_width_one_col = 84L,
-    entry_wrap_width_two_col = 40L,
+    two_column_threshold = 8L,
+    entry_width_one_col = 108L,
+    entry_width_two_col = 52L,
     footer_wrap_width = 96L
 ) {
   empty_layout <- list(
@@ -353,15 +350,10 @@
   } else {
     "Label reviews: paths not recorded."
   }
-  header_lines <- .cocktail_plot_wrap_text(
-    header_text,
-    width = header_wrap_width,
-    continuation_indent = 2L
-  )
+  header_lines <- header_text
 
   n_columns <- if (nrow(page_slice) >= as.integer(two_column_threshold)) 2L else 1L
-  label_width <- if (n_columns == 2L) entry_label_width_two_col else entry_label_width_one_col
-  wrap_width <- if (n_columns == 2L) entry_wrap_width_two_col else entry_wrap_width_one_col
+  entry_width <- if (n_columns == 2L) entry_width_two_col else entry_width_one_col
 
   entry_blocks <- lapply(seq_len(nrow(page_slice)), function(i) {
     entry <- page_slice[i, , drop = FALSE]
@@ -372,15 +364,9 @@
       ""
     }
 
-    entry_text <- paste0(
-      .cocktail_plot_truncate_text(entry$legend_label[[1]], width = label_width),
-      filename
-    )
-
-    .cocktail_plot_wrap_text(
-      entry_text,
-      width = wrap_width,
-      continuation_indent = 2L
+    .cocktail_plot_truncate_text(
+      paste0(entry$legend_label[[1]], filename),
+      width = entry_width
     )
   })
 
@@ -401,7 +387,7 @@
     if (!length(blocks)) {
       return(character(0))
     }
-    unlist(blocks, use.names = FALSE)
+    as.character(unlist(blocks, use.names = FALSE))
   }
 
   footer_lines <- character(0)
@@ -437,6 +423,53 @@
     footer_lines = footer_lines,
     n_columns = n_columns
   )
+}
+
+.cocktail_plot_caption_has_content <- function(caption_layout) {
+  if (is.null(caption_layout) || !is.list(caption_layout)) {
+    return(FALSE)
+  }
+
+  any(c(
+    length(caption_layout$header_lines),
+    length(caption_layout$body_columns[[1L]]),
+    length(caption_layout$body_columns[[2L]]),
+    length(caption_layout$footer_lines)
+  ) > 0L)
+}
+
+.cocktail_plot_caption_row_count <- function(caption_layout) {
+  if (!.cocktail_plot_caption_has_content(caption_layout)) {
+    return(0L)
+  }
+
+  n_body_rows <- max(
+    length(caption_layout$body_columns[[1L]]),
+    length(caption_layout$body_columns[[2L]])
+  )
+
+  as.integer(max(
+    1L,
+    length(caption_layout$header_lines) +
+      n_body_rows +
+      length(caption_layout$footer_lines)
+  ))
+}
+
+.cocktail_plot_footer_panel_height <- function(
+    caption_layout,
+    min_height = 0.9,
+    max_height = 2.1,
+    base_height = 0.35,
+    per_row_height = 0.26
+) {
+  total_rows <- .cocktail_plot_caption_row_count(caption_layout)
+  if (total_rows <= 0L) {
+    return(0)
+  }
+
+  footer_height <- base_height + per_row_height * total_rows
+  min(max_height, max(min_height, footer_height))
 }
 
 .cocktail_plot_legend_lines <- function(label_registry_page, max_entries = 12L) {

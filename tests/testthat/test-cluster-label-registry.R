@@ -233,7 +233,7 @@ test_that("cluster_label_registry flattens batch output into plotting-ready fiel
   expect_equal(row1$plot_label_id[[1]], "c_1")
   expect_equal(row1$plot_label_short[[1]], "sp1-sp2 cluster")
   expect_equal(row1$legend_label[[1]], "c_1: sp1-sp2 cluster")
-  expect_equal(row1$hclust_label_compact[[1]], "c_1: sp1-sp2 cluster")
+  expect_equal(row1$hclust_label_compact[[1]], "c_1: sp1-sp2")
   expect_equal(row1$display_label[[1]], "sp1-sp2 cluster")
   expect_equal(row1$canonical_label[[1]], "sp1_sp2_cluster")
   expect_true(row1$label_available[[1]])
@@ -473,6 +473,31 @@ test_that("reading an older saved registry backfills compact hclust labels", {
   expect_equal(reg_loaded$hclust_label_compact, c("c_1: mesic woodland", "c_2: Chaotic Cluster"))
 })
 
+test_that("reading a saved registry refreshes stale compact hclust labels", {
+  reg_old <- data.frame(
+    cluster = c("c_1", "c_2"),
+    display_label = c("Mixed Herbaceous Community", "Disturbance Flora Association"),
+    public_display_label = c(NA_character_, NA_character_),
+    public_label_source = c(NA_character_, NA_character_),
+    output_status = c("labeled", "labeled"),
+    used_placeholder = c(FALSE, FALSE),
+    plot_marker = c("", ""),
+    hclust_label_compact = c("stale one", "stale two"),
+    review_file = c("c_1_review.md", "c_2_review.md"),
+    stringsAsFactors = FALSE
+  )
+
+  file <- file.path(tempdir(), "cluster_label_registry_stale_hclust.csv")
+  utils::write.csv(reg_old, file = file, row.names = FALSE, na = "NA")
+
+  reg_loaded <- cocktailr:::.read_cluster_label_registry_file(file)
+
+  expect_equal(
+    reg_loaded$hclust_label_compact,
+    c("c_1: Mixed Herbaceous", "c_2: Disturbance Flora")
+  )
+})
+
 test_that("compact hclust labels keep cluster prefixes across fallback states", {
   reg <- data.frame(
     cluster = c("c_1", "c_2", "c_3", "c_4"),
@@ -498,5 +523,24 @@ test_that("compact hclust labels keep cluster prefixes across fallback states", 
     )
   )
   expect_true(all(startsWith(reg$hclust_label_compact, paste0(reg$cluster, ": "))))
+})
+
+test_that("compact hclust labels strip generic grouping nouns from labeled output", {
+  reg <- data.frame(
+    cluster = c("c_1", "c_2"),
+    display_label = c("Mixed Herbaceous Community", "Disturbance Flora Association"),
+    public_display_label = c(NA_character_, NA_character_),
+    public_label_source = c(NA_character_, NA_character_),
+    output_status = c("labeled", "labeled"),
+    used_placeholder = c(FALSE, FALSE),
+    plot_marker = c("", ""),
+    review_file = c("c_1_review.md", "c_2_review.md"),
+    stringsAsFactors = FALSE
+  )
+
+  reg <- cocktailr:::.cluster_label_registry_add_hclust_label_compact(reg)
+
+  expect_equal(reg$hclust_label_compact[[1]], "c_1: Mixed Herbaceous")
+  expect_equal(reg$hclust_label_compact[[2]], "c_2: Disturbance Flora")
 })
 
