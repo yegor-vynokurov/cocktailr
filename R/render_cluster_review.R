@@ -608,8 +608,6 @@ print.cluster_review_artifact <- function(x, ...) {
   confidence_lines <- .cluster_review_confidence_lines(output$confidence)
   issue_lines <- .cluster_review_issue_lines(validation$issues)
   checks_lines <- .cluster_review_check_lines(output$checks_to_run)
-  explanation_lines <- .cluster_review_explanation_lines(output)
-  interpretation_summary_text <- .cluster_label_output_summary_text(output)
   evidence_snapshot <- .format_cluster_evidence_review_prompt(evidence)
   evidence_limitations <- .cluster_review_evidence_limitation_lines(evidence)
   manual_note_lines <- .cluster_review_manual_notes_lines(manual_notes)
@@ -648,12 +646,6 @@ print.cluster_review_artifact <- function(x, ...) {
       if (length(workflow_trace_lines)) "" else NULL,
       if (length(workflow_trace_lines)) "## Workflow trace" else NULL,
       workflow_trace_lines,
-      "",
-      "## Final explanation",
-      explanation_lines,
-      "",
-      "## Interpretation summary",
-      .paragraph_or_placeholder(interpretation_summary_text),
       "",
       "## Evidence-backed claims",
       claims_lines,
@@ -701,12 +693,6 @@ print.cluster_review_artifact <- function(x, ...) {
       if (length(tentative_lines)) "" else NULL,
       if (length(tentative_lines)) "## Why tentative" else NULL,
       tentative_lines,
-      "",
-      "## Final explanation",
-      explanation_lines,
-      "",
-      "## Interpretation summary",
-      .paragraph_or_placeholder(interpretation_summary_text),
       "",
       "## Evidence-backed claims",
       claims_lines,

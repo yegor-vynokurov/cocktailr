@@ -66,6 +66,12 @@
 #'   analysis step before label decision. If \code{FALSE}, the downstream
 #'   label-decision and summary / abstain-reason stages use the cluster
 #'   evidence directly without a brainstorm pass.
+#' @param internal_prompt_version Character scalar naming the subdirectory
+#'   under \code{inst/prompts/internal_cluster_labeling/} that contains the
+#'   active internal service-prompt bundle. Default \code{"v1"}. Copy that
+#'   folder to \code{"v2"}, \code{"v3"}, and so on when you want to iterate on
+#'   the internal draft / decision / summary prompts without changing the
+#'   currently active production set.
 #' @param dry_run Logical; if \code{TRUE}, return the assembled prompt bundle
 #'   and Ollama request payload without making a network request.
 #' @param debug Logical. If \code{TRUE}, collect per-stage LLM debug logs
@@ -151,6 +157,7 @@ llm_label_cluster <- function(
     max_retries = 1L,
     workflow_steps = 3L,
     use_brainstorm = TRUE,
+    internal_prompt_version = .default_cluster_label_internal_prompt_version(),
     dry_run = FALSE,
     debug = FALSE,
     log_dir = NULL,
@@ -175,6 +182,9 @@ llm_label_cluster <- function(
     "workflow_steps"
   )
   use_brainstorm <- .arg_single_flag(use_brainstorm, "use_brainstorm")
+  internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
+    internal_prompt_version
+  )
   debug <- .arg_single_flag(debug, "debug")
   prompt_budget_chars <- .arg_nullable_positive_integer(
     prompt_budget_chars,
@@ -206,6 +216,7 @@ llm_label_cluster <- function(
     max_retries = max_retries,
     workflow_steps = workflow_steps,
     use_brainstorm = use_brainstorm,
+    internal_prompt_version = internal_prompt_version,
     dry_run = dry_run,
     log_dir = log_dir,
     request_fn = request_fn
@@ -1994,7 +2005,8 @@ llm_label_cluster <- function(
     top_p,
     seed,
     num_predict,
-    prompt_budget_chars
+    prompt_budget_chars,
+    internal_prompt_version
 ) {
   .build_cluster_label_prompt(
     evidence = evidence,
@@ -2008,6 +2020,7 @@ llm_label_cluster <- function(
     include_schema = FALSE,
     label_mode = label_mode,
     dynamic_candidates = dynamic_candidates,
+    internal_prompt_version = internal_prompt_version,
     extra_template_values = list(
       "{{DRAFT_ANALYSIS_TEXT}}" = draft_analysis_text
     )
@@ -2023,7 +2036,8 @@ llm_label_cluster <- function(
     top_p,
     seed,
     num_predict,
-    prompt_budget_chars
+    prompt_budget_chars,
+    internal_prompt_version
 ) {
   .build_cluster_label_prompt(
     evidence = evidence,
@@ -2035,6 +2049,7 @@ llm_label_cluster <- function(
     num_predict = num_predict,
     prompt_budget_chars = prompt_budget_chars,
     include_schema = FALSE,
+    internal_prompt_version = internal_prompt_version,
     extra_template_values = list(
       "{{DRAFT_ANALYSIS_TEXT}}" = draft_analysis_text,
       "{{SELECTED_LABEL_TEXT}}" = selected_label_text
@@ -2051,7 +2066,8 @@ llm_label_cluster <- function(
     top_p,
     seed,
     num_predict,
-    prompt_budget_chars
+    prompt_budget_chars,
+    internal_prompt_version
 ) {
   .build_cluster_label_prompt(
     evidence = evidence,
@@ -2063,6 +2079,7 @@ llm_label_cluster <- function(
     num_predict = num_predict,
     prompt_budget_chars = prompt_budget_chars,
     include_schema = FALSE,
+    internal_prompt_version = internal_prompt_version,
     extra_template_values = list(
       "{{DRAFT_ANALYSIS_TEXT}}" = draft_analysis_text,
       "{{LABEL_DECISION_TEXT}}" = label_decision_text
@@ -2080,7 +2097,8 @@ llm_label_cluster <- function(
     top_p,
     seed,
     num_predict,
-    prompt_budget_chars
+    prompt_budget_chars,
+    internal_prompt_version
 ) {
   .build_cluster_label_prompt(
     evidence = evidence,
@@ -2094,6 +2112,7 @@ llm_label_cluster <- function(
     include_schema = FALSE,
     label_mode = label_mode,
     dynamic_candidates = dynamic_candidates,
+    internal_prompt_version = internal_prompt_version,
     extra_template_values = list(
       "{{DRAFT_ANALYSIS_TEXT}}" = draft_analysis_text
     )
@@ -2110,7 +2129,8 @@ llm_label_cluster <- function(
     top_p,
     seed,
     num_predict,
-    prompt_budget_chars
+    prompt_budget_chars,
+    internal_prompt_version
 ) {
   selection_text <- .render_cluster_label_selection_text_block(selection_output)
 
@@ -2124,6 +2144,7 @@ llm_label_cluster <- function(
     num_predict = num_predict,
     prompt_budget_chars = prompt_budget_chars,
     include_schema = FALSE,
+    internal_prompt_version = internal_prompt_version,
     extra_template_values = list(
       "{{DRAFT_ANALYSIS_TEXT}}" = draft_analysis_text,
       "{{LABEL_SELECTION_TEXT}}" = selection_text
@@ -2165,7 +2186,8 @@ llm_label_cluster <- function(
     timeout_sec,
     max_retries,
     request_fn,
-    label_stage_log_paths
+    label_stage_log_paths,
+    internal_prompt_version
 ) {
   cascade <- .cluster_label_decision_cascade_variants(variant)
   attempts <- list()
@@ -2186,7 +2208,8 @@ llm_label_cluster <- function(
       top_p = top_p,
       seed = seed,
       num_predict = num_predict,
-      prompt_budget_chars = prompt_budget_chars
+      prompt_budget_chars = prompt_budget_chars,
+      internal_prompt_version = internal_prompt_version
     )
     .expect_prompt_task_type(prompt_bundle, "label_decision", decision_variant)
 
@@ -2331,7 +2354,8 @@ llm_label_cluster <- function(
     timeout_sec,
     max_retries,
     request_fn,
-    label_stage_log_paths
+    label_stage_log_paths,
+    internal_prompt_version
 ) {
   cascade <- .cluster_label_selection_cascade_variants(variant)
   attempts <- list()
@@ -2352,7 +2376,8 @@ llm_label_cluster <- function(
       top_p = top_p,
       seed = seed,
       num_predict = num_predict,
-      prompt_budget_chars = prompt_budget_chars
+      prompt_budget_chars = prompt_budget_chars,
+      internal_prompt_version = internal_prompt_version
     )
     .expect_prompt_task_type(prompt_bundle, "label_selection", selection_variant)
 
@@ -2492,6 +2517,7 @@ llm_label_cluster <- function(
     ollama_options,
     timeout_sec,
     max_retries,
+    internal_prompt_version,
     dry_run,
     log_dir,
     request_fn
@@ -2505,7 +2531,8 @@ llm_label_cluster <- function(
     seed = seed,
     num_predict = num_predict,
     prompt_budget_chars = prompt_budget_chars,
-    label_mode = label_mode
+    label_mode = label_mode,
+    internal_prompt_version = internal_prompt_version
   )
   .expect_prompt_task_type(prompt_bundle, "label", variant)
 
@@ -2591,6 +2618,7 @@ llm_label_cluster <- function(
     ollama_options,
     timeout_sec,
     max_retries,
+    internal_prompt_version,
     dry_run,
     log_dir,
     request_fn
@@ -2605,7 +2633,8 @@ llm_label_cluster <- function(
     top_p = top_p,
     seed = seed,
     num_predict = num_predict,
-    prompt_budget_chars = prompt_budget_chars
+    prompt_budget_chars = prompt_budget_chars,
+    internal_prompt_version = internal_prompt_version
   )
   .expect_prompt_task_type(gate_prompt_bundle, "gate", gate_variant)
 
@@ -2618,7 +2647,8 @@ llm_label_cluster <- function(
     seed = seed,
     num_predict = num_predict,
     prompt_budget_chars = prompt_budget_chars,
-    label_mode = label_mode
+    label_mode = label_mode,
+    internal_prompt_version = internal_prompt_version
   )
   .expect_prompt_task_type(label_prompt_bundle, "label", variant)
 
@@ -2898,6 +2928,7 @@ llm_label_cluster <- function(
     max_retries,
     workflow_steps,
     use_brainstorm,
+    internal_prompt_version,
     dry_run,
     log_dir,
     request_fn,
@@ -2907,6 +2938,9 @@ llm_label_cluster <- function(
     explanation_context_extra_text = NULL,
     workflow_variant_suffix = NULL
 ) {
+  internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
+    internal_prompt_version
+  )
   draft_variant <- .default_cluster_label_draft_variant()
   summary_variant <- .default_cluster_label_v2_label_summary_variant()
   abstain_reason_variant <- .default_cluster_label_v2_abstain_reason_variant()
@@ -2934,7 +2968,8 @@ llm_label_cluster <- function(
       seed = seed,
       num_predict = num_predict,
       prompt_budget_chars = prompt_budget_chars,
-      include_schema = FALSE
+      include_schema = FALSE,
+      internal_prompt_version = internal_prompt_version
     )
     .expect_prompt_task_type(draft_prompt_bundle, "draft", draft_variant)
   }
@@ -2983,7 +3018,8 @@ llm_label_cluster <- function(
       top_p = top_p,
       seed = seed,
       num_predict = num_predict,
-      prompt_budget_chars = prompt_budget_chars
+      prompt_budget_chars = prompt_budget_chars,
+      internal_prompt_version = internal_prompt_version
     )
     .expect_prompt_task_type(prompt_bundle, "label_decision", decision_variant)
 
@@ -3010,7 +3046,8 @@ llm_label_cluster <- function(
     top_p = top_p,
     seed = seed,
     num_predict = num_predict,
-    prompt_budget_chars = prompt_budget_chars
+    prompt_budget_chars = prompt_budget_chars,
+    internal_prompt_version = internal_prompt_version
   )
   .expect_prompt_task_type(
     summary_prompt_bundle,
@@ -3027,7 +3064,8 @@ llm_label_cluster <- function(
     top_p = top_p,
     seed = seed,
     num_predict = num_predict,
-    prompt_budget_chars = prompt_budget_chars
+    prompt_budget_chars = prompt_budget_chars,
+    internal_prompt_version = internal_prompt_version
   )
   .expect_prompt_task_type(
     abstain_reason_prompt_bundle,
@@ -3146,6 +3184,7 @@ llm_label_cluster <- function(
       variant = workflow_variant,
       workflow_steps = workflow_steps,
       use_brainstorm = isTRUE(use_brainstorm),
+      internal_prompt_version = internal_prompt_version,
       draft_override_used = isTRUE(has_draft_override),
       draft_variant = draft_variant,
       summary_variant = summary_variant,
@@ -3249,7 +3288,8 @@ llm_label_cluster <- function(
       timeout_sec = timeout_sec,
       max_retries = max_retries,
       request_fn = request_fn,
-      label_stage_log_paths = workflow_logs$stages$label
+      label_stage_log_paths = workflow_logs$stages$label,
+      internal_prompt_version = internal_prompt_version
     )
 
     decision_output <- label_stage$selection_output
@@ -3296,7 +3336,8 @@ llm_label_cluster <- function(
         top_p = top_p,
         seed = seed,
         num_predict = num_predict,
-        prompt_budget_chars = prompt_budget_chars
+        prompt_budget_chars = prompt_budget_chars,
+        internal_prompt_version = internal_prompt_version
       )
       .expect_prompt_task_type(
         summary_prompt_bundle,
@@ -3373,7 +3414,8 @@ llm_label_cluster <- function(
         top_p = top_p,
         seed = seed,
         num_predict = num_predict,
-        prompt_budget_chars = prompt_budget_chars
+        prompt_budget_chars = prompt_budget_chars,
+        internal_prompt_version = internal_prompt_version
       )
       .expect_prompt_task_type(
         abstain_reason_prompt_bundle,

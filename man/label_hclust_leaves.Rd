@@ -23,9 +23,9 @@ tries to load the most relevant saved \code{cluster_label_registry.csv}.}
 \code{label_registry = "auto"} to prefer a dataset-aware saved registry.}
 
 \item{label_field}{Character scalar naming the registry column to use for
-replacement. Common choices are \code{"plot_label_short"},
-\code{"legend_label"}, and \code{"display_label"}. Default:
-\code{"plot_label_short"}.}
+replacement. Common choices are \code{"hclust_label_compact"},
+\code{"plot_label_short"}, \code{"legend_label"}, and \code{"display_label"}.
+Default: \code{"plot_label_short"}.}
 
 \item{fallback}{One of \code{"keep"} or \code{"cluster"}. \code{"keep"}
 leaves unmatched or empty replacements unchanged. \code{"cluster"} falls back

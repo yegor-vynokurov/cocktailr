@@ -20,8 +20,9 @@
 #' @param x Optional Cocktail object used only when `label_registry = "auto"` to
 #'   prefer a dataset-aware saved registry.
 #' @param label_field Character scalar naming the registry column to use for
-#'   replacement. Common choices are `"plot_label_short"`, `"legend_label"`, and
-#'   `"display_label"`. Default: `"plot_label_short"`.
+#'   replacement. Common choices are `"hclust_label_compact"`,
+#'   `"plot_label_short"`, `"legend_label"`, and `"display_label"`. Default:
+#'   `"plot_label_short"`.
 #' @param fallback One of `"keep"` or `"cluster"`. `"keep"` leaves unmatched or
 #'   empty replacements unchanged. `"cluster"` falls back to normalized cluster
 #'   IDs such as `"c_12"`.

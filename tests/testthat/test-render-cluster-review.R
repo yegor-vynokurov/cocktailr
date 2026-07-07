@@ -130,11 +130,13 @@ test_that("render_cluster_review builds a readable compact markdown artifact by 
   expect_match(art$markdown, "Model: not recorded.", fixed = TRUE)
   expect_match(art$markdown, "Prompt files: not recorded.", fixed = TRUE)
   expect_match(art$markdown, "## Proposed label", fixed = TRUE)
-  expect_match(art$markdown, "## Final explanation", fixed = TRUE)
+  expect_match(art$markdown, "- Label summary: ", fixed = TRUE)
   expect_match(art$markdown, "## Evidence-backed claims", fixed = TRUE)
   expect_match(art$markdown, "## Key species", fixed = TRUE)
   expect_match(art$markdown, "## What is not confirmed", fixed = TRUE)
   expect_match(art$markdown, "## Confidence", fixed = TRUE)
+  expect_false(grepl("## Final explanation", art$markdown, fixed = TRUE))
+  expect_false(grepl("## Interpretation summary", art$markdown, fixed = TRUE))
   expect_false(grepl("## Review summary", art$markdown, fixed = TRUE))
   expect_false(grepl("## External knowledge used", art$markdown, fixed = TRUE))
   expect_false(grepl("## Validation warnings", art$markdown, fixed = TRUE))
@@ -152,7 +154,7 @@ test_that("render_cluster_review full=TRUE builds an expanded markdown artifact"
   expect_match(art$markdown, "^---", perl = TRUE)
   expect_match(art$markdown, "cluster_id: \"c_1\"", fixed = TRUE)
   expect_match(art$markdown, "## Review summary", fixed = TRUE)
-  expect_match(art$markdown, "## Final explanation", fixed = TRUE)
+  expect_match(art$markdown, "- Label summary: ", fixed = TRUE)
   expect_match(art$markdown, "## External knowledge used", fixed = TRUE)
   expect_match(art$markdown, "## Validation warnings", fixed = TRUE)
   expect_match(art$markdown, "## Checks to run", fixed = TRUE)
@@ -160,6 +162,8 @@ test_that("render_cluster_review full=TRUE builds an expanded markdown artifact"
   expect_match(art$markdown, "Topological species:", fixed = TRUE)
   expect_match(art$markdown, "[E", fixed = TRUE)
   expect_match(art$markdown, "## Manual review notes", fixed = TRUE)
+  expect_false(grepl("## Final explanation", art$markdown, fixed = TRUE))
+  expect_false(grepl("## Interpretation summary", art$markdown, fixed = TRUE))
 })
 
 test_that("render_cluster_review writes compact markdown by default and metadata only in full mode", {
@@ -241,7 +245,7 @@ test_that("render_cluster_review surfaces exhausted staged-fallback provenance",
     prompt = list(
       catalog_path = "inst/prompts/cluster_labeling/catalog.json",
       system_path = "inst/prompts/cluster_labeling/system_scientific_caution_v1.md",
-      user_path = "inst/prompts/internal_cluster_labeling/user_explanation_pass_v1.md",
+      user_path = "inst/prompts/internal_cluster_labeling/v1/user_explanation_pass_v1.md",
       schema_path = "inst/schemas/cluster_label_output_schema.json"
     ),
     output = output,
@@ -293,7 +297,8 @@ test_that("render_cluster_review surfaces exhausted staged-fallback provenance",
   expect_match(art$markdown, "Model output: no stable short label was produced.", fixed = TRUE)
   expect_match(art$markdown, "## Brainstorm trace", fixed = TRUE)
   expect_match(art$markdown, "Candidate label: `mixed meadow assemblage` -> `mixed_meadow_assemblage`", fixed = TRUE)
-  expect_match(art$markdown, "## Final explanation", fixed = TRUE)
+  expect_false(grepl("## Final explanation", art$markdown, fixed = TRUE))
+  expect_false(grepl("## Interpretation summary", art$markdown, fixed = TRUE))
 })
 
 test_that("render_cluster_review full=TRUE shows the text-only workflow trace for labeled output", {
@@ -312,7 +317,7 @@ test_that("render_cluster_review full=TRUE shows the text-only workflow trace fo
     prompt = list(
       catalog_path = "inst/prompts/cluster_labeling/catalog.json",
       system_path = "inst/prompts/cluster_labeling/system_scientific_caution_v1.md",
-      user_path = "inst/prompts/internal_cluster_labeling/user_explanation_pass_v1.md",
+      user_path = "inst/prompts/internal_cluster_labeling/v1/user_explanation_pass_v1.md",
       schema_path = NULL
     ),
     output = output,
@@ -429,7 +434,7 @@ test_that("render_cluster_review full=TRUE distinguishes model abstain from down
     prompt = list(
       catalog_path = "inst/prompts/cluster_labeling/catalog.json",
       system_path = "inst/prompts/cluster_labeling/system_scientific_caution_v1.md",
-      user_path = "inst/prompts/internal_cluster_labeling/user_abstain_reason_pass_v2.md",
+      user_path = "inst/prompts/internal_cluster_labeling/v1/user_abstain_reason_pass_v2.md",
       schema_path = NULL
     ),
     output = output,

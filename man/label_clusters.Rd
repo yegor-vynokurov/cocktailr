@@ -14,6 +14,7 @@ label_clusters(
   n_prototype_plots = 5L,
   n_borderline_plots = 5L,
   include_cover = TRUE,
+  user_added_data = NULL,
   semantic_layer = FALSE,
   semantic_min_phi = NULL,
   semantic_bootstrap = 200L,
@@ -35,7 +36,10 @@ label_clusters(
   ollama_options = NULL,
   timeout_sec = 600,
   max_retries = 1L,
-  workflow_steps = 1L,
+  workflow_steps = 3L,
+  use_brainstorm = TRUE,
+  internal_prompt_version = .default_cluster_label_internal_prompt_version(),
+  debug = FALSE,
   max_iterations = 3L,
   review_dir = file.path("temp", "reports", "cluster_reviews"),
   verbose = TRUE,
@@ -84,11 +88,14 @@ By default the semantic helpers use \code{cocktailr_project_root()}.}
 \item{semantic_force_species, semantic_force_reference}{Logical refresh flags
 forwarded to \code{score_cluster_semantics()}.}
 
-\item{provider, model, variant, label_mode, base_url, schema_path, temperature, top_p, seed, num_predict, prompt_budget_chars, keep_alive, ollama_options, timeout_sec, max_retries, workflow_steps, log_dir, request_fn}{LLM
+\item{provider, model, variant, label_mode, base_url, schema_path, temperature, top_p, seed, num_predict, prompt_budget_chars, keep_alive, ollama_options, timeout_sec, max_retries, workflow_steps, use_brainstorm, internal_prompt_version, debug, log_dir, request_fn}{LLM
 controls forwarded to \code{\link{llm_label_cluster}}. In particular,
 \code{workflow_steps = 3} enables the staged draft-analysis ->
-label-selection -> explanation mode, and \code{label_mode} switches
-between open, constrained, and dynamic label-space behavior.}
+label-selection -> explanation mode, \code{use_brainstorm} toggles whether
+the draft-analysis stage actually runs, \code{internal_prompt_version}
+selects the versioned internal prompt folder under
+\code{inst/prompts/internal_cluster_labeling/}, and \code{label_mode}
+switches between open, constrained, and dynamic label-space behavior.}
 
 \item{max_iterations}{Integer workflow budget. Currently allowed values are
 \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports

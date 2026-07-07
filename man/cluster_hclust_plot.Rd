@@ -13,13 +13,13 @@ cluster_hclust_plot(
   method = "average",
   label_leaves = TRUE,
   label_registry = "auto",
-  label_field = "plot_label_short",
+  label_field = "hclust_label_compact",
   fallback = c("keep", "cluster"),
   warn_missing = TRUE,
   file = NULL,
   main = "Cluster dendrogram (co-membership phi distance)",
   width_in = 10,
-  height_in = 7,
+  height_in = 10,
   png_res = 150,
   ...
 )
@@ -53,7 +53,7 @@ object returned by \code{\link{label_clusters}}. Used only when
 \code{label_leaves = TRUE}. Default: \code{"auto"}.}
 
 \item{label_field}{Character scalar naming the registry column to use for leaf
-replacement. Default: \code{"plot_label_short"}.}
+replacement. Default: \code{"hclust_label_compact"}.}
 
 \item{fallback}{One of \code{"keep"} or \code{"cluster"}, forwarded to
 \code{\link{label_hclust_leaves}}.}
@@ -67,7 +67,8 @@ supported.}
 \item{main}{Optional plot title. Default:
 \code{"Cluster dendrogram (co-membership phi distance)"}.}
 
-\item{width_in,height_in}{Plot size in inches for saved PDF/PNG output.}
+\item{width_in,height_in}{Plot size in inches for saved PDF/PNG output.
+Defaults: \code{width_in = 10}, \code{height_in = 10}.}
 
 \item{png_res}{Resolution in dpi for PNG output.}
 

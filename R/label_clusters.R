@@ -61,13 +61,16 @@
 #'   forwarded to \code{score_cluster_semantics()}.
 #' @param provider,model,variant,base_url,schema_path,temperature,top_p,seed,
 #'   num_predict,prompt_budget_chars,keep_alive,ollama_options,timeout_sec,max_retries,
-#'   workflow_steps,use_brainstorm,label_mode,debug,log_dir,request_fn LLM controls
+#'   workflow_steps,use_brainstorm,internal_prompt_version,label_mode,debug,
+#'   log_dir,request_fn LLM controls
 #'   forwarded to \code{\link{llm_label_cluster}}. The active runtime now
 #'   always uses the fixed draft-analysis -> label-decision ->
 #'   label-summary / abstain-reason route; \code{workflow_steps} is a
 #'   deprecated compatibility argument, \code{use_brainstorm} toggles whether
-#'   the draft-analysis stage actually runs, and \code{debug} controls whether
-#'   per-stage LLM log files are collected.
+#'   the draft-analysis stage actually runs, \code{internal_prompt_version}
+#'   selects the versioned internal prompt folder under
+#'   \code{inst/prompts/internal_cluster_labeling/}, and \code{debug}
+#'   controls whether per-stage LLM log files are collected.
 #' @param max_iterations Integer workflow budget. Currently allowed values are
 #'   \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports
 #'   the full EOF retry ladder \code{2400 -> 4800 -> 9600}.
@@ -167,6 +170,7 @@ label_clusters <- function(
     max_retries = 1L,
     workflow_steps = 3L,
     use_brainstorm = TRUE,
+    internal_prompt_version = .default_cluster_label_internal_prompt_version(),
     debug = FALSE,
     max_iterations = 3L,
     review_dir = file.path("temp", "reports", "cluster_reviews"),
@@ -188,6 +192,9 @@ label_clusters <- function(
     "workflow_steps"
   )
   use_brainstorm <- .arg_single_flag(use_brainstorm, "use_brainstorm")
+  internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
+    internal_prompt_version
+  )
   debug <- .arg_single_flag(debug, "debug")
   max_retries <- .arg_non_negative_integer(max_retries, "max_retries")
   prompt_budget_chars <- .arg_nullable_positive_integer(
@@ -314,6 +321,7 @@ label_clusters <- function(
       max_retries = max_retries,
       workflow_steps = workflow_steps,
       use_brainstorm = use_brainstorm,
+      internal_prompt_version = internal_prompt_version,
       dry_run = TRUE,
       request_fn = request_fn
     )
@@ -339,6 +347,7 @@ label_clusters <- function(
       max_retries = max_retries,
       workflow_steps = workflow_steps,
       use_brainstorm = use_brainstorm,
+      internal_prompt_version = internal_prompt_version,
       max_iterations = max_iterations,
       review_dir = review_dir,
       verbose = verbose,
@@ -644,6 +653,7 @@ label_clusters <- function(
     max_retries,
     workflow_steps,
     use_brainstorm,
+    internal_prompt_version,
     max_iterations,
     review_dir,
     verbose,
@@ -747,6 +757,7 @@ label_clusters <- function(
             request_fn = request_fn,
             workflow_steps = workflow_steps,
             use_brainstorm = use_brainstorm,
+            internal_prompt_version = internal_prompt_version,
             label_mode = label_mode,
             ollama_options = ollama_options
           )
@@ -770,6 +781,7 @@ label_clusters <- function(
             max_retries = max_retries,
             workflow_steps = workflow_steps,
             use_brainstorm = use_brainstorm,
+            internal_prompt_version = internal_prompt_version,
             dry_run = FALSE,
             log_dir = log_dir,
             request_fn = request_fn
@@ -1023,7 +1035,8 @@ label_clusters <- function(
       verbose = verbose,
       cluster_tag = cluster_tag,
       log_dir = log_dir,
-      request_fn = request_fn
+      request_fn = request_fn,
+      internal_prompt_version = internal_prompt_version
     )
 
     if (isTRUE(speculative_attempt$success)) {
@@ -1634,6 +1647,7 @@ label_clusters <- function(
     request_fn,
     workflow_steps,
     use_brainstorm,
+    internal_prompt_version,
     label_mode,
     ollama_options
 ) {
@@ -1672,6 +1686,7 @@ label_clusters <- function(
     max_retries = max_retries,
     workflow_steps = workflow_steps,
     use_brainstorm = use_brainstorm,
+    internal_prompt_version = internal_prompt_version,
     dry_run = FALSE,
     log_dir = log_dir,
     request_fn = request_fn,
@@ -1957,7 +1972,8 @@ label_clusters <- function(
     verbose,
     cluster_tag,
     log_dir,
-    request_fn
+    request_fn,
+    internal_prompt_version
 ) {
   request_fn <- request_fn %||% .ollama_chat_request
   variants <- .default_cluster_label_speculative_variants()
@@ -2008,7 +2024,8 @@ label_clusters <- function(
       strict_outcome = strict_outcome,
       cluster_score = cluster_score,
       log_dir = log_dir,
-      request_fn = request_fn
+      request_fn = request_fn,
+      internal_prompt_version = internal_prompt_version
     )
 
     iteration_log <- c(iteration_log, attempt$iteration_log %||% list())
@@ -2062,7 +2079,8 @@ label_clusters <- function(
     strict_outcome,
     cluster_score,
     log_dir,
-    request_fn
+    request_fn,
+    internal_prompt_version
 ) {
   speculative_label_mode <- if (identical(strict_label_mode, "dynamic")) {
     "open"
@@ -2087,6 +2105,7 @@ label_clusters <- function(
     ollama_options = ollama_options,
     timeout_sec = timeout_sec,
     max_retries = max_retries,
+    internal_prompt_version = internal_prompt_version,
     dry_run = TRUE,
     log_dir = NULL,
     request_fn = request_fn

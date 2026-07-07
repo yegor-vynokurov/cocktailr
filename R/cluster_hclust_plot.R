@@ -30,7 +30,7 @@
 #'   a `cluster_label_batch_result` object returned by [label_clusters()].
 #'   Used only when `label_leaves = TRUE`. Default: `"auto"`.
 #' @param label_field Character scalar naming the registry column to use for
-#'   leaf replacement. Default: `"plot_label_short"`.
+#'   leaf replacement. Default: `"hclust_label_compact"`.
 #' @param fallback One of `"keep"` or `"cluster"`, forwarded to
 #'   [label_hclust_leaves()].
 #' @param warn_missing Logical. Forwarded to [label_hclust_leaves()].
@@ -39,6 +39,7 @@
 #' @param main Optional plot title. Default:
 #'   `"Cluster dendrogram (co-membership phi distance)"`.
 #' @param width_in,height_in Plot size in inches for saved PDF/PNG output.
+#'   Defaults: `width_in = 10`, `height_in = 10`.
 #' @param png_res Resolution in dpi for PNG output.
 #' @param ... Additional graphical arguments forwarded to [graphics::plot()].
 #'
@@ -83,13 +84,13 @@ cluster_hclust_plot <- function(
     method = "average",
     label_leaves = TRUE,
     label_registry = "auto",
-    label_field = "plot_label_short",
+    label_field = "hclust_label_compact",
     fallback = c("keep", "cluster"),
     warn_missing = TRUE,
     file = NULL,
     main = "Cluster dendrogram (co-membership phi distance)",
     width_in = 10,
-    height_in = 7,
+    height_in = 10,
     png_res = 150,
     ...
 ) {

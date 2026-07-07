@@ -17,6 +17,7 @@ processed cluster. Important columns include:
 \item{plot_label_id}{Stable ID recommended for direct plot annotation.}
 \item{plot_label_short}{Human-readable short label when available, otherwise the cluster ID.}
 \item{legend_label}{Preformatted \code{cluster: label} text for legends or captions.}
+\item{hclust_label_compact}{Compact \code{cluster: label} text for dense \code{hclust} leaf labels, with controlled truncation when needed.}
 \item{display_label, canonical_label}{Structured labels returned by the LLM.}
 \item{label_available}{Whether a non-empty labeled output is available.}
 \item{accepted_label}{Whether a labeled output is available and the review status is \code{"accepted"}.}
@@ -37,7 +38,8 @@ The default visual convention supported by this registry is:
 \itemize{
 \item keep \code{cluster} / \code{plot_label_id} as the on-plot identifier,
 \item use \code{display_label} or \code{plot_label_short} when a short label is needed,
-\item use \code{legend_label} in legends or figure captions.
+\item use \code{legend_label} in legends or figure captions,
+\item use \code{hclust_label_compact} for dense \code{hclust} leaf labeling.
 }
 }
 \examples{
@@ -50,7 +52,7 @@ run <- label_clusters(
 )
 
 reg <- cluster_label_registry(run)
-reg[, c("cluster", "display_label", "legend_label", "review_file")]
+reg[, c("cluster", "display_label", "legend_label", "hclust_label_compact", "review_file")]
 }
 
 }

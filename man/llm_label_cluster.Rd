@@ -20,8 +20,11 @@ llm_label_cluster(
   ollama_options = NULL,
   timeout_sec = 120,
   max_retries = 1L,
-  workflow_steps = 1L,
+  workflow_steps = 3L,
+  use_brainstorm = TRUE,
+  internal_prompt_version = .default_cluster_label_internal_prompt_version(),
   dry_run = FALSE,
+  debug = FALSE,
   log_dir = NULL,
   request_fn = NULL
 )
@@ -88,8 +91,25 @@ first writes a freeform draft, then selects a short label through the public
 prompt ladder, and only after that produces the final structured
 explanation.}
 
+\item{use_brainstorm}{Logical; if \code{TRUE} (default), run the draft
+analysis step before label decision. If \code{FALSE}, the downstream
+label-decision and summary / abstain-reason stages use the cluster
+evidence directly without a brainstorm pass.}
+
+\item{internal_prompt_version}{Character scalar naming the subdirectory under
+\code{inst/prompts/internal_cluster_labeling/} that contains the active
+internal service-prompt bundle. Default \code{"v1"}. Copy that folder to
+\code{"v2"}, \code{"v3"}, and so on when you want to iterate on the internal
+draft / decision / summary prompts without changing the currently active
+production set.}
+
 \item{dry_run}{Logical; if \code{TRUE}, return the assembled prompt bundle and
 Ollama request payload without making a network request.}
+
+\item{debug}{Logical. If \code{TRUE}, collect per-stage LLM debug logs
+(prompts, requests, responses, parsed artifacts, diagnostics). Default
+\code{FALSE}. When \code{FALSE}, no LLM stage-log files are written even if
+\code{log_dir} is supplied.}
 
 \item{log_dir}{Optional directory for writing request / response artifacts.
 When supplied, \code{llm_label_cluster()} creates one timestamped run folder

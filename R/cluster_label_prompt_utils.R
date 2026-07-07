@@ -44,6 +44,35 @@
   path
 }
 
+.default_cluster_label_internal_prompt_version <- function() {
+  "v1"
+}
+
+.normalize_cluster_label_internal_prompt_version <- function(
+    internal_prompt_version = .default_cluster_label_internal_prompt_version(),
+    arg_name = "internal_prompt_version"
+) {
+  internal_prompt_version <- .arg_scalar_character(
+    internal_prompt_version,
+    arg_name
+  )
+  internal_prompt_version <- trimws(internal_prompt_version)
+
+  if (!nzchar(internal_prompt_version)) {
+    stop("`", arg_name, "` must not be empty.")
+  }
+
+  if (!grepl("^[A-Za-z0-9._-]+$", internal_prompt_version)) {
+    stop(
+      "`",
+      arg_name,
+      "` must be a simple folder name such as `v1` or `v2`."
+    )
+  }
+
+  internal_prompt_version
+}
+
 .cluster_label_schema_path <- function(
     schema_path = NULL,
     default_schema_name = "cluster_label_output_schema.json"
@@ -213,8 +242,75 @@
   )
 }
 
-.cluster_label_prompt_asset_path <- function(catalog, rel_path) {
+.is_cluster_label_version_dir_name <- function(x) {
+  x <- .as_scalar_character(x)
+  !is.na(x) && grepl("^v[0-9]+[A-Za-z0-9._-]*$", x)
+}
+
+.cluster_label_prompt_asset_path <- function(
+    catalog,
+    rel_path,
+    internal_prompt_version = .default_cluster_label_internal_prompt_version()
+) {
   rel_path <- .arg_scalar_character(rel_path, "rel_path")
+  rel_path_normalized <- gsub("\\\\", "/", rel_path)
+  internal_prefix <- "../internal_cluster_labeling/"
+
+  if (startsWith(rel_path_normalized, internal_prefix)) {
+    internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
+      internal_prompt_version
+    )
+    internal_root <- file.path(
+      catalog$dir,
+      "..",
+      "internal_cluster_labeling",
+      internal_prompt_version
+    )
+
+    if (!dir.exists(internal_root)) {
+      stop(
+        "Internal prompt version folder does not exist: `",
+        internal_prompt_version,
+        "` under `",
+        normalizePath(
+          file.path(catalog$dir, "..", "internal_cluster_labeling"),
+          winslash = "/",
+          mustWork = FALSE
+        ),
+        "`."
+      )
+    }
+
+    internal_rel_path <- substr(
+      rel_path_normalized,
+      nchar(internal_prefix) + 1L,
+      nchar(rel_path_normalized)
+    )
+    internal_rel_parts <- strsplit(
+      internal_rel_path,
+      "/",
+      fixed = TRUE
+    )[[1L]]
+
+    if (length(internal_rel_parts) >= 2L &&
+        .is_cluster_label_version_dir_name(internal_rel_parts[[1L]])) {
+      internal_rel_path <- paste(internal_rel_parts[-1L], collapse = "/")
+    }
+
+    path <- file.path(internal_root, internal_rel_path)
+
+    if (!file.exists(path)) {
+      stop(
+        "Internal prompt asset does not exist for `internal_prompt_version = \"",
+        internal_prompt_version,
+        "\"`: ",
+        rel_path
+      )
+    }
+
+    return(normalizePath(path, winslash = "/", mustWork = TRUE))
+  }
+
   path <- file.path(catalog$dir, rel_path)
 
   if (!file.exists(path)) {
@@ -828,13 +924,17 @@
     include_schema = TRUE,
     extra_template_values = NULL,
     label_mode = "open",
-    dynamic_candidates = NULL
+    dynamic_candidates = NULL,
+    internal_prompt_version = .default_cluster_label_internal_prompt_version()
 ) {
   catalog <- .read_cluster_label_prompt_catalog()
   catalog_def <- catalog$parsed
   variant_resolution <- .resolve_cluster_label_prompt_variant(catalog_def, variant)
   resolved_variant <- variant_resolution$resolved_variant
   variant_def <- variant_resolution$variant_def
+  internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
+    internal_prompt_version
+  )
 
   include_schema <- .arg_single_flag(include_schema, "include_schema")
   extra_template_values <- extra_template_values %||% list()
@@ -866,11 +966,13 @@
   vocabulary <- mode_context$vocabulary
   system_prompt_path <- .cluster_label_prompt_asset_path(
     catalog,
-    catalog_def$system_prompt_path
+    catalog_def$system_prompt_path,
+    internal_prompt_version = internal_prompt_version
   )
   user_prompt_path <- .cluster_label_prompt_asset_path(
     catalog,
-    variant_def$user_prompt_path
+    variant_def$user_prompt_path,
+    internal_prompt_version = internal_prompt_version
   )
   system_template <- .read_text_file(system_prompt_path)
   user_template <- .read_text_file(user_prompt_path)
@@ -992,6 +1094,7 @@
     vocabulary_path = vocabulary$path,
     vocabulary_text = vocabulary$rendered,
     vocabulary_object = vocabulary$parsed,
+    internal_prompt_version = internal_prompt_version,
     system_path = system_prompt_path,
     user_path = user_prompt_path,
     system = system_content,

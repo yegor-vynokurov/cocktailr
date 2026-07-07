@@ -98,6 +98,16 @@ test_that("llm_label_cluster dry-run assembles the fixed three-stage workflow", 
   expect_null(req$workflow$label$variants[[1]]$request$format)
   expect_equal(req$workflow$summary$variant, "label_summary_pass_v2")
   expect_equal(req$workflow$abstain_reason$variant, "abstain_reason_pass_v2")
+  expect_match(
+    req$workflow$draft$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v1/user_draft_analysis_v1.md",
+    fixed = TRUE
+  )
+  expect_match(
+    req$workflow$summary$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v1/user_label_summary_pass_v2.md",
+    fixed = TRUE
+  )
   expect_null(req$workflow$draft$request$format)
   expect_equal(
     vapply(req$workflow$label$variants, function(x) x$variant, character(1)),
@@ -167,6 +177,22 @@ test_that("llm_label_cluster dry-run assembles the fixed three-stage workflow", 
   expect_false(grepl("Cover summary:", req$prompt$evidence_text, fixed = TRUE))
   expect_false(grepl("mean_cover=", req$prompt$evidence_text, fixed = TRUE))
   expect_false(grepl("\\[E[0-9]+\\]", req$prompt$evidence_text))
+})
+
+test_that("llm_label_cluster validates the selected internal prompt version folder", {
+  ev <- .build_test_cluster_evidence()
+
+  expect_error(
+    llm_label_cluster(
+      evidence = ev,
+      model = "gemma4:12b",
+      variant = "label_primary_v1",
+      internal_prompt_version = "v999",
+      dry_run = TRUE
+    ),
+    "Internal prompt version folder does not exist",
+    fixed = TRUE
+  )
 })
 
 test_that("llm_label_cluster forwards additional Ollama options in dry-run mode", {
@@ -307,7 +333,7 @@ test_that("deprecated dynamic label mode falls back to open without dropping cod
   expect_match(first_label_prompt$user, "mixed meadow assemblage", fixed = TRUE)
 })
 
-test_that("llm_label_cluster assembles labeled output from label-only decision and summary-only text", {
+test_that("llm_label_cluster assembles labeled output and coerces label-only text to the final contract", {
   ev <- .build_test_cluster_evidence()
 
   fake_request <- function(url, payload, timeout_sec) {
@@ -341,8 +367,8 @@ test_that("llm_label_cluster assembles labeled output from label-only decision a
 
   expect_s3_class(res, "cluster_label_result")
   expect_equal(res$output$status, "labeled")
-  expect_equal(res$output$canonical_label, "compact_species_core")
-  expect_equal(res$output$display_label, "compact species core")
+  expect_equal(res$output$canonical_label, "compact_species")
+  expect_equal(res$output$display_label, "compact species")
   expect_true(.is_non_empty_scalar_character(res$output$label_summary))
   expect_identical(res$output$explanation, res$output$label_summary)
   expect_true(isTRUE(res$workflow$summary$attempts >= 1L))
@@ -405,7 +431,7 @@ test_that("llm_label_cluster preserves label-only abstain decisions and falls ba
   expect_true(isTRUE(res$workflow$explanation$fallback_used))
 })
 
-test_that("llm_label_cluster repairs an invalid label-decision reply with one local retry", {
+test_that("llm_label_cluster auto-coerces an overly long label-decision reply without retry", {
   ev <- .build_test_cluster_evidence()
   state <- new.env(parent = emptyenv())
   state$selection_calls <- 0L
@@ -445,11 +471,12 @@ test_that("llm_label_cluster repairs an invalid label-decision reply with one lo
     request_fn = fake_request
   )
 
-  expect_equal(state$selection_calls, 2L)
+  expect_equal(state$selection_calls, 1L)
   expect_equal(res$output$status, "labeled")
-  expect_equal(res$output$canonical_label, "compact_species_core")
+  expect_equal(res$output$canonical_label, "this_answer_is_too_long_and")
+  expect_equal(res$output$display_label, "This answer is too long and")
   expect_equal(length(res$workflow$label$attempts), 1L)
-  expect_equal(res$workflow$label$attempts[[1]]$attempts, 2L)
+  expect_equal(res$workflow$label$attempts[[1]]$attempts, 1L)
   expect_equal(res$workflow$label$attempts[[1]]$result, "labeled")
 })
 

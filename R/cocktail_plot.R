@@ -55,6 +55,8 @@
 #'           a \strong{combination of clusters} (e.g.
 #'           \code{list(c(1,4,6,14), c(2,12,17))}).
 #'   }
+#'   A one-column data frame such as \code{read.csv("selected_clusters.csv")}
+#'   is treated as one highlighted cluster per row.
 #'   Within each supplied cluster set, if both an ancestor and descendant are present,
 #'   only the topmost (ancestor) is used for elbow labelling and band
 #'   placement. All valid supplied IDs are considered for labels at
@@ -118,22 +120,7 @@ cocktail_plot <- function(
 ) {
   ## ---- helpers ------------------------------------------------------------
   .parse_clusters_arg <- function(v) {
-    if (is.null(v)) return(NULL)
-
-    parse_one <- function(x) {
-      if (is.character(x)) {
-        as.integer(sub("^c_", "", x))
-      } else {
-        as.integer(x)
-      }
-    }
-
-    if (is.list(v)) {
-      lapply(v, parse_one)
-    } else {
-      ids <- parse_one(v)
-      lapply(as.list(ids), identity)
-    }
+    .parse_cocktail_plot_clusters_arg(v)
   }
 
   .keep_topmost_within <- function(ids, CM) {
@@ -226,43 +213,125 @@ cocktail_plot <- function(
     }
   }
 
-  .page_caption_lines <- function(page_label_ids) {
+  .page_caption_layout <- function(page_label_ids) {
     if (is.null(label_registry_plot) || !length(page_label_ids)) {
-      return(character(0))
+      return(.cocktail_plot_legend_layout(NULL))
     }
 
     reg_page <- .cocktail_plot_registry_page_subset(
       label_registry = label_registry_plot,
       label_ids = page_label_ids
     )
-    .cocktail_plot_legend_lines(
+    .cocktail_plot_legend_layout(
       label_registry_page = reg_page,
       max_entries = 5L
     )
   }
 
-  .draw_page_header <- function(page_index, page_label_ids) {
-    caption_lines <- .page_caption_lines(page_label_ids)
-    title_line <- if (length(caption_lines)) length(caption_lines) + 0.4 else 0.2
+  .setup_page_layout <- function() {
+    if (!isTRUE(has_plot_label_legend)) {
+      return(FALSE)
+    }
 
+    graphics::layout(
+      matrix(c(1L, 2L), ncol = 1L),
+      heights = c(5.6, 1.9)
+    )
+    TRUE
+  }
+
+  .draw_page_header <- function(page_index) {
     graphics::mtext(
       .page_title(page_index, starts, ends, n, main),
       side = 3,
-      line = title_line,
+      line = 0.4,
       cex = 0.8
     )
 
-    if (!length(caption_lines)) {
+    invisible(NULL)
+  }
+
+  .draw_page_footer <- function(page_label_ids) {
+    if (!isTRUE(has_plot_label_legend)) {
       return(invisible(NULL))
     }
 
-    for (j in seq_along(caption_lines)) {
-      graphics::mtext(
-        caption_lines[[j]],
-        side = 3,
-        line = length(caption_lines) - j + 0.2,
-        adj = 0,
-        cex = 0.62
+    graphics::par(mar = c(0.6, 5, 0.2, 1))
+    graphics::plot.new()
+
+    caption_layout <- .page_caption_layout(page_label_ids)
+    section_lengths <- c(
+      length(caption_layout$header_lines),
+      length(caption_layout$body_columns[[1L]]),
+      length(caption_layout$body_columns[[2L]]),
+      length(caption_layout$footer_lines)
+    )
+    if (!any(section_lengths > 0L)) {
+      return(invisible(NULL))
+    }
+
+    n_body_rows <- max(
+      length(caption_layout$body_columns[[1L]]),
+      length(caption_layout$body_columns[[2L]])
+    )
+    total_rows <- max(
+      1L,
+      length(caption_layout$header_lines) +
+        n_body_rows +
+        length(caption_layout$footer_lines)
+    )
+    y_rows <- seq(0.93, 0.1, length.out = total_rows)
+    row_idx <- 1L
+    left_x <- 0.02
+    right_x <- if (caption_layout$n_columns >= 2L) 0.52 else left_x
+
+    if (length(caption_layout$header_lines)) {
+      header_rows <- seq.int(row_idx, length.out = length(caption_layout$header_lines))
+      graphics::text(
+        x = rep(left_x, length(header_rows)),
+        y = y_rows[header_rows],
+        labels = caption_layout$header_lines,
+        adj = c(0, 1),
+        cex = 0.62,
+        font = 2
+      )
+      row_idx <- row_idx + length(header_rows)
+    }
+
+    if (n_body_rows > 0L) {
+      body_rows <- seq.int(row_idx, length.out = n_body_rows)
+
+      if (length(caption_layout$body_columns[[1L]])) {
+        graphics::text(
+          x = rep(left_x, length(caption_layout$body_columns[[1L]])),
+          y = y_rows[body_rows[seq_along(caption_layout$body_columns[[1L]])]],
+          labels = caption_layout$body_columns[[1L]],
+          adj = c(0, 1),
+          cex = 0.58
+        )
+      }
+
+      if (length(caption_layout$body_columns[[2L]])) {
+        graphics::text(
+          x = rep(right_x, length(caption_layout$body_columns[[2L]])),
+          y = y_rows[body_rows[seq_along(caption_layout$body_columns[[2L]])]],
+          labels = caption_layout$body_columns[[2L]],
+          adj = c(0, 1),
+          cex = 0.58
+        )
+      }
+
+      row_idx <- row_idx + n_body_rows
+    }
+
+    if (length(caption_layout$footer_lines)) {
+      footer_rows <- seq.int(row_idx, length.out = length(caption_layout$footer_lines))
+      graphics::text(
+        x = rep(left_x, length(footer_rows)),
+        y = y_rows[footer_rows],
+        labels = caption_layout$footer_lines,
+        adj = c(0, 1),
+        cex = 0.54
       )
     }
 
@@ -279,6 +348,7 @@ cocktail_plot <- function(
   H  <- x$Cluster.height
   n  <- ncol(CS)
   label_registry_plot <- .resolve_cocktail_plot_label_registry(label_registry, x)
+  has_plot_label_legend <- !is.null(label_registry_plot) && isTRUE(label_clusters)
 
   species_names <- if (!is.null(x$species)) x$species else colnames(CS)
 
@@ -499,6 +569,13 @@ cocktail_plot <- function(
   # flag to report overlap/clipping
   overlap_dropped <- FALSE
 
+  if (use_current_dev && isTRUE(has_plot_label_legend)) {
+    on.exit(
+      graphics::layout(matrix(1L, nrow = 1L, ncol = 1L)),
+      add = TRUE
+    )
+  }
+
   ## ---- inner page-drawing function ----------------------------------------
   draw_page <- function(x_from, x_to, page_index, ...) {
     # For a single page, spread species across full width.
@@ -516,8 +593,7 @@ cocktail_plot <- function(
     x_lim_left  <- x_left  - x_pad
     x_lim_right <- x_right + x_pad
 
-    has_plot_label_legend <- !is.null(label_registry_plot) && isTRUE(label_clusters)
-    top_margin <- if (has_plot_label_legend) 8 else 1
+    top_margin <- if (has_plot_label_legend) 2 else 1
     graphics::par(mar = c(8, 5, top_margin, 1), xaxs = "i", yaxs = "i")
 
     ## adjusted y-limits so lines at y = -1 (phi = 1) are inside the plot
@@ -554,13 +630,16 @@ cocktail_plot <- function(
     # background bands
     if (!is.null(bands_to_draw) && nrow(bands_to_draw) > 0) {
       hit <- which(bands_to_draw$x1 >= x_from & bands_to_draw$x0 <= x_to)
-      for (b in hit) {
-        xl <- max(bands_to_draw$x0[b], x_from) - 0.5
-        xr <- min(bands_to_draw$x1[b], x_to)   + 0.5
+      bands_page <- bands_to_draw[hit, , drop = FALSE]
+      bands_page <- .cocktail_plot_stack_band_rows(bands_page)
+
+      for (b in seq_len(nrow(bands_page))) {
+        xl <- max(bands_page$x0[b], x_from) - 0.5
+        xr <- min(bands_page$x1[b], x_to)   + 0.5
         graphics::rect(
-          xl, bands_to_draw$y0[b], xr, bands_to_draw$y1[b],
-          col    = bands_to_draw$col[b],
-          border = bands_to_draw$border[b]
+          xl, bands_page$y0[b], xr, bands_page$y1[b],
+          col    = bands_page$col[b],
+          border = bands_page$border[b]
         )
       }
     }
@@ -928,8 +1007,10 @@ cocktail_plot <- function(
   ## ---- current device: only first page ------------------------------------
   if (use_current_dev) {
     p <- 1L
+    .setup_page_layout()
     page_label_ids <- draw_page(starts[p], ends[p], page_index = p, ...)
-    .draw_page_header(p, page_label_ids)
+    .draw_page_header(p)
+    .draw_page_footer(page_label_ids)
     if (overlap_dropped) {
       warning(
         "Some cluster labels were omitted to avoid overlaps or clipping; ",
@@ -945,8 +1026,10 @@ cocktail_plot <- function(
     on.exit(grDevices::dev.off(), add = TRUE)
 
     for (p in seq_along(starts)) {
+      .setup_page_layout()
       page_label_ids <- draw_page(starts[p], ends[p], page_index = p, ...)
-      .draw_page_header(p, page_label_ids)
+      .draw_page_header(p)
+      .draw_page_footer(page_label_ids)
     }
 
     ## ---- PNG output ---------------------------------------------------------
@@ -968,8 +1051,10 @@ cocktail_plot <- function(
         res    = png_res
       )
 
+      .setup_page_layout()
       page_label_ids <- draw_page(starts[p], ends[p], page_index = p, ...)
-      .draw_page_header(p, page_label_ids)
+      .draw_page_header(p)
+      .draw_page_footer(page_label_ids)
 
       grDevices::dev.off()
     }

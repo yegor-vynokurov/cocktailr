@@ -66,7 +66,19 @@ collapse into that trio:
 
 Supporting service prompts now live under:
 
-- `inst/prompts/internal_cluster_labeling/`
+- `inst/prompts/internal_cluster_labeling/v1/`
+
+The runtime can switch to a copied prompt bundle such as `v2/` or `v3/`
+via:
+
+- `llm_label_cluster(..., internal_prompt_version = "v2")`
+- `label_clusters(..., internal_prompt_version = "v2")`
+
+The recommended workflow is:
+
+1. Copy `inst/prompts/internal_cluster_labeling/v1/` to `v2/`.
+2. Edit the copied internal prompt files there.
+3. Point the runtime at that folder with `internal_prompt_version`.
 
 Archived copies of the retired public prompt texts now live under:
 

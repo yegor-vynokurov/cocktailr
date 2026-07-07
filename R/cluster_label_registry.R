@@ -11,7 +11,8 @@
 #' \itemize{
 #'   \item keep `cluster` / `plot_label_id` as the on-plot identifier,
 #'   \item use `display_label` or `plot_label_short` when a short label is needed,
-#'   \item use `legend_label` in legends or figure captions.
+#'   \item use `legend_label` in legends or figure captions,
+#'   \item use `hclust_label_compact` for dense `hclust` leaf labeling.
 #' }
 #'
 #' @param x An object returned by [label_clusters()].
@@ -23,6 +24,7 @@
 #'     \item{plot_label_id}{Stable ID recommended for direct plot annotation.}
 #'     \item{plot_label_short}{Human-readable short label when available, otherwise the cluster ID.}
 #'     \item{legend_label}{Preformatted `cluster: label` text for legends or captions.}
+#'     \item{hclust_label_compact}{Compact `cluster: label` text for dense `hclust` leaf labels, with controlled truncation when needed.}
 #'     \item{display_label, canonical_label}{Structured labels returned by the LLM.}
 #'     \item{public_display_label, public_canonical_label, public_label_source}{Downstream-only public label projection, including the post-abstain fallback when applicable.}
 #'     \item{label_available}{Whether a non-empty labeled output is available.}
@@ -45,7 +47,7 @@
 #' )
 #'
 #' reg <- cluster_label_registry(run)
-#' reg[, c("cluster", "display_label", "legend_label", "review_file")]
+#' reg[, c("cluster", "display_label", "legend_label", "hclust_label_compact", "review_file")]
 #' }
 #'
 #' @export
@@ -149,6 +151,7 @@ cluster_label_registry <- function(x) {
     check.names = FALSE,
     na.strings = "NA"
   )
+  reg <- .cluster_label_registry_add_hclust_label_compact(reg)
   class(reg) <- c("cluster_label_registry", "data.frame")
   attr(reg, "file") <- normalizePath(file, winslash = "/", mustWork = TRUE)
   reg
@@ -166,6 +169,7 @@ cluster_label_registry <- function(x) {
     plot_label_id = character(),
     plot_label_short = character(),
     legend_label = character(),
+    hclust_label_compact = character(),
     display_label = character(),
     canonical_label = character(),
     public_display_label = character(),
@@ -316,6 +320,15 @@ cluster_label_registry <- function(x) {
       used_placeholder = used_placeholder,
       public_display_label = public_display_label_plot,
       public_label_source = public_label_source
+    ),
+    hclust_label_compact = .cluster_label_registry_hclust_label(
+      cluster_id = cluster_id,
+      display_label = display_label_plot,
+      output_status = output_status,
+      used_placeholder = used_placeholder,
+      public_display_label = public_display_label_plot,
+      public_label_source = public_label_source,
+      plot_marker = plot_marker
     ),
     display_label = .cluster_label_registry_character(display_label),
     canonical_label = .cluster_label_registry_character(canonical_label),
@@ -480,6 +493,194 @@ cluster_label_registry <- function(x) {
   }
 
   cluster_id
+}
+
+.cluster_label_registry_hclust_label_max_chars <- function() {
+  52L
+}
+
+.cluster_label_registry_hclust_label <- function(
+    cluster_id,
+    display_label,
+    output_status,
+    used_placeholder,
+    public_display_label = NULL,
+    public_label_source = NULL,
+    plot_marker = NULL,
+    max_chars = .cluster_label_registry_hclust_label_max_chars()
+) {
+  cluster_id <- .as_scalar_character(cluster_id)
+  if (is.na(cluster_id) || !nzchar(cluster_id)) {
+    return(NA_character_)
+  }
+
+  label_text <- .cluster_label_registry_hclust_label_text(
+    display_label = display_label,
+    output_status = output_status,
+    used_placeholder = used_placeholder,
+    public_display_label = public_display_label,
+    public_label_source = public_label_source
+  )
+  if (is.na(label_text) || !nzchar(label_text)) {
+    label_text <- "[unlabeled]"
+  }
+
+  prefix <- paste0(cluster_id, ": ")
+  body_budget <- as.integer(max_chars) - nchar(prefix, type = "chars")
+  if (!is.finite(body_budget) || body_budget <= 0L) {
+    return(prefix)
+  }
+
+  paste0(
+    prefix,
+    .cluster_label_registry_truncate_hclust_text(
+      text = label_text,
+      max_chars = body_budget,
+      plot_marker = plot_marker
+    )
+  )
+}
+
+.cluster_label_registry_hclust_label_text <- function(
+    display_label,
+    output_status,
+    used_placeholder,
+    public_display_label = NULL,
+    public_label_source = NULL
+) {
+  if (.is_non_empty_scalar_character(display_label) &&
+      identical(output_status, "labeled") &&
+      !isTRUE(used_placeholder)) {
+    return(display_label)
+  }
+
+  if (identical(output_status, "abstain") &&
+      .is_non_empty_scalar_character(public_display_label) &&
+      identical(public_label_source, "post_abstain_fallback")) {
+    return(public_display_label)
+  }
+
+  if (identical(output_status, "abstain")) {
+    return("[abstained]")
+  }
+
+  if (isTRUE(used_placeholder)) {
+    return("[no valid label]")
+  }
+
+  "[unlabeled]"
+}
+
+.cluster_label_registry_truncate_hclust_text <- function(
+    text,
+    max_chars,
+    plot_marker = NULL,
+    ellipsis = "..."
+) {
+  text <- .as_scalar_character(text)
+  if (is.na(text) || !nzchar(text)) {
+    return("")
+  }
+
+  max_chars <- as.integer(max_chars)
+  if (!is.finite(max_chars) || max_chars <= 0L) {
+    return("")
+  }
+
+  if (nchar(text, type = "chars") <= max_chars) {
+    return(text)
+  }
+
+  plot_marker <- .as_scalar_character(plot_marker)
+  preserve_marker <- !is.na(plot_marker) &&
+    nzchar(plot_marker) &&
+    endsWith(text, plot_marker)
+
+  text_core <- text
+  marker_suffix <- ""
+  if (preserve_marker) {
+    marker_chars <- nchar(plot_marker, type = "chars")
+    text_chars <- nchar(text, type = "chars")
+    text_core <- substr(text, 1L, text_chars - marker_chars)
+    marker_suffix <- plot_marker
+  }
+
+  reserved_chars <- nchar(ellipsis, type = "chars") +
+    nchar(marker_suffix, type = "chars")
+  if (max_chars <= reserved_chars) {
+    return(substr(text, 1L, max_chars))
+  }
+
+  keep_chars <- max_chars - reserved_chars
+  kept <- substr(text_core, 1L, keep_chars)
+  kept <- sub("[[:space:]]+$", "", kept, perl = TRUE)
+  paste0(kept, ellipsis, marker_suffix)
+}
+
+.cluster_label_registry_add_hclust_label_compact <- function(reg) {
+  if (!is.data.frame(reg) || "hclust_label_compact" %in% names(reg)) {
+    return(reg)
+  }
+
+  n <- nrow(reg)
+  if (!n) {
+    reg$hclust_label_compact <- character(0)
+    return(reg)
+  }
+
+  display_label <- if ("display_label" %in% names(reg)) {
+    reg$display_label
+  } else {
+    rep(NA_character_, n)
+  }
+  public_display_label <- if ("public_display_label" %in% names(reg)) {
+    reg$public_display_label
+  } else {
+    rep(NA_character_, n)
+  }
+  public_label_source <- if ("public_label_source" %in% names(reg)) {
+    reg$public_label_source
+  } else {
+    rep(NA_character_, n)
+  }
+  output_status <- if ("output_status" %in% names(reg)) {
+    reg$output_status
+  } else {
+    rep(NA_character_, n)
+  }
+  used_placeholder <- if ("used_placeholder" %in% names(reg)) {
+    reg$used_placeholder
+  } else {
+    rep(FALSE, n)
+  }
+  plot_marker <- if ("plot_marker" %in% names(reg)) {
+    reg$plot_marker
+  } else {
+    rep(NA_character_, n)
+  }
+
+  reg$hclust_label_compact <- vapply(seq_len(n), function(i) {
+    display_label_plot <- .cluster_label_display_with_marker(
+      display_label[[i]],
+      plot_marker[[i]]
+    )
+    public_display_label_plot <- .cluster_label_display_with_marker(
+      public_display_label[[i]],
+      if (identical(public_label_source[[i]], "model_output")) plot_marker[[i]] else ""
+    )
+
+    .cluster_label_registry_hclust_label(
+      cluster_id = reg$cluster[[i]],
+      display_label = display_label_plot,
+      output_status = output_status[[i]],
+      used_placeholder = used_placeholder[[i]],
+      public_display_label = public_display_label_plot,
+      public_label_source = public_label_source[[i]],
+      plot_marker = plot_marker[[i]]
+    )
+  }, character(1))
+
+  reg
 }
 
 .cluster_label_registry_key_species_text <- function(key_species) {

@@ -123,6 +123,20 @@
   )
 }
 
+.write_cocktail_plot_auto_registry <- function(x, reg) {
+  review_root <- cocktailr:::.resolve_cocktailr_output_path(
+    file.path("temp", "reports", "cluster_reviews")
+  )
+  file <- cocktailr:::.expected_cluster_label_registry_file(x, review_root)
+  if (is.na(file) || !nzchar(file)) {
+    stop("Test registry path could not be resolved.")
+  }
+
+  dir.create(dirname(file), recursive = TRUE, showWarnings = FALSE)
+  utils::write.csv(reg, file = file, row.names = FALSE, na = "NA")
+  normalizePath(file, winslash = "/", mustWork = TRUE)
+}
+
 test_that("cocktail plot legend lines include shared review folder and filenames", {
   reg <- data.frame(
     cluster = c("c_1", "c_2"),
@@ -158,6 +172,143 @@ test_that("cocktail plot legend lines explain speculative star markers", {
   lines <- cocktailr:::.cocktail_plot_legend_lines(reg, max_entries = 5L)
 
   expect_true(any(grepl("tentative / speculative label", lines, fixed = TRUE)))
+})
+
+test_that("cocktail plot cluster parser treats one-column data frames as one cluster per row", {
+  groups <- cocktailr:::.parse_cocktail_plot_clusters_arg(
+    data.frame(cluster = c("c_12", "c_27"), stringsAsFactors = FALSE)
+  )
+
+  expect_equal(groups, list(12L, 27L))
+})
+
+test_that("cocktail plot cluster parser treats multi-column data frames as row groups", {
+  groups <- cocktailr:::.parse_cocktail_plot_clusters_arg(
+    data.frame(
+      a = c("c_12", "c_27"),
+      b = c("c_18", NA_character_),
+      stringsAsFactors = FALSE
+    )
+  )
+
+  expect_equal(groups[[1]], c(12L, 18L))
+  expect_equal(groups[[2]], c(27L, NA_integer_))
+})
+
+test_that("cocktail plot legend layout keeps short pages in one column and truncates long entries", {
+  reg <- data.frame(
+    cluster = paste0("c_", 1:4),
+    legend_label = c(
+      paste(
+        "c_1: extremely long dry grassland margin label with extra detail",
+        "that should be truncated before it overflows the footer panel"
+      ),
+      "c_2: mesic woodland",
+      "c_3: wet meadow edge",
+      "c_4: rocky opening"
+    ),
+    review_file = file.path(
+      "temp/reports/cluster_reviews/my_dataset",
+      paste0("c_", 1:4, "_review.md")
+    ),
+    stringsAsFactors = FALSE
+  )
+
+  layout <- cocktailr:::.cocktail_plot_legend_layout(reg, max_entries = 4L)
+
+  expect_equal(layout$n_columns, 1L)
+  expect_equal(layout$header_lines[[1]], "Label reviews: temp/reports/cluster_reviews/my_dataset/")
+  expect_length(layout$body_columns[[2L]], 0L)
+  expect_true(any(grepl("\\.\\.\\.", layout$body_columns[[1L]])))
+})
+
+test_that("cocktail plot legend layout switches dense pages to two columns and keeps footer notes full width", {
+  reg <- data.frame(
+    cluster = paste0("c_", 1:5),
+    legend_label = paste0("c_", 1:5, ": label ", 1:5, c("", "", "", "", "*")),
+    review_file = file.path(
+      "temp/reports/cluster_reviews/my_dataset",
+      paste0("c_", 1:5, "_review.md")
+    ),
+    is_speculative = c(FALSE, FALSE, FALSE, FALSE, TRUE),
+    plot_marker = c(NA_character_, NA_character_, NA_character_, NA_character_, "*"),
+    review_status = c("accepted", "accepted", "accepted", "accepted", "speculative"),
+    stringsAsFactors = FALSE
+  )
+
+  layout <- cocktailr:::.cocktail_plot_legend_layout(reg, max_entries = 5L)
+
+  expect_equal(layout$n_columns, 2L)
+  expect_equal(layout$header_lines[[1]], "Label reviews: temp/reports/cluster_reviews/my_dataset/")
+  expect_true(any(grepl("c_1: label 1", layout$body_columns[[1L]], fixed = TRUE)))
+  expect_true(any(grepl("c_5: label 5\\*", layout$body_columns[[2L]])))
+  expect_true(any(grepl("tentative / speculative label", layout$footer_lines, fixed = TRUE)))
+})
+
+test_that("cocktail plot legend layout keeps abstained entries alongside speculative notes", {
+  reg <- data.frame(
+    cluster = c("c_1", "c_2", "c_3"),
+    legend_label = c(
+      "c_1: mesic woodland",
+      "c_2: [abstained]",
+      "c_3: tentative grassland edge*"
+    ),
+    review_file = file.path(
+      "temp/reports/cluster_reviews/my_dataset",
+      c("c_1_review.md", "c_2_review.md", "c_3_review.md")
+    ),
+    is_speculative = c(FALSE, FALSE, TRUE),
+    plot_marker = c(NA_character_, NA_character_, "*"),
+    review_status = c("accepted", "abstained", "speculative"),
+    stringsAsFactors = FALSE
+  )
+
+  layout <- cocktailr:::.cocktail_plot_legend_layout(reg, max_entries = 3L)
+  body_lines <- c(layout$body_columns[[1L]], layout$body_columns[[2L]])
+
+  expect_equal(layout$n_columns, 1L)
+  expect_true(any(grepl("\\[abstained\\]", body_lines)))
+  expect_true(any(grepl("tentative / speculative label", layout$footer_lines, fixed = TRUE)))
+})
+
+test_that("cocktail plot stacks overlapping bands into separate vertical lanes", {
+  bands <- data.frame(
+    x0 = c(10, 20, 50),
+    x1 = c(30, 40, 60),
+    y0 = c(-1, -1, -1),
+    y1 = c(0.1, 0.1, 0.1),
+    col = c("#ff000030", "#00ff0030", "#0000ff30"),
+    border = c("#ff0000", "#00ff00", "#0000ff"),
+    stringsAsFactors = FALSE
+  )
+
+  stacked <- cocktailr:::.cocktail_plot_stack_band_rows(bands)
+
+  expect_equal(nrow(stacked), 3L)
+  expect_true(stacked$y1[[1]] > stacked$y0[[1]])
+  expect_true(stacked$y1[[2]] > stacked$y0[[2]])
+  expect_true(stacked$y1[[3]] > stacked$y0[[3]])
+  expect_gt(length(unique(stacked$y0[1:2])), 1L)
+  expect_gt(length(unique(stacked$y1[1:2])), 1L)
+  expect_equal(stacked$y0[[1]], stacked$y0[[3]])
+  expect_equal(stacked$y1[[1]], stacked$y1[[3]])
+})
+
+test_that("cocktail plot leaves non-overlapping bands at full height", {
+  bands <- data.frame(
+    x0 = c(10, 40),
+    x1 = c(20, 50),
+    y0 = c(-1, -1),
+    y1 = c(0.1, 0.1),
+    col = c("#ff000030", "#00ff0030"),
+    border = c("#ff0000", "#00ff00"),
+    stringsAsFactors = FALSE
+  )
+
+  stacked <- cocktailr:::.cocktail_plot_stack_band_rows(bands)
+
+  expect_equal(stacked$y0, bands$y0)
+  expect_equal(stacked$y1, bands$y1)
 })
 
 test_that("cocktail_plot accepts a label registry and still writes a png", {
@@ -215,6 +366,68 @@ test_that("cocktail_plot accepts a label registry and still writes a png", {
     )
   )
   expect_true(file.exists(out_file))
+})
+
+test_that("cocktail_plot keeps multi-page png output working with label registries", {
+  x <- .build_cocktail_plot_test_cocktail()
+  ev1 <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  ev2 <- cluster_evidence(x, "c_2", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out1 <- .build_cocktail_plot_valid_output(ev1)
+  out2 <- .build_cocktail_plot_valid_output(ev2)
+
+  outputs <- list(
+    c_1 = jsonlite::toJSON(out1, auto_unbox = TRUE, null = "null"),
+    c_2 = jsonlite::toJSON(out2, auto_unbox = TRUE, null = "null")
+  )
+
+  fake_request <- function(url, payload, timeout_sec) {
+    cluster_id_match <- regmatches(
+      payload$messages[[2]]$content,
+      regexpr("c_[0-9]+", payload$messages[[2]]$content, perl = TRUE)
+    )
+    cluster_id <- if (length(cluster_id_match)) cluster_id_match[[1]] else NA_character_
+
+    list(
+      status_code = 200L,
+      body_text = .cocktail_plot_llm_outer(payload, outputs[[cluster_id]]),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-cocktail-plot-multipage-registry")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  run <- label_clusters(
+    x = x,
+    clusters = c("c_1", "c_2"),
+    model = "fake-model",
+    variant = "label_primary_v1",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    labels_for_imgs = TRUE,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  out_file <- file.path(tempdir(), "cocktailr_plot_with_registry_multipage.png")
+  base <- sub("\\.png$", "", out_file)
+  page1 <- sprintf("%s_page01.png", base)
+  page2 <- sprintf("%s_page02.png", base)
+  unlink(c(page1, page2), force = TRUE)
+
+  expect_invisible(
+    cocktail_plot(
+      x = x,
+      file = out_file,
+      clusters = c("c_1", "c_2"),
+      label_clusters = TRUE,
+      label_registry = run$label_registry,
+      cex_species = 0.8,
+      page_size = 2
+    )
+  )
+  expect_true(file.exists(page1))
+  expect_true(file.exists(page2))
 })
 
 test_that("cocktail_plot can auto-load a saved label registry", {
@@ -292,38 +505,6 @@ test_that("auto-loaded speculative registries preserve starred labels", {
     type = "synthetic"
   )
 
-  ev1 <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
-  ev2 <- cluster_evidence(x, "c_2", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
-  out1 <- .build_cocktail_plot_valid_output(ev1)
-  out2 <- .build_cocktail_plot_speculative_output(ev2)
-
-  fake_request <- function(url, payload, timeout_sec) {
-    cluster_id_match <- regmatches(
-      payload$messages[[2]]$content,
-      regexpr("c_[0-9]+", payload$messages[[2]]$content, perl = TRUE)
-    )
-    cluster_id <- if (length(cluster_id_match)) cluster_id_match[[1]] else NA_character_
-    is_speculative <- any(vapply(payload$messages, function(msg) {
-      content <- msg$content %||% ""
-      grepl("Task mode: `label_soft_v1`", content, fixed = TRUE) ||
-        grepl("Task mode: `label_broad_v1`", content, fixed = TRUE)
-    }, logical(1)))
-
-    content <- if (identical(cluster_id, "c_1")) {
-      jsonlite::toJSON(out1, auto_unbox = TRUE, null = "null")
-    } else if (identical(cluster_id, "c_2") && is_speculative) {
-      jsonlite::toJSON(out2, auto_unbox = TRUE, null = "null")
-    } else {
-      "{\"status\":\"bad\"}"
-    }
-
-    list(
-      status_code = 200L,
-      body_text = .cocktail_plot_llm_outer(payload, content),
-      parsed = NULL
-    )
-  }
-
   review_root <- cocktailr:::.resolve_cocktailr_output_path(
     file.path("temp", "reports", "cluster_reviews")
   )
@@ -331,19 +512,27 @@ test_that("auto-loaded speculative registries preserve starred labels", {
   unlink(expected_dir, recursive = TRUE, force = TRUE)
   on.exit(unlink(expected_dir, recursive = TRUE, force = TRUE), add = TRUE)
 
-  run <- label_clusters(
-    x = x,
-    clusters = c("c_1", "c_2"),
-    model = "fake-model",
-    variant = "label_primary_v1",
-    speculative_fallback_mode = "after_rejection",
-    timeout_sec = 1,
-    labels_for_imgs = TRUE,
-    verbose = FALSE,
-    request_fn = fake_request
+  reg_saved <- data.frame(
+    cluster = c("c_1", "c_2"),
+    plot_label_short = c("label for c_1", "possible label for c_2*"),
+    legend_label = c("c_1: label for c_1", "c_2: possible label for c_2*"),
+    hclust_label_compact = c("c_1: label for c_1", "c_2: possible label for c_2*"),
+    display_label = c("label for c_1", "possible label for c_2"),
+    output_status = c("labeled", "labeled"),
+    used_placeholder = c(FALSE, FALSE),
+    review_file = file.path(
+      expected_dir,
+      c("c_1_review.md", "c_2_review.md")
+    ),
+    is_speculative = c(FALSE, TRUE),
+    plot_marker = c(NA_character_, "*"),
+    review_status = c("accepted", "speculative"),
+    stringsAsFactors = FALSE
   )
+  file <- .write_cocktail_plot_auto_registry(x, reg_saved)
 
-  expect_true(file.exists(run$label_registry_file))
+  expect_true(file.exists(file))
+  expect_true(startsWith(file, normalizePath(expected_dir, winslash = "/", mustWork = FALSE)))
 
   reg_auto <- cocktailr:::.load_cocktail_plot_label_registry_auto(x)
   row2 <- reg_auto[reg_auto$cluster == "c_2", , drop = FALSE]
@@ -375,6 +564,7 @@ test_that("label_hclust_leaves replaces leaf labels and preserves originals", {
     cluster = c("c_1", "c_2"),
     plot_label_short = c("mesic woodland", "wet meadow edge"),
     legend_label = c("c_1: mesic woodland", "c_2: wet meadow edge"),
+    hclust_label_compact = c("c_1: mesic woodland", "c_2: wet meadow edge"),
     display_label = c("mesic woodland", "wet meadow edge"),
     review_file = c(
       "temp/reports/cluster_reviews/my_dataset/c_1_review.md",
@@ -411,30 +601,6 @@ test_that("label_hclust_leaves can auto-load a saved registry", {
     type = "synthetic"
   )
 
-  ev1 <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
-  ev2 <- cluster_evidence(x, "c_2", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
-  out1 <- .build_cocktail_plot_valid_output(ev1)
-  out2 <- .build_cocktail_plot_valid_output(ev2)
-
-  outputs <- list(
-    c_1 = jsonlite::toJSON(out1, auto_unbox = TRUE, null = "null"),
-    c_2 = jsonlite::toJSON(out2, auto_unbox = TRUE, null = "null")
-  )
-
-  fake_request <- function(url, payload, timeout_sec) {
-    cluster_id_match <- regmatches(
-      payload$messages[[2]]$content,
-      regexpr("c_[0-9]+", payload$messages[[2]]$content, perl = TRUE)
-    )
-    cluster_id <- if (length(cluster_id_match)) cluster_id_match[[1]] else NA_character_
-
-    list(
-      status_code = 200L,
-      body_text = .cocktail_plot_llm_outer(payload, outputs[[cluster_id]]),
-      parsed = NULL
-    )
-  }
-
   review_root <- cocktailr:::.resolve_cocktailr_output_path(
     file.path("temp", "reports", "cluster_reviews")
   )
@@ -442,18 +608,23 @@ test_that("label_hclust_leaves can auto-load a saved registry", {
   unlink(expected_dir, recursive = TRUE, force = TRUE)
   on.exit(unlink(expected_dir, recursive = TRUE, force = TRUE), add = TRUE)
 
-  run <- label_clusters(
-    x = x,
-    clusters = c("c_1", "c_2"),
-    model = "fake-model",
-    variant = "label_primary_v1",
-    timeout_sec = 1,
-    labels_for_imgs = TRUE,
-    verbose = FALSE,
-    request_fn = fake_request
+  reg_saved <- data.frame(
+    cluster = c("c_1", "c_2"),
+    plot_label_short = c("label for c_1", "label for c_2"),
+    legend_label = c("c_1: label for c_1", "c_2: label for c_2"),
+    display_label = c("label for c_1", "label for c_2"),
+    output_status = c("labeled", "labeled"),
+    used_placeholder = c(FALSE, FALSE),
+    plot_marker = c("", ""),
+    review_file = file.path(
+      expected_dir,
+      c("c_1_review.md", "c_2_review.md")
+    ),
+    stringsAsFactors = FALSE
   )
+  file <- .write_cocktail_plot_auto_registry(x, reg_saved)
 
-  expect_true(file.exists(run$label_registry_file))
+  expect_true(file.exists(file))
 
   D <- cluster_phi_dist(x = x, clusters = c("c_1", "c_2"))
   hc <- hclust(D, method = "average")
@@ -478,6 +649,7 @@ test_that("cluster_hclust_plot draws a one-call hclust figure", {
     cluster = c("c_1", "c_2"),
     plot_label_short = c("mesic woodland", "wet meadow edge*"),
     legend_label = c("c_1: mesic woodland", "c_2: wet meadow edge*"),
+    hclust_label_compact = c("c_1: mesic woodland", "c_2: wet meadow edge*"),
     display_label = c("mesic woodland", "wet meadow edge"),
     review_file = c(
       "temp/reports/cluster_reviews/my_dataset/c_1_review.md",
@@ -503,6 +675,46 @@ test_that("cluster_hclust_plot draws a one-call hclust figure", {
   expect_s3_class(res$dist, "dist")
   expect_s3_class(res$hclust, "hclust")
   expect_s3_class(res$hclust_plot, "hclust")
+  expect_equal(res$hclust_plot$labels, reg$hclust_label_compact)
+})
+
+test_that("cluster_hclust_plot defaults keep the taller compact-label layout", {
+  expect_equal(formals(cluster_hclust_plot)$label_field, "hclust_label_compact")
+  expect_equal(formals(cluster_hclust_plot)$height_in, 10)
+})
+
+test_that("cluster_hclust_plot still accepts explicit label_field overrides", {
+  x <- .build_cocktail_plot_test_cocktail()
+  out_file <- file.path(tempdir(), "cluster_hclust_plot_override.png")
+  unlink(out_file, force = TRUE)
+
+  reg <- data.frame(
+    cluster = c("c_1", "c_2"),
+    plot_label_short = c("mesic woodland", "wet meadow edge*"),
+    legend_label = c("c_1: mesic woodland", "c_2: wet meadow edge*"),
+    hclust_label_compact = c("c_1: mesic woodland", "c_2: wet meadow edge*"),
+    display_label = c("mesic woodland", "wet meadow edge"),
+    review_file = c(
+      "temp/reports/cluster_reviews/my_dataset/c_1_review.md",
+      "temp/reports/cluster_reviews/my_dataset/c_2_review.md"
+    ),
+    is_speculative = c(FALSE, TRUE),
+    plot_marker = c(NA_character_, "*"),
+    review_status = c("accepted", "speculative"),
+    stringsAsFactors = FALSE
+  )
+
+  res <- cluster_hclust_plot(
+    x = x,
+    clusters = c("c_1", "c_2"),
+    label_registry = reg,
+    label_field = "plot_label_short",
+    file = out_file,
+    warn_missing = FALSE,
+    cex = 0.8
+  )
+
+  expect_true(file.exists(out_file))
   expect_equal(res$hclust_plot$labels, reg$plot_label_short)
 })
 
@@ -513,30 +725,6 @@ test_that("cluster_hclust_plot can auto-load saved labels in one call", {
     type = "synthetic"
   )
 
-  ev1 <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
-  ev2 <- cluster_evidence(x, "c_2", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
-  out1 <- .build_cocktail_plot_valid_output(ev1)
-  out2 <- .build_cocktail_plot_valid_output(ev2)
-
-  outputs <- list(
-    c_1 = jsonlite::toJSON(out1, auto_unbox = TRUE, null = "null"),
-    c_2 = jsonlite::toJSON(out2, auto_unbox = TRUE, null = "null")
-  )
-
-  fake_request <- function(url, payload, timeout_sec) {
-    cluster_id_match <- regmatches(
-      payload$messages[[2]]$content,
-      regexpr("c_[0-9]+", payload$messages[[2]]$content, perl = TRUE)
-    )
-    cluster_id <- if (length(cluster_id_match)) cluster_id_match[[1]] else NA_character_
-
-    list(
-      status_code = 200L,
-      body_text = .cocktail_plot_llm_outer(payload, outputs[[cluster_id]]),
-      parsed = NULL
-    )
-  }
-
   review_root <- cocktailr:::.resolve_cocktailr_output_path(
     file.path("temp", "reports", "cluster_reviews")
   )
@@ -544,18 +732,23 @@ test_that("cluster_hclust_plot can auto-load saved labels in one call", {
   unlink(expected_dir, recursive = TRUE, force = TRUE)
   on.exit(unlink(expected_dir, recursive = TRUE, force = TRUE), add = TRUE)
 
-  run <- label_clusters(
-    x = x,
-    clusters = c("c_1", "c_2"),
-    model = "fake-model",
-    variant = "label_primary_v1",
-    timeout_sec = 1,
-    labels_for_imgs = TRUE,
-    verbose = FALSE,
-    request_fn = fake_request
+  reg_saved <- data.frame(
+    cluster = c("c_1", "c_2"),
+    plot_label_short = c("label for c_1", "label for c_2"),
+    legend_label = c("c_1: label for c_1", "c_2: label for c_2"),
+    display_label = c("label for c_1", "label for c_2"),
+    output_status = c("labeled", "labeled"),
+    used_placeholder = c(FALSE, FALSE),
+    plot_marker = c("", ""),
+    review_file = file.path(
+      expected_dir,
+      c("c_1_review.md", "c_2_review.md")
+    ),
+    stringsAsFactors = FALSE
   )
+  file <- .write_cocktail_plot_auto_registry(x, reg_saved)
 
-  expect_true(file.exists(run$label_registry_file))
+  expect_true(file.exists(file))
 
   out_file <- file.path(tempdir(), "cluster_hclust_plot_auto.png")
   unlink(out_file, force = TRUE)
@@ -570,6 +763,6 @@ test_that("cluster_hclust_plot can auto-load saved labels in one call", {
   )
 
   expect_true(file.exists(out_file))
-  expect_equal(res$hclust_plot$labels, c("label for c_1", "label for c_2"))
+  expect_equal(res$hclust_plot$labels, c("c_1: label for c_1", "c_2: label for c_2"))
 })
 

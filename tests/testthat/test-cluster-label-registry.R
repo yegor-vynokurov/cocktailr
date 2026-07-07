@@ -222,9 +222,9 @@ test_that("cluster_label_registry flattens batch output into plotting-ready fiel
   expect_equal(reg$cluster, c("c_1", "c_2"))
   expect_equal(reg$selection_rank, c(1L, 2L))
   expect_true(all(c(
-    "plot_label_id", "plot_label_short", "legend_label", "display_label",
-    "canonical_label", "label_available", "accepted_label", "review_status",
-    "model", "variant", "workflow_steps", "review_file"
+    "plot_label_id", "plot_label_short", "legend_label", "hclust_label_compact",
+    "display_label", "canonical_label", "label_available", "accepted_label",
+    "review_status", "model", "variant", "workflow_steps", "review_file"
   ) %in% names(reg)))
 
   row1 <- reg[reg$cluster == "c_1", , drop = FALSE]
@@ -233,6 +233,7 @@ test_that("cluster_label_registry flattens batch output into plotting-ready fiel
   expect_equal(row1$plot_label_id[[1]], "c_1")
   expect_equal(row1$plot_label_short[[1]], "sp1-sp2 cluster")
   expect_equal(row1$legend_label[[1]], "c_1: sp1-sp2 cluster")
+  expect_equal(row1$hclust_label_compact[[1]], "c_1: sp1-sp2 cluster")
   expect_equal(row1$display_label[[1]], "sp1-sp2 cluster")
   expect_equal(row1$canonical_label[[1]], "sp1_sp2_cluster")
   expect_true(row1$label_available[[1]])
@@ -246,6 +247,7 @@ test_that("cluster_label_registry flattens batch output into plotting-ready fiel
   expect_equal(row2$plot_label_id[[1]], "c_2")
   expect_equal(row2$plot_label_short[[1]], "c_2")
   expect_equal(row2$legend_label[[1]], "c_2: [abstained]")
+  expect_equal(row2$hclust_label_compact[[1]], "c_2: [abstained]")
   expect_true(is.na(row2$display_label[[1]]))
   expect_true(is.na(row2$canonical_label[[1]]))
   expect_false(row2$label_available[[1]])
@@ -318,6 +320,7 @@ test_that("cluster_label_registry exposes post-abstain public fallback separatel
   expect_false(row$label_available[[1]])
   expect_equal(row$plot_label_short[[1]], "Chaotic Cluster")
   expect_equal(row$legend_label[[1]], "c_1: Chaotic Cluster")
+  expect_equal(row$hclust_label_compact[[1]], "c_1: Chaotic Cluster")
   expect_equal(row$review_status[[1]], "abstained")
 })
 
@@ -334,7 +337,7 @@ test_that("cluster_label_registry returns a typed empty registry for empty batch
   expect_s3_class(reg, "cluster_label_registry")
   expect_true(inherits(reg, "data.frame"))
   expect_equal(nrow(reg), 0L)
-  expect_true(all(c("cluster", "legend_label", "review_file") %in% names(reg)))
+  expect_true(all(c("cluster", "legend_label", "hclust_label_compact", "review_file") %in% names(reg)))
 })
 
 test_that("cluster_label_registry carries speculative plotting metadata", {
@@ -344,6 +347,7 @@ test_that("cluster_label_registry carries speculative plotting metadata", {
 
   out1 <- .build_registry_valid_output(ev1)
   out2 <- .build_registry_valid_output(ev2)
+  out2$display_label <- "Calcareous open grasslands heliophilous drought specialists"
   out2$confidence$score <- 0
   out2$confidence$rationale <- "Tentative only; the evidence gives direction but not stability."
   out2$not_confirmed_by_data <- list(
@@ -424,10 +428,75 @@ test_that("cluster_label_registry carries speculative plotting metadata", {
   expect_equal(row2$plot_marker[[1]], "*")
   expect_true(row2$label_available[[1]])
   expect_false(row2$accepted_label[[1]])
-  expect_equal(row2$plot_label_short[[1]], "sp1-sp2 cluster*")
-  expect_equal(row2$legend_label[[1]], "c_2: sp1-sp2 cluster*")
+  expect_equal(
+    row2$plot_label_short[[1]],
+    "Calcareous open grasslands heliophilous drought specialists*"
+  )
+  expect_equal(
+    row2$legend_label[[1]],
+    "c_2: Calcareous open grasslands heliophilous drought specialists*"
+  )
+  expect_match(row2$hclust_label_compact[[1]], "^c_2: ")
+  expect_true(endsWith(row2$hclust_label_compact[[1]], "...*"))
+  expect_lt(
+    nchar(row2$hclust_label_compact[[1]], type = "chars"),
+    nchar(row2$legend_label[[1]], type = "chars")
+  )
+  expect_lte(
+    nchar(row2$hclust_label_compact[[1]], type = "chars"),
+    cocktailr:::.cluster_label_registry_hclust_label_max_chars()
+  )
   expect_equal(row2$strict_outcome[[1]], "placeholder")
   expect_equal(row2$strict_validation_status[[1]], "unsupported_claims")
   expect_match(row2$missing_for_confidence_text[[1]], "not confirmed", ignore.case = TRUE)
+})
+
+test_that("reading an older saved registry backfills compact hclust labels", {
+  reg_old <- data.frame(
+    cluster = c("c_1", "c_2"),
+    display_label = c("mesic woodland", NA_character_),
+    public_display_label = c(NA_character_, "Chaotic Cluster"),
+    public_label_source = c(NA_character_, "post_abstain_fallback"),
+    output_status = c("labeled", "abstain"),
+    used_placeholder = c(FALSE, FALSE),
+    plot_marker = c("", ""),
+    review_file = c("c_1_review.md", "c_2_review.md"),
+    stringsAsFactors = FALSE
+  )
+
+  file <- file.path(tempdir(), "cluster_label_registry_old_schema.csv")
+  utils::write.csv(reg_old, file = file, row.names = FALSE, na = "NA")
+
+  reg_loaded <- cocktailr:::.read_cluster_label_registry_file(file)
+
+  expect_true("hclust_label_compact" %in% names(reg_loaded))
+  expect_equal(reg_loaded$hclust_label_compact, c("c_1: mesic woodland", "c_2: Chaotic Cluster"))
+})
+
+test_that("compact hclust labels keep cluster prefixes across fallback states", {
+  reg <- data.frame(
+    cluster = c("c_1", "c_2", "c_3", "c_4"),
+    display_label = c("mesic woodland", NA_character_, NA_character_, NA_character_),
+    public_display_label = c(NA_character_, "Chaotic Cluster", NA_character_, NA_character_),
+    public_label_source = c(NA_character_, "post_abstain_fallback", NA_character_, NA_character_),
+    output_status = c("labeled", "abstain", "abstain", "other"),
+    used_placeholder = c(FALSE, FALSE, FALSE, TRUE),
+    plot_marker = c("", "", "", ""),
+    review_file = paste0("c_", 1:4, "_review.md"),
+    stringsAsFactors = FALSE
+  )
+
+  reg <- cocktailr:::.cluster_label_registry_add_hclust_label_compact(reg)
+
+  expect_equal(
+    reg$hclust_label_compact,
+    c(
+      "c_1: mesic woodland",
+      "c_2: Chaotic Cluster",
+      "c_3: [abstained]",
+      "c_4: [no valid label]"
+    )
+  )
+  expect_true(all(startsWith(reg$hclust_label_compact, paste0(reg$cluster, ": "))))
 })
 

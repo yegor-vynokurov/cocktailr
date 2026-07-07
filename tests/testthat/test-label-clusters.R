@@ -152,9 +152,14 @@ test_that("label_clusters runs the fixed pipeline, writes a review card, and sav
   expect_true(file.exists(res$label_registry_file))
   expect_match(
     paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n"),
-    "## Final explanation",
+    "- Label summary: ",
     fixed = TRUE
   )
+  expect_false(grepl(
+    "## Final explanation",
+    paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n"),
+    fixed = TRUE
+  ))
 })
 
 test_that("label_clusters writes review-adjacent model logs for each stage, including brainstorm", {

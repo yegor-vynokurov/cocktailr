@@ -3,6 +3,59 @@
 # These utilities keep `cocktail_plot()` focused on geometry while the
 # label-registry parsing and legend/caption assembly stay testable on their own.
 
+.parse_cocktail_plot_clusters_arg <- function(v) {
+  if (is.null(v)) {
+    return(NULL)
+  }
+
+  parse_one <- function(x) {
+    if (is.character(x)) {
+      as.integer(sub("^c_", "", x))
+    } else {
+      as.integer(x)
+    }
+  }
+
+  if (is.data.frame(v)) {
+    if (!nrow(v) || !ncol(v)) {
+      return(list())
+    }
+
+    if (ncol(v) == 1L) {
+      v <- v[[1L]]
+    } else {
+      out <- vector("list", nrow(v))
+      for (i in seq_len(nrow(v))) {
+        out[[i]] <- parse_one(unlist(v[i, , drop = FALSE], use.names = FALSE))
+      }
+      return(out)
+    }
+  }
+
+  if (is.matrix(v)) {
+    if (!nrow(v) || !ncol(v)) {
+      return(list())
+    }
+
+    if (ncol(v) == 1L) {
+      v <- v[, 1L]
+    } else {
+      out <- vector("list", nrow(v))
+      for (i in seq_len(nrow(v))) {
+        out[[i]] <- parse_one(v[i, ])
+      }
+      return(out)
+    }
+  }
+
+  if (is.list(v)) {
+    return(lapply(v, parse_one))
+  }
+
+  ids <- parse_one(v)
+  lapply(as.list(ids), identity)
+}
+
 .normalize_cocktail_plot_label_registry <- function(label_registry) {
   if (is.null(label_registry)) {
     return(NULL)
@@ -38,6 +91,7 @@
     return(reg[0, , drop = FALSE])
   }
   reg <- reg[!duplicated(reg$cluster), , drop = FALSE]
+  reg <- .cluster_label_registry_add_hclust_label_compact(reg)
   rownames(reg) <- NULL
   reg
 }
@@ -225,25 +279,91 @@
   paste(common, collapse = "/")
 }
 
-.cocktail_plot_legend_lines <- function(label_registry_page, max_entries = 12L) {
-  if (is.null(label_registry_page) || !nrow(label_registry_page)) {
+.cocktail_plot_truncate_text <- function(text, width = 80L) {
+  text <- .as_scalar_character(text)
+  if (is.na(text) || !nzchar(text)) {
+    return("")
+  }
+
+  width <- suppressWarnings(as.integer(width))
+  if (is.na(width) || width < 4L) {
+    return(text)
+  }
+
+  if (nchar(text, type = "width") <= width) {
+    return(text)
+  }
+
+  paste0(substr(text, 1L, width - 3L), "...")
+}
+
+.cocktail_plot_wrap_text <- function(text, width = 80L, continuation_indent = 2L) {
+  text <- .as_scalar_character(text)
+  if (is.na(text) || !nzchar(text)) {
     return(character(0))
   }
 
-  max_entries <- max(1L, as.integer(max_entries))
-  common_dir <- .cocktail_plot_common_review_dir(label_registry_page$review_file)
+  width <- suppressWarnings(as.integer(width))
+  width <- if (is.na(width)) 80L else max(12L, width)
 
-  lines <- character(0)
-  if (!is.na(common_dir) && nzchar(common_dir)) {
-    lines <- c(lines, paste0("Label reviews: ", common_dir, "/"))
-  } else {
-    lines <- c(lines, "Label reviews: paths not recorded.")
+  continuation_indent <- suppressWarnings(as.integer(continuation_indent))
+  continuation_indent <- if (is.na(continuation_indent)) 0L else max(0L, continuation_indent)
+
+  wrapped <- strwrap(
+    text,
+    width = width,
+    exdent = continuation_indent
+  )
+  if (!length(wrapped)) {
+    return(text)
   }
 
+  wrapped
+}
+
+.cocktail_plot_legend_layout <- function(
+    label_registry_page,
+    max_entries = 12L,
+    two_column_threshold = 5L,
+    header_wrap_width = 96L,
+    entry_label_width_one_col = 72L,
+    entry_label_width_two_col = 36L,
+    entry_wrap_width_one_col = 84L,
+    entry_wrap_width_two_col = 40L,
+    footer_wrap_width = 96L
+) {
+  empty_layout <- list(
+    header_lines = character(0),
+    body_columns = list(character(0), character(0)),
+    footer_lines = character(0),
+    n_columns = 0L
+  )
+
+  if (is.null(label_registry_page) || !nrow(label_registry_page)) {
+    return(empty_layout)
+  }
+
+  max_entries <- max(1L, as.integer(max_entries))
   shown_n <- min(nrow(label_registry_page), max_entries)
   page_slice <- label_registry_page[seq_len(shown_n), , drop = FALSE]
 
-  entry_lines <- vapply(seq_len(nrow(page_slice)), function(i) {
+  common_dir <- .cocktail_plot_common_review_dir(label_registry_page$review_file)
+  header_text <- if (!is.na(common_dir) && nzchar(common_dir)) {
+    paste0("Label reviews: ", common_dir, "/")
+  } else {
+    "Label reviews: paths not recorded."
+  }
+  header_lines <- .cocktail_plot_wrap_text(
+    header_text,
+    width = header_wrap_width,
+    continuation_indent = 2L
+  )
+
+  n_columns <- if (nrow(page_slice) >= as.integer(two_column_threshold)) 2L else 1L
+  label_width <- if (n_columns == 2L) entry_label_width_two_col else entry_label_width_one_col
+  wrap_width <- if (n_columns == 2L) entry_wrap_width_two_col else entry_wrap_width_one_col
+
+  entry_blocks <- lapply(seq_len(nrow(page_slice)), function(i) {
     entry <- page_slice[i, , drop = FALSE]
     filename <- basename(.as_scalar_character(entry$review_file[[1]]))
     filename <- if (!is.na(filename) && nzchar(filename)) {
@@ -251,24 +371,86 @@
     } else {
       ""
     }
-    paste0(entry$legend_label[[1]], filename)
-  }, character(1))
 
-  lines <- c(lines, entry_lines)
+    entry_text <- paste0(
+      .cocktail_plot_truncate_text(entry$legend_label[[1]], width = label_width),
+      filename
+    )
 
-  remaining <- nrow(label_registry_page) - shown_n
-  if (remaining > 0L) {
-    lines <- c(lines, paste0("... +", remaining, " more labeled cluster(s) on this page"))
+    .cocktail_plot_wrap_text(
+      entry_text,
+      width = wrap_width,
+      continuation_indent = 2L
+    )
+  })
+
+  if (n_columns == 2L) {
+    split_at <- ceiling(length(entry_blocks) / 2)
+    left_blocks <- entry_blocks[seq_len(split_at)]
+    right_blocks <- if (split_at < length(entry_blocks)) {
+      entry_blocks[(split_at + 1L):length(entry_blocks)]
+    } else {
+      list()
+    }
+  } else {
+    left_blocks <- entry_blocks
+    right_blocks <- list()
   }
 
-  if (.cocktail_plot_registry_has_speculative(label_registry_page)) {
-    lines <- c(
-      lines,
-      "* tentative / speculative label; strict validation did not accept a stable evidence-backed label"
+  flatten_blocks <- function(blocks) {
+    if (!length(blocks)) {
+      return(character(0))
+    }
+    unlist(blocks, use.names = FALSE)
+  }
+
+  footer_lines <- character(0)
+  remaining <- nrow(label_registry_page) - shown_n
+  if (remaining > 0L) {
+    footer_lines <- c(
+      footer_lines,
+      .cocktail_plot_wrap_text(
+        paste0("... +", remaining, " more labeled cluster(s) on this page"),
+        width = footer_wrap_width,
+        continuation_indent = 2L
+      )
     )
   }
 
-  lines
+  if (.cocktail_plot_registry_has_speculative(label_registry_page)) {
+    footer_lines <- c(
+      footer_lines,
+      .cocktail_plot_wrap_text(
+        "* tentative / speculative label; strict validation did not accept a stable evidence-backed label",
+        width = footer_wrap_width,
+        continuation_indent = 2L
+      )
+    )
+  }
+
+  list(
+    header_lines = header_lines,
+    body_columns = list(
+      flatten_blocks(left_blocks),
+      flatten_blocks(right_blocks)
+    ),
+    footer_lines = footer_lines,
+    n_columns = n_columns
+  )
+}
+
+.cocktail_plot_legend_lines <- function(label_registry_page, max_entries = 12L) {
+  layout <- .cocktail_plot_legend_layout(
+    label_registry_page = label_registry_page,
+    max_entries = max_entries
+  )
+
+  c(
+    layout$header_lines,
+    layout$body_columns[[1L]],
+    layout$body_columns[[2L]],
+    layout$footer_lines
+  )
 }
 
 .cocktail_plot_registry_has_speculative <- function(label_registry_page) {
@@ -299,4 +481,79 @@
   }
 
   FALSE
+}
+
+.cocktail_plot_stack_band_rows <- function(
+    bands_df,
+    gap_frac = 0.08,
+    stack_height_frac = 0.26
+) {
+  if (is.null(bands_df) || !is.data.frame(bands_df) || nrow(bands_df) <= 1L) {
+    return(bands_df)
+  }
+
+  required_cols <- c("x0", "x1", "y0", "y1")
+  if (!all(required_cols %in% names(bands_df))) {
+    return(bands_df)
+  }
+
+  ord <- order(bands_df$x0, bands_df$x1, decreasing = FALSE, na.last = TRUE)
+  lane_end <- numeric(0)
+  lane_idx <- integer(nrow(bands_df))
+
+  for (row_idx in ord) {
+    placed <- FALSE
+    if (length(lane_end)) {
+      for (lane in seq_along(lane_end)) {
+        if (is.finite(lane_end[[lane]]) && lane_end[[lane]] < bands_df$x0[[row_idx]]) {
+          lane_idx[[row_idx]] <- lane
+          lane_end[[lane]] <- bands_df$x1[[row_idx]]
+          placed <- TRUE
+          break
+        }
+      }
+    }
+
+    if (!placed) {
+      lane_end <- c(lane_end, bands_df$x1[[row_idx]])
+      lane_idx[[row_idx]] <- length(lane_end)
+    }
+  }
+
+  n_lanes <- max(lane_idx)
+  if (!is.finite(n_lanes) || n_lanes <= 1L) {
+    return(bands_df)
+  }
+
+  y_low <- min(bands_df$y0, bands_df$y1, na.rm = TRUE)
+  y_high <- max(bands_df$y0, bands_df$y1, na.rm = TRUE)
+  total_height <- y_high - y_low
+  if (!is.finite(total_height) || total_height <= 0) {
+    return(bands_df)
+  }
+
+  stack_height_frac <- suppressWarnings(as.numeric(stack_height_frac))
+  if (!is.finite(stack_height_frac) || stack_height_frac <= 0 || stack_height_frac > 1) {
+    stack_height_frac <- 0.26
+  }
+
+  stack_height <- total_height * stack_height_frac
+  stack_y_low <- y_high - stack_height
+  lane_height <- stack_height / n_lanes
+  gap_frac <- suppressWarnings(as.numeric(gap_frac))
+  if (!is.finite(gap_frac) || gap_frac < 0) {
+    gap_frac <- 0
+  }
+  gap_abs <- min(lane_height * gap_frac, lane_height / 3)
+
+  out <- bands_df
+  for (i in seq_len(nrow(out))) {
+    lane <- lane_idx[[i]]
+    lane_top <- y_high - (lane - 1L) * lane_height
+    lane_bottom <- max(stack_y_low, y_high - lane * lane_height)
+    out$y1[[i]] <- lane_top - gap_abs / 2
+    out$y0[[i]] <- lane_bottom + gap_abs / 2
+  }
+
+  out
 }
