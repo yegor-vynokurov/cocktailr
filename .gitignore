@@ -9,4 +9,12 @@
 Thumbs.db
 temp/
 cache/
-data-raw
+data-raw/*
+!data-raw/external/
+data-raw/external/*
+!data-raw/external/eive_1_0/
+!data-raw/external/eive_1_0/*.xlsx
+!data-raw/external/ellenberg_tichy_2023/
+!data-raw/external/ellenberg_tichy_2023/*.xlsx
+!data-raw/external/forest_steppe_chytry_2021/
+!data-raw/external/forest_steppe_chytry_2021/*.csv
