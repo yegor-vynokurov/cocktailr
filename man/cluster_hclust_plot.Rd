@@ -1,0 +1,119 @@
+\name{cluster_hclust_plot}
+\alias{cluster_hclust_plot}
+\title{Plot a cluster-level \code{hclust} dendrogram in one call}
+\usage{
+cluster_hclust_plot(
+  x,
+  clusters = NULL,
+  top_n = 10L,
+  min_phi = 0.2,
+  min_k = 1L,
+  min_score = 0,
+  mode = c("strict", "top"),
+  method = "average",
+  label_leaves = TRUE,
+  label_registry = "auto",
+  label_field = "hclust_label_compact",
+  fallback = c("keep", "cluster"),
+  warn_missing = TRUE,
+  file = NULL,
+  main = "Cluster dendrogram (co-membership phi distance)",
+  width_in = 10,
+  height_in = 10,
+  png_res = 150,
+  ...
+)
+}
+\arguments{
+\item{x}{A Cocktail object returned by \code{\link{cocktail_cluster}}.}
+
+\item{clusters}{Optional cluster identifiers to plot. Can be numeric cluster
+IDs, character labels like \code{"c_12"}, or a list of such values. If
+\code{NULL}, the function selects score-ranked clusters via
+\code{\link{select_clusters}}.}
+
+\item{top_n}{Integer or \code{NULL}. Used only when \code{clusters = NULL}. The
+wrapper then selects up to the first \code{top_n} score-ranked clusters.
+Default: \code{10}. Set \code{top_n = NULL} to use all eligible clusters
+selected by \code{\link{select_clusters}}. This default keeps the one-call plot
+readable on typical datasets.}
+
+\item{min_phi,min_k,min_score,mode}{Selection arguments forwarded to
+\code{\link{select_clusters}} when \code{clusters = NULL}.}
+
+\item{method}{Clustering method forwarded to \code{\link[stats]{hclust}}.
+Default: \code{"average"}.}
+
+\item{label_leaves}{Logical. If \code{TRUE}, try to replace leaf labels using
+\code{\link{label_hclust_leaves}}. Default: \code{TRUE}.}
+
+\item{label_registry}{\code{NULL}, \code{"auto"}, a
+\code{cluster_label_registry} table, or a \code{cluster_label_batch_result}
+object returned by \code{\link{label_clusters}}. Used only when
+\code{label_leaves = TRUE}. Default: \code{"auto"}.}
+
+\item{label_field}{Character scalar naming the registry column to use for leaf
+replacement. Default: \code{"hclust_label_compact"}.}
+
+\item{fallback}{One of \code{"keep"} or \code{"cluster"}, forwarded to
+\code{\link{label_hclust_leaves}}.}
+
+\item{warn_missing}{Logical. Forwarded to \code{\link{label_hclust_leaves}}.}
+
+\item{file}{Optional output path. If \code{NULL}, draw on the current graphics
+device. If non-\code{NULL}, only \code{.pdf} and \code{.png} outputs are
+supported.}
+
+\item{main}{Optional plot title. Default:
+\code{"Cluster dendrogram (co-membership phi distance)"}.}
+
+\item{width_in,height_in}{Plot size in inches for saved PDF/PNG output.
+Defaults: \code{width_in = 10}, \code{height_in = 10}.}
+
+\item{png_res}{Resolution in dpi for PNG output.}
+
+\item{...}{Additional graphical arguments forwarded to \code{\link[graphics]{plot}}.}
+}
+\value{
+Invisibly returns a list with components:
+\describe{
+  \item{clusters}{Cluster labels actually used in the plot.}
+  \item{dist}{The \code{dist} object returned by \code{\link{cluster_phi_dist}}.}
+  \item{hclust}{The raw \code{hclust} object.}
+  \item{hclust_plot}{The plotted \code{hclust} object, potentially with
+  relabeled leaves.}
+  \item{label_registry}{The resolved label registry used for leaf relabeling,
+  or \code{NULL}.}
+  \item{file}{Normalized output path when \code{file} was used, otherwise
+  \code{NULL}.}
+}
+}
+\description{
+Convenience wrapper for the common workflow
+\code{cluster_phi_dist() -> hclust() -> label_hclust_leaves() -> plot()}.
+}
+\details{
+This helper is designed for small cluster-overview figures where you want to go
+from a Cocktail result object directly to a cluster dendrogram, optionally with
+human-readable leaf labels taken from a saved cluster label registry.
+
+The lower-level functions remain available and are still the better choice when
+you need full manual control over each step.
+}
+\examples{
+\dontrun{
+cluster_hclust_plot(
+  x = res,
+  top_n = 10,
+  label_registry = "auto"
+)
+
+cluster_hclust_plot(
+  x = res,
+  clusters = c("c_12", "c_25", "c_35"),
+  label_registry = "auto",
+  label_field = "plot_label_short",
+  file = "temp/reports/cluster_hclust/demo.png"
+)
+}
+}

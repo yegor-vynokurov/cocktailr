@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cluster_label_selection_schema.json",
+  "title": "cluster_label_selection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "cluster_id",
+    "canonical_label",
+    "display_label",
+    "label_summary",
+    "abstain_reason"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "cluster_id": {
+      "type": "string",
+      "pattern": "^c_[0-9]+$"
+    },
+    "canonical_label": {
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9_]+$",
+      "maxLength": 64
+    },
+    "display_label": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$)\\S+(?:\\s+\\S+){0,5}$"
+    },
+    "label_summary": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 400
+    },
+    "abstain_reason": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 400
+    }
+  }
+}

@@ -103,6 +103,11 @@ test_that("validate_cluster_label accepts parsed output and cluster_label_result
   expect_equal(val$output_status, "labeled")
   expect_equal(val$validation_status, "valid")
   expect_false(val$needs_human_review)
+  expect_equal(val$label_tier, "accepted")
+  expect_false(val$is_speculative)
+  expect_equal(val$plot_marker, "")
+  expect_equal(val$strict_outcome, "accepted")
+  expect_equal(val$strict_validation_status, "valid")
   expect_equal(val$evidence_coverage$score, 1)
   expect_equal(nrow(val$issues), 0L)
 })
@@ -160,7 +165,20 @@ test_that("validate_cluster_label flags external knowledge that poses as data", 
   expect_true(any(val$issues$code == "external_knowledge_poses_as_data"))
 })
 
-test_that("validate_cluster_label flags habitat overreach without explicit separation", {
+test_that("validate_cluster_label turns malformed scalar confidence into schema errors", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$confidence <- 0.9
+
+  expect_no_error(val <- validate_cluster_label(output, ev))
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "invalid_confidence"))
+  expect_true(any(val$issues$code == "invalid_confidence_score"))
+  expect_true(any(val$issues$code == "missing_confidence_rationale"))
+  expect_true(val$needs_human_review)
+})
+
+test_that("validate_cluster_label does not reject habitat wording via the disabled heuristic", {
   ev <- .build_validation_test_cluster_evidence()
   output <- .build_valid_label_output(ev)
   output$canonical_label <- "dry_grassland_cluster"
@@ -171,8 +189,79 @@ test_that("validate_cluster_label flags habitat overreach without explicit separ
 
   val <- validate_cluster_label(output, ev)
 
-  expect_equal(val$validation_status, "unsupported_claims")
-  expect_true(any(val$issues$code == "unsupported_habitat_overreach"))
+  expect_equal(val$validation_status, "valid")
+  expect_false(any(val$issues$code == "unsupported_habitat_overreach"))
+  expect_false(val$needs_human_review)
+})
+
+test_that("cluster label schema asset encodes label length and format limits", {
+  schema_path <- cocktailr:::.package_asset_path("schemas", "cluster_label_output_schema.json")
+  schema <- jsonlite::read_json(
+    schema_path,
+    simplifyVector = FALSE
+  )
+
+  expect_equal(schema$properties$canonical_label$maxLength, 64)
+  expect_equal(schema$properties$display_label$maxLength, 80)
+  expect_equal(
+    schema$properties$display_label$pattern,
+    "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$)\\S+(?:\\s+\\S+){0,5}$"
+  )
+})
+
+test_that("validate_cluster_label rejects overly long canonical labels", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$canonical_label <- paste(rep("a", 65), collapse = "")
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "canonical_label_too_long"))
+})
+
+test_that("validate_cluster_label rejects overly long display labels", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$display_label <- paste(rep("a", 81), collapse = "")
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "display_label_too_long"))
+})
+
+test_that("validate_cluster_label rejects display labels with too many words", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$display_label <- "one two three four five six seven"
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "display_label_too_many_words"))
+})
+
+test_that("validate_cluster_label rejects forbidden punctuation in display labels", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$display_label <- "woodland, edge"
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "display_label_forbidden_punctuation"))
+})
+
+test_that("validate_cluster_label rejects display labels with a trailing period", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$display_label <- "Woodland Edge."
+
+  val <- validate_cluster_label(output, ev)
+
+  expect_equal(val$validation_status, "schema_error")
+  expect_true(any(val$issues$code == "display_label_trailing_period"))
 })
 
 test_that("validate_cluster_label recognizes a clean abstention output", {
@@ -226,5 +315,39 @@ test_that("validate_cluster_label recognizes a clean abstention output", {
   expect_equal(val$output_status, "abstain")
   expect_equal(val$validation_status, "abstained")
   expect_false(val$needs_human_review)
+  expect_true(is.na(val$label_tier))
+  expect_false(val$is_speculative)
+  expect_equal(val$plot_marker, "")
+  expect_equal(val$strict_outcome, "abstained")
   expect_equal(val$evidence_coverage$score, 1)
+})
+
+test_that("speculative fallback validation remains distinct from accepted labels", {
+  ev <- .build_validation_test_cluster_evidence()
+  output <- .build_valid_label_output(ev)
+  output$confidence$score <- 0
+  output$confidence$rationale <- "Tentative only; the direction is visible but not stable."
+  output$not_confirmed_by_data <- list(
+    list(
+      statement = "A habitat-level label is not confirmed.",
+      reason = "The evidence bundle does not resolve contrast against nearby alternatives."
+    )
+  )
+
+  val <- validate_cluster_label(output, ev)
+  spec_val <- cocktailr:::.mark_speculative_validation(
+    val,
+    strict_validation_status = "unsupported_claims"
+  )
+
+  expect_equal(spec_val$validation_status, "valid_with_warnings")
+  expect_true(spec_val$is_valid)
+  expect_true(spec_val$needs_human_review)
+  expect_equal(spec_val$label_tier, "speculative")
+  expect_true(spec_val$is_speculative)
+  expect_equal(spec_val$plot_marker, "*")
+  expect_equal(spec_val$strict_outcome, "placeholder")
+  expect_equal(spec_val$strict_validation_status, "unsupported_claims")
+  expect_match(spec_val$missing_for_confidence_text, "not confirmed", ignore.case = TRUE)
+  expect_true(any(spec_val$issues$code == "speculative_fallback_label"))
 })

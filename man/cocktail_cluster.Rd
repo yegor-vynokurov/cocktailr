@@ -71,14 +71,15 @@ cleaned and aligned vegetation matrix as a sparse \code{dgCMatrix} in the return
 object (\verb{$vegmatrix}). Set to \code{FALSE} to reduce memory usage for large datasets.}
 
 \item{dataset_path}{Optional character path to the input dataset on disk.
-Stored as provenance in the returned object for downstream reporting helpers.}
+This does not affect clustering itself, but is stored as provenance in the
+returned object and can later be used by downstream reporting helpers.}
 
 \item{dataset_label}{Optional short human-readable dataset label. Useful when
 one dataset is known by a project name rather than a file path.}
 
-\item{dataset_type}{Optional dataset type such as \code{"synthetic"} or
-\code{"real"}. If omitted, \code{cocktail_cluster()} tries to reuse
-provenance attached to the input object.}
+\item{dataset_type}{Optional dataset type such as \code{"synthetic"} or \code{"real"}.
+If omitted, \code{cocktail_cluster()} tries to reuse provenance attached to the
+input object (for example from \code{generate_synthetic_vegetation_data()}).}
 }
 \value{
 A list of class \code{"cocktail"} with:
@@ -101,6 +102,9 @@ treated as 0), stored sparsely. Rows correspond to \code{plots} and
 columns correspond to \code{species}. \code{NULL} if \code{save_vegmatrix = FALSE}.
 \item \code{species}               — character vector of species names kept after cleaning.
 \item \code{plots}                 — character vector of plot names kept after cleaning.
+\item \code{input_format}          — character scalar, either \code{"wide"} or \code{"long"}.
+\item \code{dataset}               — list with optional dataset provenance fields such as
+\code{type}, \code{label}, and \code{path}.
 }
 }
 \description{

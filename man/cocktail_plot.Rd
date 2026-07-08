@@ -21,6 +21,7 @@ cocktail_plot(
   palette = "rainbow",
   png_res = 300,
   main = NULL,
+  label_registry = NULL,
   ...
 )
 }
@@ -69,6 +70,9 @@ where each element specifies one highlighted cluster; or
 a \strong{combination of clusters} (e.g.
 \code{list(c(1,4,6,14), c(2,12,17))}).
 }
+A one-column data frame such as
+\code{read.csv("selected_clusters.csv")} is treated as one
+highlighted cluster per row.
 Within each supplied cluster set, if both an ancestor and descendant are present,
 only the topmost (ancestor) is used for elbow labelling and band
 placement. All valid supplied IDs are considered for labels at
@@ -100,6 +104,16 @@ Default \code{"rainbow"}.}
 
 \item{main}{Optional plot title for each page. If NULL (default), a standard
 header of the form "Species a-b of n" is drawn.}
+
+\item{label_registry}{Optional plotting registry produced by
+\code{\link{cluster_label_registry}} or returned as
+\code{label_clusters(..., labels_for_imgs = TRUE)$label_registry}. When
+supplied, \code{cocktail_plot()} keeps numeric cluster IDs on the
+dendrogram, but adds a compact legend/caption block with human-readable
+label decodings and review-card filenames for the clusters actually shown
+on each page. Use \code{"auto"} to load the most relevant saved
+\code{"cluster_label_registry.csv"} from the default review-artifact
+location.}
 
 \item{...}{Additional graphical arguments passed to the underlying plotting
 functions (e.g. \code{plot()}, \code{par()}), allowing fine-tuning of

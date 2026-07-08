@@ -148,7 +148,9 @@ validate_cluster_label <- function(x, evidence) {
   optional_fields <- c(
     "ontology_slots",
     "contrastive_notes",
-    "report_recommendation"
+    "report_recommendation",
+    "label_summary",
+    "explanation"
   )
   allowed_fields <- c(required_fields, optional_fields)
 
@@ -233,6 +235,8 @@ validate_cluster_label <- function(x, evidence) {
   canonical_label <- output$canonical_label
   display_label <- output$display_label
   abstain_reason <- output$abstain_reason
+  label_summary <- output$label_summary
+  explanation <- output$explanation
 
   if (identical(output_status, "labeled")) {
     if (!.is_non_empty_scalar_character(canonical_label)) {
@@ -251,6 +255,17 @@ validate_cluster_label <- function(x, evidence) {
         "canonical_label must use lowercase snake_case.",
         "canonical_label"
       )
+    } else if (nchar(canonical_label, type = "chars") > .cluster_label_max_canonical_length()) {
+      add_issue(
+        "error",
+        "schema",
+        "canonical_label_too_long",
+        sprintf(
+          "canonical_label must be at most %d characters long.",
+          .cluster_label_max_canonical_length()
+        ),
+        "canonical_label"
+      )
     }
     if (!.is_non_empty_scalar_character(display_label)) {
       add_issue(
@@ -260,6 +275,55 @@ validate_cluster_label <- function(x, evidence) {
         "Labeled outputs must provide a non-empty display_label.",
         "display_label"
       )
+    } else {
+      display_label_trimmed <- trimws(display_label)
+      display_word_count <- .cluster_label_word_count(display_label_trimmed)
+
+      if (nchar(display_label_trimmed, type = "chars") > .cluster_label_max_display_length()) {
+        add_issue(
+          "error",
+          "schema",
+          "display_label_too_long",
+          sprintf(
+            "display_label must be at most %d characters long.",
+            .cluster_label_max_display_length()
+          ),
+          "display_label"
+        )
+      }
+
+      if (display_word_count > .cluster_label_max_display_words()) {
+        add_issue(
+          "error",
+          "schema",
+          "display_label_too_many_words",
+          sprintf(
+            "display_label must contain at most %d words.",
+            .cluster_label_max_display_words()
+          ),
+          "display_label"
+        )
+      }
+
+      if (grepl(.cluster_label_forbidden_display_punctuation_pattern(), display_label_trimmed, perl = TRUE)) {
+        add_issue(
+          "error",
+          "schema",
+          "display_label_forbidden_punctuation",
+          "display_label must not contain commas or brackets.",
+          "display_label"
+        )
+      }
+
+      if (grepl("\\.$", display_label_trimmed, perl = TRUE)) {
+        add_issue(
+          "error",
+          "schema",
+          "display_label_trailing_period",
+          "display_label must not end with a period.",
+          "display_label"
+        )
+      }
     }
     if (!is.null(abstain_reason)) {
       add_issue(
@@ -268,6 +332,16 @@ validate_cluster_label <- function(x, evidence) {
         "unexpected_abstain_reason",
         "Labeled outputs must set abstain_reason to null.",
         "abstain_reason"
+      )
+    }
+    if ("label_summary" %in% names(output) &&
+        !.is_non_empty_scalar_character(label_summary)) {
+      add_issue(
+        "error",
+        "schema",
+        "missing_label_summary",
+        "Labeled outputs must provide a non-empty label_summary.",
+        "label_summary"
       )
     }
   }
@@ -300,6 +374,15 @@ validate_cluster_label <- function(x, evidence) {
         "abstain_reason"
       )
     }
+    if ("label_summary" %in% names(output) && !is.null(label_summary)) {
+      add_issue(
+        "error",
+        "schema",
+        "unexpected_label_summary",
+        "Abstaining outputs must set label_summary to null.",
+        "label_summary"
+      )
+    }
   }
 
   interpretation_summary <- .as_scalar_character(output$interpretation_summary)
@@ -310,6 +393,17 @@ validate_cluster_label <- function(x, evidence) {
       "missing_interpretation_summary",
       "interpretation_summary must be a non-empty string.",
       "interpretation_summary"
+    )
+  }
+
+  if ("explanation" %in% names(output) &&
+      !.is_non_empty_scalar_character(explanation)) {
+    add_issue(
+      "error",
+      "schema",
+      "missing_explanation",
+      "Final assembled outputs must provide a non-empty explanation field.",
+      "explanation"
     )
   }
 
@@ -497,6 +591,17 @@ validate_cluster_label <- function(x, evidence) {
     validation_status = validation_status,
     is_valid = validation_status %in% c("valid", "valid_with_warnings", "abstained"),
     needs_human_review = needs_human_review,
+    label_tier = if (identical(output_status, "labeled")) "accepted" else NA_character_,
+    is_speculative = FALSE,
+    plot_marker = "",
+    strict_outcome = if (identical(output_status, "labeled")) "accepted" else "abstained",
+    strict_validation_status = validation_status,
+    label_origin = NA_character_,
+    species_entropy_band = NA_character_,
+    species_entropy_text = NA_character_,
+    chaoticity_score = NA_integer_,
+    chaoticity_label = NA_character_,
+    missing_for_confidence_text = .cluster_label_missing_for_confidence_from_output(output),
     evidence_coverage = coverage,
     issues = issues,
     available_evidence_ids = available_ids,
@@ -913,10 +1018,10 @@ print.cluster_label_validation <- function(x, ...) {
 }
 
 .validate_confidence_block <- function(confidence, add_issue) {
-  score <- suppressWarnings(as.numeric(confidence$score))
+  score <- .as_scalar_numeric(confidence$score)
   rationale <- .as_scalar_character(confidence$rationale)
 
-  if (!is.finite(score) || score < 0 || score > 1) {
+  if (is.na(score) || !is.finite(score) || score < 0 || score > 1) {
     add_issue(
       "error",
       "schema",
@@ -992,6 +1097,36 @@ print.cluster_label_validation <- function(x, ...) {
   }
 }
 
+.cluster_label_max_canonical_length <- function() {
+  64L
+}
+
+.cluster_label_max_display_length <- function() {
+  80L
+}
+
+.cluster_label_max_display_words <- function() {
+  6L
+}
+
+.cluster_label_forbidden_display_punctuation_pattern <- function() {
+  "[,()\\[\\]]"
+}
+
+.cluster_label_word_count <- function(x) {
+  x <- .as_scalar_character(x)
+  if (is.na(x)) {
+    return(NA_integer_)
+  }
+
+  x <- trimws(x)
+  if (!nzchar(x)) {
+    return(0L)
+  }
+
+  length(strsplit(x, "\\s+", perl = TRUE)[[1]])
+}
+
 .compute_cluster_label_evidence_coverage <- function(basis_validation, key_species_validation) {
   n_valid <- basis_validation$n_valid + key_species_validation$n_valid
   n_total <- basis_validation$n_total + key_species_validation$n_total
@@ -1013,86 +1148,9 @@ print.cluster_label_validation <- function(x, ...) {
 }
 
 .validate_habitat_overreach <- function(output, output_status, add_issue) {
-  if (!identical(output_status, "labeled")) {
-    return(invisible(NULL))
-  }
-
-  basis_in_data <- if (is.list(output$basis_in_data)) output$basis_in_data else list()
-  external_knowledge <- if (is.list(output$external_knowledge)) output$external_knowledge else list()
-  not_confirmed_by_data <- if (is.list(output$not_confirmed_by_data)) output$not_confirmed_by_data else list()
-
-  habitat_pattern <- paste(
-    c(
-      "\\bwoodland\\b",
-      "\\bforest\\b",
-      "\\bgrassland\\b",
-      "\\bmeadow\\b",
-      "\\bwetland\\b",
-      "\\bfen\\b",
-      "\\bmarsh\\b",
-      "\\bbog\\b",
-      "\\bsteppe\\b",
-      "\\bruderal\\b",
-      "\\becotone\\b",
-      "\\bedge\\b",
-      "\\bcalcareous\\b",
-      "\\bacid(ic)?\\b",
-      "\\bnitrophil",
-      "\\bshade\\b",
-      "\\bshaded\\b",
-      "\\bmesic\\b",
-      "\\bmoist\\b",
-      "\\bdry\\b"
-    ),
-    collapse = "|"
-  )
-
-  label_text <- paste(
-    c(
-      .as_scalar_character(output$canonical_label),
-      .as_scalar_character(output$display_label),
-      .as_scalar_character(output$interpretation_summary)
-    ),
-    collapse = " "
-  )
-  basis_text <- paste(
-    vapply(basis_in_data, function(item) .as_scalar_character(item$statement), character(1)),
-    collapse = " "
-  )
-  external_text <- paste(
-    vapply(external_knowledge, function(item) .as_scalar_character(item$statement), character(1)),
-    collapse = " "
-  )
-  not_confirmed_text <- paste(
-    vapply(not_confirmed_by_data, function(item) .as_scalar_character(item$statement), character(1)),
-    collapse = " "
-  )
-
-  label_has_habitat_language <- nzchar(label_text) &&
-    grepl(habitat_pattern, label_text, ignore.case = TRUE, perl = TRUE)
-  basis_has_habitat_language <- nzchar(basis_text) &&
-    grepl(habitat_pattern, basis_text, ignore.case = TRUE, perl = TRUE)
-  external_has_habitat_language <- nzchar(external_text) &&
-    grepl(habitat_pattern, external_text, ignore.case = TRUE, perl = TRUE)
-  not_confirmed_has_habitat_language <- nzchar(not_confirmed_text) &&
-    grepl(habitat_pattern, not_confirmed_text, ignore.case = TRUE, perl = TRUE)
-
-  if (label_has_habitat_language &&
-      !basis_has_habitat_language &&
-      !external_has_habitat_language &&
-      !not_confirmed_has_habitat_language) {
-    add_issue(
-      "error",
-      "unsupported_claims",
-      "unsupported_habitat_overreach",
-      paste(
-        "The label or interpretation uses habitat-level language without",
-        "making the species-to-habitat inference explicit in external_knowledge",
-        "or not_confirmed_by_data."
-      ),
-      "labeling"
-    )
-  }
+  # Temporarily disabled: the current regex-only heuristic is too brittle for
+  # paraphrases, word order changes, snake_case labels, and synonymy.
+  invisible(NULL)
 }
 
 .finalize_cluster_label_validation_status <- function(output_status, issues) {

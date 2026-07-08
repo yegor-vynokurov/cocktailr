@@ -23,6 +23,14 @@
   as.integer(x)
 }
 
+.arg_nullable_non_negative_integer <- function(x, name) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+
+  .arg_non_negative_integer(x, name)
+}
+
 .arg_positive_integer <- function(x, name) {
   x <- .arg_non_negative_integer(x, name)
   if (x < 1L) {
@@ -31,11 +39,71 @@
   x
 }
 
+.arg_nullable_positive_integer <- function(x, name) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+
+  .arg_positive_integer(x, name)
+}
+
 .arg_workflow_steps <- function(x, name) {
   x <- .arg_non_negative_integer(x, name)
-  if (!x %in% c(1L, 2L)) {
-    stop("`", name, "` must be either 1 or 2.")
+  if (!x %in% c(1L, 2L, 3L)) {
+    stop("`", name, "` must be either 1, 2, or 3.")
   }
+  x
+}
+
+.cluster_label_fixed_workflow_steps <- function() {
+  3L
+}
+
+.normalize_cluster_label_workflow_steps <- function(x, name) {
+  x <- .arg_workflow_steps(x, name)
+  fixed_steps <- .cluster_label_fixed_workflow_steps()
+
+  if (!identical(x, fixed_steps)) {
+    warning(
+      "`",
+      name,
+      "` = ",
+      x,
+      " is deprecated. The active cluster-label pipeline now always uses the fixed three-stage route, so this value is ignored and treated as ",
+      fixed_steps,
+      ".",
+      call. = FALSE
+    )
+  }
+
+  fixed_steps
+}
+
+.arg_cluster_label_mode <- function(x, name) {
+  x <- .arg_scalar_character(x, name)
+  if (!x %in% c("open", "constrained", "dynamic")) {
+    stop(
+      "`",
+      name,
+      "` must be one of: \"open\", \"constrained\", or \"dynamic\"."
+    )
+  }
+  x
+}
+
+.normalize_cluster_label_mode <- function(x, name) {
+  x <- .arg_cluster_label_mode(x, name)
+
+  if (identical(x, "dynamic")) {
+    warning(
+      "`",
+      name,
+      "` = \"dynamic\" is deprecated. Draft-derived candidate labels are now injected into selection prompts automatically, so the active pipeline treats this as `\"open\"`.",
+      call. = FALSE
+    )
+    return("open")
+  }
+
   x
 }
 
@@ -53,11 +121,105 @@
   .arg_scalar_character(x, name)
 }
 
+.arg_named_list_or_null <- function(x, name) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+
+  if (!is.list(x)) {
+    stop("`", name, "` must be NULL or a named list.")
+  }
+
+  nms <- names(x)
+  if (is.null(nms) || !length(x) || any(is.na(nms)) || any(!nzchar(nms))) {
+    stop("`", name, "` must be a named list with non-empty names.")
+  }
+
+  x
+}
+
 .extract_cluster_label_output <- function(x) {
   if (inherits(x, "cluster_label_result")) {
     return(x$output)
   }
   x
+}
+
+.cluster_label_public_fields <- function(output, provenance = NULL) {
+  output <- output %||% list()
+  provenance <- provenance %||% list()
+
+  status <- .as_scalar_character(output$status)
+  canonical_label <- .as_scalar_character(output$canonical_label)
+  display_label <- .as_scalar_character(output$display_label)
+  selected_label_variant <- .as_scalar_character(
+    provenance$selected_label_variant %||% provenance$selected_public_variant
+  )
+  label_stage_exhausted <- isTRUE(
+    provenance$label_stage_exhausted %||% provenance$exhausted
+  )
+
+  if (identical(status, "labeled") &&
+      .is_non_empty_scalar_character(canonical_label) &&
+      .is_non_empty_scalar_character(display_label)) {
+    return(list(
+      public_canonical_label = canonical_label,
+      public_display_label = display_label,
+      public_label_source = "model_output"
+    ))
+  }
+
+  if (identical(status, "abstain") &&
+      (identical(selected_label_variant, "selection_all_abstain") ||
+        isTRUE(label_stage_exhausted))) {
+    return(list(
+      public_canonical_label = "chaotic_cluster",
+      public_display_label = "Chaotic Cluster",
+      public_label_source = "post_abstain_fallback"
+    ))
+  }
+
+  list(
+    public_canonical_label = NULL,
+    public_display_label = NULL,
+    public_label_source = NULL
+  )
+}
+
+.cluster_label_output_summary_text <- function(output) {
+  output <- output %||% list()
+
+  for (field in c(
+    "label_summary",
+    "interpretation_summary",
+    "abstain_reason",
+    "explanation"
+  )) {
+    text <- .as_scalar_character(output[[field]])
+    if (.is_non_empty_scalar_character(text)) {
+      return(text)
+    }
+  }
+
+  NA_character_
+}
+
+.cluster_label_output_explanation_text <- function(output) {
+  output <- output %||% list()
+
+  for (field in c(
+    "explanation",
+    "interpretation_summary",
+    "label_summary",
+    "abstain_reason"
+  )) {
+    text <- .as_scalar_character(output[[field]])
+    if (.is_non_empty_scalar_character(text)) {
+      return(text)
+    }
+  }
+
+  NA_character_
 }
 
 .new_cluster_label_issue_table <- function() {
@@ -85,6 +247,23 @@
     return(NA_character_)
   }
   x
+}
+
+.as_scalar_numeric <- function(x) {
+  if (is.list(x) && length(x) == 1L) {
+    return(.as_scalar_numeric(x[[1L]]))
+  }
+  if (is.null(x) || length(x) != 1L) {
+    return(NA_real_)
+  }
+  if (is.factor(x)) {
+    x <- as.character(x)
+  }
+  out <- suppressWarnings(as.numeric(x))
+  if (length(out) != 1L) {
+    return(NA_real_)
+  }
+  out
 }
 
 .as_character_vector <- function(x) {
@@ -206,4 +385,22 @@
   }
 
   file.path(root, path)
+}
+
+.cluster_label_default_debug_log_dir <- function() {
+  file.path("temp", "reports", "cluster_label_debug")
+}
+
+.cluster_label_effective_log_dir <- function(debug, log_dir = NULL) {
+  debug <- .arg_single_flag(debug, "debug")
+
+  if (!isTRUE(debug)) {
+    return(NULL)
+  }
+
+  if (is.null(log_dir)) {
+    return(.cluster_label_default_debug_log_dir())
+  }
+
+  .arg_scalar_character(log_dir, "log_dir")
 }

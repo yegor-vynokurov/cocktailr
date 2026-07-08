@@ -27,6 +27,12 @@
 #'
 #' @param include_cover Logical; if \code{TRUE} (default) and \code{x$vegmatrix}
 #'   is available, compute cover summaries for the cluster's topological species.
+#' @param user_added_data Optional additional user-supplied material. Accepts
+#'   \code{NULL} (default), an in-memory object, a path to one supported file,
+#'   or a path to one directory scanned non-recursively for supported files.
+#'   Supported file extensions are \code{.txt}, \code{.json}, \code{.yaml},
+#'   and \code{.yml}. These inputs are included in the evidence object as raw
+#'   \code{user_added_data} without domain-specific preprocessing.
 #'
 #' @return
 #' A list of class \code{"cluster_evidence"} with top-level components:
@@ -65,7 +71,8 @@ cluster_evidence <- function(
     top_n_phi = 10L,
     n_prototype_plots = 5L,
     n_borderline_plots = 5L,
-    include_cover = TRUE
+    include_cover = TRUE,
+    user_added_data = NULL
 ) {
   if (!.cluster_evidence_is_cocktail_object(x)) {
     stop("`x` must be a Cocktail object with Cluster.species, Cluster.info, Cluster.height, Cluster.merged, and Plot.cluster.")
@@ -81,6 +88,9 @@ cluster_evidence <- function(
     "n_borderline_plots"
   )
   include_cover <- .arg_single_flag(include_cover, "include_cover")
+  loaded_user_added_data <- .cluster_evidence_resolve_user_added_data(
+    user_added_data
+  )
 
   CS <- x$Cluster.species
   KI <- x$Cluster.info
@@ -369,12 +379,20 @@ cluster_evidence <- function(
 
   if (!is.null(cover_summary) && nrow(cover_summary)) {
     for (i in seq_len(nrow(cover_summary))) {
+      cover_value_fields <- intersect(
+        c(
+          "species", "mean_cover", "median_cover", "freq_in_member_plots",
+          "species_freq_count", "species_freq_pct", "mean_plot_cover_share_pct",
+          "n_member_plots", "cover_scale_type", "cover_scale_label",
+          "cover_scale_min", "cover_scale_max"
+        ),
+        names(cover_summary)
+      )
       cover_summary$evidence_id[i] <- add_evidence(
         "cover_summary",
         "cover_summary",
         paste0("Cover summary for species ", cover_summary$species[i], " in ", cluster_label),
-        as.list(cover_summary[i, c("species", "mean_cover", "median_cover",
-                                   "freq_in_member_plots"), drop = FALSE]),
+        as.list(cover_summary[i, cover_value_fields, drop = FALSE]),
         "vegmatrix"
       )
     }
@@ -439,6 +457,14 @@ cluster_evidence <- function(
       cluster_id = cluster_label,
       cluster_num = cluster_id,
       generated_at = NULL,
+      user_added_data_present = !is.null(loaded_user_added_data),
+      user_added_data_source_type = loaded_user_added_data$source_type %||% NULL,
+      user_added_data_truncated = isTRUE(
+        loaded_user_added_data$truncated %||% FALSE
+      ),
+      user_added_data_entry_count = length(
+        loaded_user_added_data$entries %||% list()
+      ),
       dataset = .cluster_evidence_dataset_info(x),
       source = list(
         object_class = "cocktail",
@@ -492,54 +518,160 @@ cluster_evidence <- function(
     )
   )
 
+  if (!is.null(loaded_user_added_data)) {
+    out$user_added_data <- loaded_user_added_data
+  }
+
   class(out) <- c("cluster_evidence", class(out))
+  out <- .augment_cluster_evidence_with_quantity_context(
+    evidence = out,
+    source = x,
+    vegmatrix = vm
+  )
   out
 }
 
-.format_cluster_evidence_prompt <- function(x) {
+.cluster_evidence_prompt_char_count <- function(text) {
+  text <- .null_default(.as_scalar_character(text), "")
+  if (!nzchar(text)) {
+    return(0L)
+  }
+
+  as.integer(nchar(enc2utf8(text), type = "chars", allowNA = FALSE, keepNA = FALSE))
+}
+
+.new_cluster_evidence_prompt_fixed_block <- function(
+    id,
+    label,
+    display_order,
+    retain_rank,
+    lines
+) {
+  lines <- as.character(lines %||% character(0))
+
+  list(
+    id = id,
+    label = label,
+    display_order = as.integer(display_order),
+    retain_rank = as.integer(retain_rank),
+    item_count_full = 0L,
+    render = function(n_items = 0L) lines
+  )
+}
+
+.new_cluster_evidence_prompt_inline_block <- function(
+    id,
+    label,
+    display_order,
+    retain_rank,
+    header,
+    items,
+    joiner = "; ",
+    intro_lines = NULL,
+    empty_text = NULL
+) {
+  items <- as.character(items %||% character(0))
+  intro_lines <- as.character(intro_lines %||% character(0))
+  empty_text <- if (is.null(empty_text)) NULL else as.character(empty_text)
+
+  list(
+    id = id,
+    label = label,
+    display_order = as.integer(display_order),
+    retain_rank = as.integer(retain_rank),
+    item_count_full = as.integer(length(items)),
+    render = function(n_items = length(items)) {
+      lines <- intro_lines
+
+      if (!length(items)) {
+        if (is.null(empty_text)) {
+          return(lines)
+        }
+
+        return(c(lines, paste0(header, empty_text)))
+      }
+
+      n_items <- max(0L, min(as.integer(n_items), length(items)))
+      if (n_items < 1L) {
+        return(character(0))
+      }
+
+      c(
+        lines,
+        paste0(header, paste(items[seq_len(n_items)], collapse = joiner))
+      )
+    }
+  )
+}
+
+.new_cluster_evidence_prompt_bulleted_block <- function(
+    id,
+    label,
+    display_order,
+    retain_rank,
+    header,
+    items
+) {
+  items <- as.character(items %||% character(0))
+
+  list(
+    id = id,
+    label = label,
+    display_order = as.integer(display_order),
+    retain_rank = as.integer(retain_rank),
+    item_count_full = as.integer(length(items)),
+    render = function(n_items = length(items)) {
+      if (!length(items)) {
+        return(character(0))
+      }
+
+      n_items <- max(0L, min(as.integer(n_items), length(items)))
+      if (n_items < 1L) {
+        return(character(0))
+      }
+
+      c(header, paste0("- ", items[seq_len(n_items)]))
+    }
+  )
+}
+
+.render_cluster_evidence_prompt_block_text <- function(block, n_items = NULL) {
+  n_items <- n_items %||% block$item_count_full
+  lines <- block$render(n_items)
+  lines <- as.character(lines %||% character(0))
+  lines <- lines[!is.na(lines) & nzchar(lines)]
+  paste(lines, collapse = "\n")
+}
+
+.cluster_evidence_prompt_blocks <- function(x) {
   if (!inherits(x, "cluster_evidence")) {
     stop("`x` must inherit from class `cluster_evidence`.")
   }
 
-  lines <- c(
-    paste0("Cluster: ", x$meta$cluster_id),
+  topo_items <- if (nrow(x$summaries$species_topological)) {
     paste0(
-      "Metrics: h=", formatC(x$context$cluster_metrics$h, digits = 3L, format = "f"),
-      ", k=", x$context$cluster_metrics$k,
-      ", m=", x$context$cluster_metrics$m
-    )
-  )
-
-  if (nrow(x$summaries$species_topological)) {
-    topological <- paste0(
       x$summaries$species_topological$species,
       " [", x$summaries$species_topological$evidence_id, "]"
     )
-    lines <- c(lines, paste("Topological species:", paste(topological, collapse = "; ")))
   } else {
-    lines <- c(lines, "Topological species: none")
+    character(0)
   }
 
-  if (!is.null(x$summaries$species_phi) && nrow(x$summaries$species_phi)) {
-    phi_lines <- paste0(
-      x$summaries$species_phi$species,
-      " (phi=", formatC(x$summaries$species_phi$phi, digits = 3L, format = "f"), ") [",
-      x$summaries$species_phi$evidence_id, "]"
-    )
-    lines <- c(lines, paste("Phi-ranked species:", paste(phi_lines, collapse = "; ")))
-  }
-
-  lines <- c(
-    lines,
+  phi_items <- if (!is.null(x$summaries$species_phi) && nrow(x$summaries$species_phi)) {
     paste0(
-      "Plot membership: n=",
-      x$summaries$plots_membership$n_member_plots,
-      " [", x$summaries$plots_membership$evidence_id, "]"
+      x$summaries$species_phi$species,
+      " (phi=",
+      formatC(x$summaries$species_phi$phi, digits = 3L, format = "f"),
+      ") [",
+      x$summaries$species_phi$evidence_id,
+      "]"
     )
-  )
+  } else {
+    character(0)
+  }
 
-  if (nrow(x$summaries$plots_prototype)) {
-    proto_lines <- paste0(
+  prototype_items <- if (nrow(x$summaries$plots_prototype)) {
+    paste0(
       x$summaries$plots_prototype$plot,
       " (score=",
       formatC(x$summaries$plots_prototype$support_score, digits = 3L, format = "f"),
@@ -547,11 +679,12 @@ cluster_evidence <- function(
       x$summaries$plots_prototype$evidence_id,
       "]"
     )
-    lines <- c(lines, paste("Prototype plots:", paste(proto_lines, collapse = "; ")))
+  } else {
+    character(0)
   }
 
-  if (nrow(x$summaries$plots_borderline)) {
-    borderline_lines <- paste0(
+  borderline_items <- if (nrow(x$summaries$plots_borderline)) {
+    paste0(
       x$summaries$plots_borderline$plot,
       " (score=",
       formatC(x$summaries$plots_borderline$support_score, digits = 3L, format = "f"),
@@ -559,11 +692,12 @@ cluster_evidence <- function(
       x$summaries$plots_borderline$evidence_id,
       "]"
     )
-    lines <- c(lines, paste("Borderline plots:", paste(borderline_lines, collapse = "; ")))
+  } else {
+    character(0)
   }
 
-  if (!is.null(x$summaries$cover_summary) && nrow(x$summaries$cover_summary)) {
-    cover_lines <- paste0(
+  cover_items <- if (!is.null(x$summaries$cover_summary) && nrow(x$summaries$cover_summary)) {
+    paste0(
       x$summaries$cover_summary$species,
       " (mean_cover=",
       formatC(x$summaries$cover_summary$mean_cover, digits = 2L, format = "f"),
@@ -573,15 +707,325 @@ cluster_evidence <- function(
       x$summaries$cover_summary$evidence_id,
       "]"
     )
-    lines <- c(lines, paste("Cover summary:", paste(cover_lines, collapse = "; ")))
+  } else {
+    character(0)
   }
 
-  if (length(x$limitations$warnings) || length(x$limitations$unsupported_inferences)) {
-    lim_lines <- c(x$limitations$warnings, x$limitations$unsupported_inferences)
-    lines <- c(lines, "Limitations:", paste0("- ", lim_lines))
+  semantic_axis_items <- if (!is.null(x$summaries$semantic_axes) && nrow(x$summaries$semantic_axes)) {
+    paste0(
+      x$summaries$semantic_axes$axis_name,
+      " [", x$summaries$semantic_axes$axis, "]",
+      " (score=",
+      formatC(x$summaries$semantic_axes$score_0_10, digits = 2L, format = "f"),
+      "/10, band=", x$summaries$semantic_axes$band,
+      ", coverage=",
+      formatC(x$summaries$semantic_axes$coverage, digits = 2L, format = "f"),
+      ", confidence=", x$summaries$semantic_axes$confidence_tier,
+      ") [", x$summaries$semantic_axes$evidence_id, "]"
+    )
+  } else {
+    character(0)
   }
 
-  paste(lines, collapse = "\n")
+  semantic_unmatched_items <- as.character(
+    x$summaries$semantic_unmatched_species %||% character(0)
+  )
+
+  limitation_items <- as.character(c(
+    x$limitations$warnings %||% character(0),
+    x$limitations$unsupported_inferences %||% character(0)
+  ))
+  user_added_lines <- .cluster_evidence_user_added_prompt_lines(
+    x$user_added_data %||% NULL
+  )
+
+  list(
+    .new_cluster_evidence_prompt_fixed_block(
+      id = "cluster_header",
+      label = "Cluster header",
+      display_order = 10L,
+      retain_rank = 10L,
+      lines = paste0("Cluster: ", x$meta$cluster_id)
+    ),
+    .new_cluster_evidence_prompt_fixed_block(
+      id = "cluster_metrics",
+      label = "Cluster metrics",
+      display_order = 20L,
+      retain_rank = 20L,
+      lines = paste0(
+        "Metrics: h=",
+        formatC(x$context$cluster_metrics$h, digits = 3L, format = "f"),
+        ", k=",
+        x$context$cluster_metrics$k,
+        ", m=",
+        x$context$cluster_metrics$m
+      )
+    ),
+    .new_cluster_evidence_prompt_inline_block(
+      id = "species_topological",
+      label = "Topological species",
+      display_order = 30L,
+      retain_rank = 50L,
+      header = "Topological species: ",
+      items = topo_items,
+      empty_text = "none"
+    ),
+    .new_cluster_evidence_prompt_inline_block(
+      id = "species_phi",
+      label = "Phi-ranked species",
+      display_order = 40L,
+      retain_rank = 40L,
+      header = "Phi-ranked species: ",
+      items = phi_items
+    ),
+    .new_cluster_evidence_prompt_fixed_block(
+      id = "plots_membership",
+      label = "Plot membership",
+      display_order = 50L,
+      retain_rank = 30L,
+      lines = paste0(
+        "Plot membership: n=",
+        x$summaries$plots_membership$n_member_plots,
+        " [",
+        x$summaries$plots_membership$evidence_id,
+        "]"
+      )
+    ),
+    .new_cluster_evidence_prompt_inline_block(
+      id = "plots_prototype",
+      label = "Prototype plots",
+      display_order = 60L,
+      retain_rank = 60L,
+      header = "Prototype plots: ",
+      items = prototype_items
+    ),
+    .new_cluster_evidence_prompt_inline_block(
+      id = "plots_borderline",
+      label = "Borderline plots",
+      display_order = 70L,
+      retain_rank = 90L,
+      header = "Borderline plots: ",
+      items = borderline_items
+    ),
+    .new_cluster_evidence_prompt_inline_block(
+      id = "cover_summary",
+      label = "Cover summary",
+      display_order = 80L,
+      retain_rank = 100L,
+      header = "Cover summary: ",
+      items = cover_items
+    ),
+    .new_cluster_evidence_prompt_fixed_block(
+      id = "user_added_data",
+      label = "User-added data",
+      display_order = 85L,
+      retain_rank = 65L,
+      lines = user_added_lines
+    ),
+    .new_cluster_evidence_prompt_inline_block(
+      id = "semantic_axes",
+      label = "Semantic axes",
+      display_order = 90L,
+      retain_rank = 70L,
+      header = "Semantic axes: ",
+      items = semantic_axis_items,
+      intro_lines = "Semantic indicator profile: use as an ecological hint, not as formal habitat proof."
+    ),
+    .new_cluster_evidence_prompt_inline_block(
+      id = "semantic_unmatched_species",
+      label = "Semantic unmatched species",
+      display_order = 100L,
+      retain_rank = 110L,
+      header = "Semantic unmatched species: ",
+      items = semantic_unmatched_items
+    ),
+    .new_cluster_evidence_prompt_bulleted_block(
+      id = "limitations",
+      label = "Limitations",
+      display_order = 110L,
+      retain_rank = 80L,
+      header = "Limitations:",
+      items = limitation_items
+    )
+  )
+}
+
+.fit_cluster_evidence_prompt_block <- function(block, available_chars) {
+  available_chars <- if (is.null(available_chars) || !is.finite(available_chars)) {
+    Inf
+  } else {
+    as.integer(available_chars)
+  }
+  full_text <- .render_cluster_evidence_prompt_block_text(block)
+  full_chars <- .cluster_evidence_prompt_char_count(full_text)
+
+  if (!nzchar(full_text)) {
+    return(list(
+      status = "absent",
+      text = "",
+      chars_used = 0L,
+      chars_full = full_chars,
+      item_count_used = 0L,
+      item_count_full = as.integer(block$item_count_full)
+    ))
+  }
+
+  if (!is.finite(available_chars) || full_chars <= available_chars) {
+    return(list(
+      status = "kept",
+      text = full_text,
+      chars_used = full_chars,
+      chars_full = full_chars,
+      item_count_used = as.integer(block$item_count_full),
+      item_count_full = as.integer(block$item_count_full)
+    ))
+  }
+
+  if (block$item_count_full > 1L) {
+    for (n_items in seq.int(block$item_count_full - 1L, 1L)) {
+      text_try <- .render_cluster_evidence_prompt_block_text(block, n_items = n_items)
+      chars_try <- .cluster_evidence_prompt_char_count(text_try)
+      if (chars_try <= available_chars) {
+        return(list(
+          status = "truncated",
+          text = text_try,
+          chars_used = chars_try,
+          chars_full = full_chars,
+          item_count_used = as.integer(n_items),
+          item_count_full = as.integer(block$item_count_full)
+        ))
+      }
+    }
+  }
+
+  list(
+    status = "dropped",
+    text = "",
+    chars_used = 0L,
+    chars_full = full_chars,
+    item_count_used = 0L,
+    item_count_full = as.integer(block$item_count_full)
+  )
+}
+
+.serialize_cluster_evidence_blocks <- function(blocks, max_chars = NULL) {
+  max_chars <- .arg_nullable_non_negative_integer(max_chars, "max_chars")
+  remaining_chars <- if (is.null(max_chars)) Inf else as.integer(max_chars)
+  select_order <- order(
+    vapply(blocks, `[[`, integer(1L), "retain_rank"),
+    vapply(blocks, `[[`, integer(1L), "display_order")
+  )
+
+  block_state <- vector("list", length(blocks))
+  names(block_state) <- vapply(blocks, `[[`, character(1L), "id")
+  kept_block_count <- 0L
+
+  for (idx in select_order) {
+    block <- blocks[[idx]]
+    separator_chars <- if (kept_block_count > 0L) 1L else 0L
+    available_for_block <- if (is.finite(remaining_chars)) {
+      remaining_chars - separator_chars
+    } else {
+      Inf
+    }
+
+    if (is.finite(available_for_block) && available_for_block < 1L) {
+      fit <- .fit_cluster_evidence_prompt_block(block, 0L)
+      fit$status <- if (identical(fit$status, "absent")) "absent" else "dropped"
+    } else {
+      fit <- .fit_cluster_evidence_prompt_block(block, available_for_block)
+    }
+
+    if (fit$chars_used > 0L) {
+      kept_block_count <- kept_block_count + 1L
+      if (is.finite(remaining_chars)) {
+        remaining_chars <- remaining_chars - separator_chars - fit$chars_used
+      }
+    }
+
+    block_state[[idx]] <- c(
+      list(
+        id = block$id,
+        label = block$label,
+        display_order = as.integer(block$display_order),
+        retain_rank = as.integer(block$retain_rank)
+      ),
+      fit
+    )
+  }
+
+  block_table <- do.call(
+    rbind,
+    lapply(block_state, function(row) {
+      data.frame(
+        id = row$id,
+        label = row$label,
+        display_order = row$display_order,
+        retain_rank = row$retain_rank,
+        status = row$status,
+        item_count_full = row$item_count_full,
+        item_count_used = row$item_count_used,
+        chars_full = row$chars_full,
+        chars_used = row$chars_used,
+        stringsAsFactors = FALSE
+      )
+    })
+  )
+
+  full_order <- order(block_table$display_order)
+  block_table <- block_table[full_order, , drop = FALSE]
+  block_state <- block_state[full_order]
+
+  text_full <- paste(
+    Filter(
+      nzchar,
+      vapply(
+        blocks[full_order],
+        .render_cluster_evidence_prompt_block_text,
+        character(1L)
+      )
+    ),
+    collapse = "\n"
+  )
+  text_used <- paste(
+    Filter(
+      nzchar,
+      vapply(block_state, `[[`, character(1L), "text")
+    ),
+    collapse = "\n"
+  )
+
+  list(
+    text = text_used,
+    full_text = text_full,
+    blocks = block_table,
+    max_chars = max_chars,
+    chars_full = .cluster_evidence_prompt_char_count(text_full),
+    chars_used = .cluster_evidence_prompt_char_count(text_used),
+    trimmed = isTRUE(.cluster_evidence_prompt_char_count(text_used) < .cluster_evidence_prompt_char_count(text_full)),
+    kept_block_ids = block_table$id[block_table$status %in% c("kept", "truncated")],
+    dropped_block_ids = block_table$id[block_table$status == "dropped"],
+    truncated_block_ids = block_table$id[block_table$status == "truncated"]
+  )
+}
+
+.serialize_cluster_evidence_prompt <- function(x, max_chars = NULL) {
+  if (!inherits(x, "cluster_evidence")) {
+    stop("`x` must inherit from class `cluster_evidence`.")
+  }
+
+  .serialize_cluster_evidence_blocks(
+    .cluster_evidence_prompt_blocks(x),
+    max_chars = max_chars
+  )
+}
+
+.format_cluster_evidence_review_prompt <- function(x, max_chars = NULL) {
+  .serialize_cluster_evidence_prompt(x, max_chars = max_chars)$text
+}
+
+.format_cluster_evidence_prompt <- function(x, max_chars = NULL) {
+  .format_cluster_evidence_review_prompt(x, max_chars = max_chars)
 }
 
 .format_cluster_evidence_debug <- function(x) {
@@ -627,6 +1071,34 @@ cluster_evidence <- function(
     )
   } else {
     lines <- c(lines, "  phi species: <none>")
+  }
+
+  if (!is.null(x$summaries$semantic_axes) && nrow(x$summaries$semantic_axes)) {
+    lines <- c(
+      lines,
+      paste0(
+        "  semantic axes (",
+        nrow(x$summaries$semantic_axes),
+        "): ",
+        paste(
+          paste0(
+            x$summaries$semantic_axes$axis,
+            "=",
+            formatC(x$summaries$semantic_axes$score_0_10, digits = 2L, format = "f"),
+            " [", x$summaries$semantic_axes$band, "]"
+          ),
+          collapse = ", "
+        )
+      )
+    )
+
+    unmatched <- x$summaries$semantic_unmatched_species %||% character(0)
+    if (length(unmatched)) {
+      lines <- c(
+        lines,
+        paste0("  semantic unmatched species: ", paste(unmatched, collapse = ", "))
+      )
+    }
   }
 
   lines <- c(

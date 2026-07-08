@@ -55,6 +55,8 @@
 #'           a \strong{combination of clusters} (e.g.
 #'           \code{list(c(1,4,6,14), c(2,12,17))}).
 #'   }
+#'   A one-column data frame such as \code{read.csv("selected_clusters.csv")}
+#'   is treated as one highlighted cluster per row.
 #'   Within each supplied cluster set, if both an ancestor and descendant are present,
 #'   only the topmost (ancestor) is used for elbow labelling and band
 #'   placement. All valid supplied IDs are considered for labels at
@@ -77,6 +79,15 @@
 #' @param png_res Resolution in dpi for PNG output (default 300).
 #' @param main Optional plot title for each page. If NULL (default), a standard
 #'   header of the form "Species a-b of n" is drawn.
+#' @param label_registry Optional plotting registry produced by
+#'   \code{\link{cluster_label_registry}} or returned as
+#'   \code{label_clusters(..., labels_for_imgs = TRUE)$label_registry}. When
+#'   supplied, \code{cocktail_plot()} keeps numeric cluster IDs on the
+#'   dendrogram, but adds a compact legend/caption block with human-readable
+#'   label decodings and review-card filenames for the clusters actually shown
+#'   on each page. Use \code{"auto"} to load the most relevant saved
+#'   \code{"cluster_label_registry.csv"} from the default review-artifact
+#'   location.
 #' @param ... Additional graphical arguments passed to the underlying plotting
 #'   functions (e.g. \code{plot()}, \code{par()}), allowing fine-tuning of
 #'   appearance.
@@ -104,26 +115,12 @@ cocktail_plot <- function(
     palette        = "rainbow",
     png_res        = 300,
     main           = NULL,
+    label_registry = NULL,
     ...
 ) {
   ## ---- helpers ------------------------------------------------------------
   .parse_clusters_arg <- function(v) {
-    if (is.null(v)) return(NULL)
-
-    parse_one <- function(x) {
-      if (is.character(x)) {
-        as.integer(sub("^c_", "", x))
-      } else {
-        as.integer(x)
-      }
-    }
-
-    if (is.list(v)) {
-      lapply(v, parse_one)
-    } else {
-      ids <- parse_one(v)
-      lapply(as.list(ids), identity)
-    }
+    .parse_cocktail_plot_clusters_arg(v)
   }
 
   .keep_topmost_within <- function(ids, CM) {
@@ -216,6 +213,142 @@ cocktail_plot <- function(
     }
   }
 
+  .page_caption_layout <- function(page_label_ids) {
+    if (is.null(label_registry_plot) || !length(page_label_ids)) {
+      return(.cocktail_plot_legend_layout(NULL))
+    }
+
+    reg_page <- .cocktail_plot_registry_page_subset(
+      label_registry = label_registry_plot,
+      label_ids = page_label_ids
+    )
+    .cocktail_plot_legend_layout(
+      label_registry_page = reg_page,
+      max_entries = 12L
+    )
+  }
+
+  .page_caption_layout_for_window <- function(x_from, x_to) {
+    .page_caption_layout(.estimate_page_label_ids(x_from, x_to))
+  }
+
+  .setup_page_layout <- function(caption_layout = NULL) {
+    if (!isTRUE(has_plot_label_legend) ||
+        !.cocktail_plot_caption_has_content(caption_layout)) {
+      return(FALSE)
+    }
+
+    footer_height <- .cocktail_plot_footer_panel_height(caption_layout)
+    top_height <- 7.5 - footer_height
+
+    graphics::layout(
+      matrix(c(1L, 2L), ncol = 1L),
+      heights = c(top_height, footer_height)
+    )
+    TRUE
+  }
+
+  .draw_page_header <- function(page_index) {
+    graphics::mtext(
+      .page_title(page_index, starts, ends, n, main),
+      side = 3,
+      line = 0.4,
+      cex = 0.8
+    )
+
+    invisible(NULL)
+  }
+
+  .footer_row_positions <- function(total_rows, top = 0.93, bottom = 0.1, max_step = 0.095) {
+    total_rows <- as.integer(total_rows)
+    if (!is.finite(total_rows) || total_rows <= 0L) {
+      return(numeric(0))
+    }
+    if (total_rows == 1L) {
+      return(top)
+    }
+
+    available <- max(0, top - bottom)
+    step <- min(max_step, available / (total_rows - 1L))
+    top - step * (seq_len(total_rows) - 1L)
+  }
+
+  .draw_page_footer <- function(page_label_ids) {
+    if (!isTRUE(has_plot_label_legend)) {
+      return(invisible(NULL))
+    }
+
+    caption_layout <- .page_caption_layout(page_label_ids)
+    if (!.cocktail_plot_caption_has_content(caption_layout)) {
+      return(invisible(NULL))
+    }
+
+    graphics::par(mar = c(0.6, 5, 0.2, 1))
+    graphics::plot.new()
+
+    n_body_rows <- max(
+      length(caption_layout$body_columns[[1L]]),
+      length(caption_layout$body_columns[[2L]])
+    )
+    total_rows <- .cocktail_plot_caption_row_count(caption_layout)
+    y_rows <- .footer_row_positions(total_rows)
+    row_idx <- 1L
+    left_x <- 0.02
+    right_x <- if (caption_layout$n_columns >= 2L) 0.52 else left_x
+
+    if (length(caption_layout$header_lines)) {
+      header_rows <- seq.int(row_idx, length.out = length(caption_layout$header_lines))
+      graphics::text(
+        x = rep(left_x, length(header_rows)),
+        y = y_rows[header_rows],
+        labels = caption_layout$header_lines,
+        adj = c(0, 1),
+        cex = 0.54,
+        font = 2
+      )
+      row_idx <- row_idx + length(header_rows)
+    }
+
+    if (n_body_rows > 0L) {
+      body_rows <- seq.int(row_idx, length.out = n_body_rows)
+
+      if (length(caption_layout$body_columns[[1L]])) {
+        graphics::text(
+          x = rep(left_x, length(caption_layout$body_columns[[1L]])),
+          y = y_rows[body_rows[seq_along(caption_layout$body_columns[[1L]])]],
+          labels = caption_layout$body_columns[[1L]],
+          adj = c(0, 1),
+          cex = 0.56
+        )
+      }
+
+      if (length(caption_layout$body_columns[[2L]])) {
+        graphics::text(
+          x = rep(right_x, length(caption_layout$body_columns[[2L]])),
+          y = y_rows[body_rows[seq_along(caption_layout$body_columns[[2L]])]],
+          labels = caption_layout$body_columns[[2L]],
+          adj = c(0, 1),
+          cex = 0.56
+        )
+      }
+
+      row_idx <- row_idx + n_body_rows
+    }
+
+    if (length(caption_layout$footer_lines)) {
+      footer_rows <- seq.int(row_idx, length.out = length(caption_layout$footer_lines))
+      graphics::text(
+        x = rep(left_x, length(footer_rows)),
+        y = y_rows[footer_rows],
+        labels = caption_layout$footer_lines,
+        adj = c(0, 1),
+        cex = 0.54
+      )
+    }
+
+    invisible(NULL)
+  }
+
   ## ---- basic setup --------------------------------------------------------
   if (!is.null(clusters) && !is.null(phi_cut)) {
     warning("Both `clusters` and `phi_cut` supplied; using `clusters` for bands and labels.")
@@ -225,6 +358,8 @@ cocktail_plot <- function(
   CM <- x$Cluster.merged
   H  <- x$Cluster.height
   n  <- ncol(CS)
+  label_registry_plot <- .resolve_cocktail_plot_label_registry(label_registry, x)
+  has_plot_label_legend <- !is.null(label_registry_plot) && isTRUE(label_clusters)
 
   species_names <- if (!is.null(x$species)) x$species else colnames(CS)
 
@@ -425,6 +560,149 @@ cocktail_plot <- function(
   ends    <- pmin(starts + page_size - 1, n)
   n_pages <- length(starts)
 
+  .label_ids_crossing_zero <- function(node_ids, x_from, x_to) {
+    node_ids <- unique(as.integer(node_ids))
+    node_ids <- node_ids[
+      !is.na(node_ids) &
+        node_ids >= 1L &
+        node_ids <= length(child_parent_row)
+    ]
+    if (!length(node_ids)) {
+      return(integer(0))
+    }
+
+    out <- integer(0)
+    for (i_node in node_ids) {
+      p <- child_parent_row[i_node]
+      if (is.na(p)) {
+        next
+      }
+
+      side <- child_leg_side[i_node]
+      if (side == "L") {
+        x_leg <- Pos[p, "lx"]
+        y0_leg <- Pos[p, "ly0"]
+        y1_leg <- Pos[p, "ly1"]
+      } else if (side == "R") {
+        x_leg <- Pos[p, "rx"]
+        y0_leg <- Pos[p, "ry0"]
+        y1_leg <- Pos[p, "ry1"]
+      } else {
+        next
+      }
+
+      if (min(y0_leg, y1_leg) <= 0 && max(y0_leg, y1_leg) >= 0 &&
+          x_leg >= x_from && x_leg <= x_to) {
+        out <- c(out, i_node)
+      }
+    }
+
+    unique(out)
+  }
+
+  .label_positions_at_elbows <- function(node_ids) {
+    node_ids <- unique(as.integer(node_ids))
+    node_ids <- node_ids[
+      !is.na(node_ids) &
+        node_ids >= 1L &
+        node_ids <= length(parent_idx)
+    ]
+    if (!length(node_ids)) {
+      return(NULL)
+    }
+
+    xm <- numeric(length(node_ids))
+    ym <- numeric(length(node_ids))
+
+    for (k in seq_along(node_ids)) {
+      i_node <- node_ids[k]
+      p_node <- parent_idx[i_node]
+
+      if (!is.na(p_node)) {
+        if (CM[p_node, 1] == i_node) {
+          x_lab <- Pos[p_node, "lx"]
+        } else if (CM[p_node, 2] == i_node) {
+          x_lab <- Pos[p_node, "rx"]
+        } else {
+          x_lab <- center_x[i_node]
+        }
+        y_lab <- -H[p_node]
+      } else {
+        x_lab <- center_x[i_node]
+        y_lab <- y[i_node]
+      }
+
+      xm[k] <- x_lab
+      ym[k] <- y_lab
+    }
+
+    data.frame(
+      x = xm,
+      y = ym,
+      label = node_ids,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  .estimate_page_label_ids <- function(x_from, x_to) {
+    page_label_ids <- integer(0)
+
+    if (!isTRUE(label_clusters)) {
+      return(page_label_ids)
+    }
+
+    if (!is.null(clusters_top_nodes) && length(clusters_top_nodes)) {
+      ids_crossing0_page <- integer(0)
+      if (!is.null(clusters_all_ids_val) && length(clusters_all_ids_val)) {
+        ids_crossing0_page <- .label_ids_crossing_zero(
+          clusters_all_ids_val,
+          x_from = x_from,
+          x_to = x_to
+        )
+        page_label_ids <- c(page_label_ids, ids_crossing0_page)
+      }
+
+      node_ids <- sort(unique(unlist(clusters_top_nodes)))
+      node_ids <- setdiff(node_ids, ids_crossing0_page)
+      df <- .label_positions_at_elbows(node_ids)
+      if (!is.null(df) && nrow(df)) {
+        page_label_ids <- c(
+          page_label_ids,
+          df$label[df$x >= x_from & df$x <= x_to]
+        )
+      }
+
+      return(unique(page_label_ids))
+    }
+
+    if (!is.null(phi_cut) && !is.null(bands_phi) && nrow(bands_phi) > 0) {
+      cross <- compute_phi_crossings(-phi_cut, x_from, x_to, bands_phi, Pos)
+      if (is.null(cross) || !nrow(cross)) {
+        return(integer(0))
+      }
+      return(unique(as.integer(cross$label)))
+    }
+
+    hit_nodes <- which(x1 >= x_from & x0 <= x_to)
+    if (!length(hit_nodes)) {
+      return(integer(0))
+    }
+
+    ids_crossing0_page <- .label_ids_crossing_zero(hit_nodes, x_from, x_to)
+    page_label_ids <- c(page_label_ids, ids_crossing0_page)
+
+    node_ids <- setdiff(hit_nodes, ids_crossing0_page)
+    df <- .label_positions_at_elbows(node_ids)
+    if (!is.null(df) && nrow(df)) {
+      page_label_ids <- c(
+        page_label_ids,
+        df$label[df$x >= x_from & df$x <= x_to]
+      )
+    }
+
+    unique(page_label_ids)
+  }
+
   ## ---- determine device behaviour (current vs file) -----------------------
   use_current_dev <- FALSE
   if (is.null(file)) {
@@ -445,6 +723,13 @@ cocktail_plot <- function(
   # flag to report overlap/clipping
   overlap_dropped <- FALSE
 
+  if (use_current_dev && isTRUE(has_plot_label_legend)) {
+    on.exit(
+      graphics::layout(matrix(1L, nrow = 1L, ncol = 1L)),
+      add = TRUE
+    )
+  }
+
   ## ---- inner page-drawing function ----------------------------------------
   draw_page <- function(x_from, x_to, page_index, ...) {
     # For a single page, spread species across full width.
@@ -462,7 +747,8 @@ cocktail_plot <- function(
     x_lim_left  <- x_left  - x_pad
     x_lim_right <- x_right + x_pad
 
-    graphics::par(mar = c(8, 5, 1, 1), xaxs = "i", yaxs = "i")
+    top_margin <- if (has_plot_label_legend) 2 else 1
+    graphics::par(mar = c(8, 5, top_margin, 1), xaxs = "i", yaxs = "i")
 
     ## adjusted y-limits so lines at y = -1 (phi = 1) are inside the plot
     y_top    <- 0.1
@@ -552,7 +838,9 @@ cocktail_plot <- function(
 
     ## ---- cluster / node labels -------------------------------------------
 
-    if (!isTRUE(label_clusters)) return(invisible(NULL))
+    page_label_ids <- integer(0)
+
+    if (!isTRUE(label_clusters)) return(invisible(page_label_ids))
 
     ## Case A: clusters supplied -> labels for those clusters
     if (!is.null(clusters_top_nodes) && length(clusters_top_nodes)) {
@@ -609,6 +897,7 @@ cocktail_plot <- function(
 
           if (nrow(df0_keep) > 0) {
             ids_crossing0_page <- unique(df0_keep$label)
+            page_label_ids <- c(page_label_ids, ids_crossing0_page)
 
             graphics::symbols(
               df0_keep$x, df0_keep$y,
@@ -678,6 +967,7 @@ cocktail_plot <- function(
           }
 
           if (nrow(df_keep) > 0) {
+            page_label_ids <- c(page_label_ids, df_keep$label)
             graphics::symbols(
               df_keep$x, df_keep$y,
               circles = rep(1, nrow(df_keep)),
@@ -693,7 +983,7 @@ cocktail_plot <- function(
         }
       }
 
-      return(invisible(NULL))
+      return(invisible(unique(page_label_ids)))
     }
 
     ## Case B: no clusters, but phi_cut present -> label φ-cut clusters
@@ -710,6 +1000,7 @@ cocktail_plot <- function(
         }
 
         if (nrow(cross_keep) > 0) {
+          page_label_ids <- c(page_label_ids, cross_keep$label)
           graphics::symbols(
             cross_keep$x, cross_keep$y,
             circles = rep(1, nrow(cross_keep)),
@@ -724,12 +1015,12 @@ cocktail_plot <- function(
         }
       }
 
-      return(invisible(NULL))
+      return(invisible(unique(page_label_ids)))
     }
 
     ## Case C: no clusters, no phi_cut -> label all internal nodes
     hit_nodes <- which(x1 >= x_from & x0 <= x_to)
-    if (!length(hit_nodes)) return(invisible(NULL))
+    if (!length(hit_nodes)) return(invisible(page_label_ids))
 
     ## C1: labels at y = 0 for nodes whose vertical branch crosses y = 0
     ids_crossing0_page <- integer(0)
@@ -780,6 +1071,7 @@ cocktail_plot <- function(
 
       if (nrow(df0_keep) > 0) {
         ids_crossing0_page <- unique(df0_keep$label)
+        page_label_ids <- c(page_label_ids, ids_crossing0_page)
 
         graphics::symbols(
           df0_keep$x, df0_keep$y,
@@ -800,7 +1092,7 @@ cocktail_plot <- function(
     if (length(ids_crossing0_page)) {
       node_ids <- setdiff(node_ids, ids_crossing0_page)
     }
-    if (!length(node_ids)) return(invisible(NULL))
+    if (!length(node_ids)) return(invisible(unique(page_label_ids)))
 
     xm <- numeric(length(node_ids))
     ym <- numeric(length(node_ids))
@@ -828,7 +1120,7 @@ cocktail_plot <- function(
     }
 
     keep <- which(xm >= x_from & xm <= x_to & !is.na(xm) & !is.na(ym))
-    if (!length(keep)) return(invisible(NULL))
+    if (!length(keep)) return(invisible(unique(page_label_ids)))
 
     df <- data.frame(
       x = xm[keep],
@@ -846,6 +1138,7 @@ cocktail_plot <- function(
     }
 
     if (nrow(df_keep) > 0) {
+      page_label_ids <- c(page_label_ids, df_keep$label)
       graphics::symbols(
         df_keep$x, df_keep$y,
         circles = rep(1, nrow(df_keep)),
@@ -859,17 +1152,16 @@ cocktail_plot <- function(
       )
     }
 
-    invisible(NULL)
+    invisible(unique(page_label_ids))
   }
 
   ## ---- current device: only first page ------------------------------------
   if (use_current_dev) {
     p <- 1L
-    draw_page(starts[p], ends[p], page_index = p, ...)
-    graphics::mtext(
-      .page_title(p, starts, ends, n, main),
-      side = 3, line = 0.2, cex = 0.8
-    )
+    .setup_page_layout(.page_caption_layout_for_window(starts[p], ends[p]))
+    page_label_ids <- draw_page(starts[p], ends[p], page_index = p, ...)
+    .draw_page_header(p)
+    .draw_page_footer(page_label_ids)
     if (overlap_dropped) {
       warning(
         "Some cluster labels were omitted to avoid overlaps or clipping; ",
@@ -885,11 +1177,10 @@ cocktail_plot <- function(
     on.exit(grDevices::dev.off(), add = TRUE)
 
     for (p in seq_along(starts)) {
-      draw_page(starts[p], ends[p], page_index = p, ...)
-      graphics::mtext(
-        .page_title(p, starts, ends, n, main),
-        side = 3, line = 0.2, cex = 0.8
-      )
+      .setup_page_layout(.page_caption_layout_for_window(starts[p], ends[p]))
+      page_label_ids <- draw_page(starts[p], ends[p], page_index = p, ...)
+      .draw_page_header(p)
+      .draw_page_footer(page_label_ids)
     }
 
     ## ---- PNG output ---------------------------------------------------------
@@ -911,11 +1202,10 @@ cocktail_plot <- function(
         res    = png_res
       )
 
-      draw_page(starts[p], ends[p], page_index = p, ...)
-      graphics::mtext(
-        .page_title(p, starts, ends, n, main),
-        side = 3, line = 0.2, cex = 0.8
-      )
+      .setup_page_layout(.page_caption_layout_for_window(starts[p], ends[p]))
+      page_label_ids <- draw_page(starts[p], ends[p], page_index = p, ...)
+      .draw_page_header(p)
+      .draw_page_footer(page_label_ids)
 
       grDevices::dev.off()
     }

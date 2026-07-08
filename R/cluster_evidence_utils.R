@@ -363,3 +363,401 @@
     representation = info$representation %||% NULL
   )
 }
+
+.cluster_evidence_user_added_data_char_limit <- function() {
+  1000L
+}
+
+.cluster_evidence_supported_user_added_extensions <- function() {
+  c("txt", "json", "yaml", "yml")
+}
+
+.cluster_evidence_warn_user_added_data <- function(message) {
+  warning(message, call. = FALSE)
+}
+
+.cluster_evidence_is_path_like_string <- function(x) {
+  x <- .as_scalar_character(x)
+  if (is.na(x) || !nzchar(trimws(x))) {
+    return(FALSE)
+  }
+
+  grepl(
+    "([/\\\\]|^~|^[A-Za-z]:|\\.(txt|json|ya?ml)$)",
+    x,
+    ignore.case = TRUE,
+    perl = TRUE
+  )
+}
+
+.cluster_evidence_serialize_user_added_object <- function(x) {
+  if (is.character(x)) {
+    x_chr <- x[!is.na(x)]
+    if (length(x_chr) && any(nzchar(trimws(x_chr)))) {
+      return(paste(x_chr, collapse = "\n"))
+    }
+  }
+
+  json_text <- tryCatch(
+    jsonlite::toJSON(
+      x,
+      auto_unbox = TRUE,
+      null = "null",
+      pretty = TRUE
+    ),
+    error = function(e) NULL
+  )
+  json_text <- .as_scalar_character(json_text)
+  if (!is.na(json_text) && nzchar(trimws(json_text))) {
+    return(json_text)
+  }
+
+  paste(
+    utils::capture.output(utils::str(x, vec.len = 20L, give.attr = FALSE)),
+    collapse = "\n"
+  )
+}
+
+.cluster_evidence_read_utf8_text_file <- function(path) {
+  paste(
+    readLines(path, warn = FALSE, encoding = "UTF-8"),
+    collapse = "\n"
+  )
+}
+
+.cluster_evidence_parse_user_added_file <- function(path) {
+  path <- normalizePath(path, winslash = "/", mustWork = TRUE)
+  ext <- tolower(tools::file_ext(path))
+
+  if (!ext %in% .cluster_evidence_supported_user_added_extensions()) {
+    stop(
+      "Unsupported `user_added_data` extension for `",
+      basename(path),
+      "`. Supported: ",
+      paste0(".", .cluster_evidence_supported_user_added_extensions(), collapse = ", "),
+      "."
+    )
+  }
+
+  text <- switch(
+    ext,
+    txt = .cluster_evidence_read_utf8_text_file(path),
+    json = {
+      parsed <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+      jsonlite::toJSON(parsed, auto_unbox = TRUE, null = "null", pretty = TRUE)
+    },
+    yaml = {
+      if (!requireNamespace("yaml", quietly = TRUE)) {
+        stop("Package `yaml` is required to load `.yaml` files.")
+      }
+      parsed <- yaml::read_yaml(path)
+      jsonlite::toJSON(parsed, auto_unbox = TRUE, null = "null", pretty = TRUE)
+    },
+    yml = {
+      if (!requireNamespace("yaml", quietly = TRUE)) {
+        stop("Package `yaml` is required to load `.yml` files.")
+      }
+      parsed <- yaml::read_yaml(path)
+      jsonlite::toJSON(parsed, auto_unbox = TRUE, null = "null", pretty = TRUE)
+    }
+  )
+
+  text <- .as_scalar_character(text)
+  if (is.na(text) || !nzchar(trimws(text))) {
+    return(NULL)
+  }
+
+  list(
+    name = basename(path),
+    format = ext,
+    source = path,
+    text = text,
+    truncated = FALSE
+  )
+}
+
+.cluster_evidence_finalize_user_added_entries <- function(
+    entries,
+    source_type,
+    source_path = NULL
+) {
+  if (!is.list(entries) || !length(entries)) {
+    return(NULL)
+  }
+
+  limit <- .cluster_evidence_user_added_data_char_limit()
+  kept <- list()
+  chars_used <- 0L
+  was_truncated <- FALSE
+
+  for (entry in entries) {
+    text <- .as_scalar_character(entry$text)
+    if (is.na(text) || !nzchar(trimws(text))) {
+      next
+    }
+
+    remaining <- as.integer(limit - chars_used)
+    if (remaining < 1L) {
+      was_truncated <- TRUE
+      break
+    }
+
+    text_chars_full <- .cluster_evidence_prompt_char_count(text)
+    text_used <- if (text_chars_full > remaining) {
+      was_truncated <- TRUE
+      substr(text, 1L, remaining)
+    } else {
+      text
+    }
+
+    text_chars_used <- .cluster_evidence_prompt_char_count(text_used)
+    entry$text <- text_used
+    entry$chars_full <- text_chars_full
+    entry$chars_used <- text_chars_used
+    entry$truncated <- isTRUE(entry$truncated) || text_chars_used < text_chars_full
+    kept[[length(kept) + 1L]] <- entry
+    chars_used <- chars_used + text_chars_used
+
+    if (isTRUE(entry$truncated)) {
+      break
+    }
+  }
+
+  if (!length(kept)) {
+    return(NULL)
+  }
+
+  if (isTRUE(was_truncated)) {
+    .cluster_evidence_warn_user_added_data(
+      paste0(
+        "`user_added_data` exceeded the ",
+        limit,
+        "-character limit and was truncated deterministically."
+      )
+    )
+  }
+
+  list(
+    source_type = source_type,
+    source_path = source_path,
+    entries = kept,
+    char_limit = limit,
+    total_chars = chars_used,
+    truncated = was_truncated
+  )
+}
+
+.cluster_evidence_load_user_added_data_from_file <- function(path) {
+  if (!file.exists(path)) {
+    .cluster_evidence_warn_user_added_data(
+      paste0(
+        "`user_added_data` file was not found: ",
+        path,
+        ". The workflow will continue without it."
+      )
+    )
+    return(NULL)
+  }
+
+  entry <- tryCatch(
+    .cluster_evidence_parse_user_added_file(path),
+    error = function(e) {
+      .cluster_evidence_warn_user_added_data(conditionMessage(e))
+      NULL
+    }
+  )
+
+  .cluster_evidence_finalize_user_added_entries(
+    entries = if (is.null(entry)) list() else list(entry),
+    source_type = "file",
+    source_path = normalizePath(path, winslash = "/", mustWork = FALSE)
+  )
+}
+
+.cluster_evidence_load_user_added_data_from_directory <- function(path) {
+  if (!dir.exists(path)) {
+    .cluster_evidence_warn_user_added_data(
+      paste0(
+        "`user_added_data` directory was not found: ",
+        path,
+        ". The workflow will continue without it."
+      )
+    )
+    return(NULL)
+  }
+
+  files <- list.files(
+    path,
+    full.names = TRUE,
+    recursive = FALSE,
+    all.files = FALSE,
+    no.. = TRUE
+  )
+  if (!length(files)) {
+    .cluster_evidence_warn_user_added_data(
+      paste0(
+        "`user_added_data` directory is empty: ",
+        normalizePath(path, winslash = "/", mustWork = FALSE),
+        ". The workflow will continue without it."
+      )
+    )
+    return(NULL)
+  }
+
+  files <- sort(files)
+  info <- file.info(files)
+  is_dir <- rep(FALSE, length(files))
+  if ("isdir" %in% names(info)) {
+    is_dir <- !is.na(info$isdir) & info$isdir
+  }
+  files <- files[!is_dir]
+  if (!length(files)) {
+    .cluster_evidence_warn_user_added_data(
+      paste0(
+        "`user_added_data` directory contains no plain files: ",
+        normalizePath(path, winslash = "/", mustWork = FALSE),
+        ". The workflow will continue without it."
+      )
+    )
+    return(NULL)
+  }
+
+  exts <- tolower(tools::file_ext(files))
+  supported_exts <- .cluster_evidence_supported_user_added_extensions()
+  supported <- exts %in% supported_exts
+
+  if (any(!supported)) {
+    .cluster_evidence_warn_user_added_data(
+      paste0(
+        "Ignored unsupported `user_added_data` files: ",
+        paste(basename(files[!supported]), collapse = ", "),
+        ". Supported extensions: ",
+        paste0(".", supported_exts, collapse = ", "),
+        "."
+      )
+    )
+  }
+
+  files <- files[supported]
+  if (!length(files)) {
+    .cluster_evidence_warn_user_added_data(
+      paste0(
+        "No supported `user_added_data` files were found in ",
+        normalizePath(path, winslash = "/", mustWork = FALSE),
+        ". Supported extensions: ",
+        paste0(".", supported_exts, collapse = ", "),
+        "."
+      )
+    )
+    return(NULL)
+  }
+
+  entries <- list()
+  for (file in files) {
+    entry <- tryCatch(
+      .cluster_evidence_parse_user_added_file(file),
+      error = function(e) {
+        .cluster_evidence_warn_user_added_data(conditionMessage(e))
+        NULL
+      }
+    )
+    if (!is.null(entry)) {
+      entries[[length(entries) + 1L]] <- entry
+    }
+  }
+
+  if (!length(entries)) {
+    .cluster_evidence_warn_user_added_data(
+      paste0(
+        "No non-empty supported `user_added_data` files were loaded from ",
+        normalizePath(path, winslash = "/", mustWork = FALSE),
+        "."
+      )
+    )
+    return(NULL)
+  }
+
+  .cluster_evidence_finalize_user_added_entries(
+    entries = entries,
+    source_type = "directory",
+    source_path = normalizePath(path, winslash = "/", mustWork = FALSE)
+  )
+}
+
+.cluster_evidence_load_user_added_data_from_object <- function(x) {
+  text <- .cluster_evidence_serialize_user_added_object(x)
+  text <- .as_scalar_character(text)
+  if (is.na(text) || !nzchar(trimws(text))) {
+    return(NULL)
+  }
+
+  .cluster_evidence_finalize_user_added_entries(
+    entries = list(list(
+      name = "inline_object",
+      format = "object",
+      source = NULL,
+      text = text,
+      truncated = FALSE
+    )),
+    source_type = "object",
+    source_path = NULL
+  )
+}
+
+.cluster_evidence_resolve_user_added_data <- function(user_added_data) {
+  if (is.null(user_added_data)) {
+    return(NULL)
+  }
+
+  if (is.character(user_added_data) && length(user_added_data) == 1L) {
+    candidate <- .as_scalar_character(user_added_data)
+    if (!is.na(candidate) && nzchar(trimws(candidate))) {
+      if (dir.exists(candidate)) {
+        return(.cluster_evidence_load_user_added_data_from_directory(candidate))
+      }
+      if (file.exists(candidate)) {
+        return(.cluster_evidence_load_user_added_data_from_file(candidate))
+      }
+      if (.cluster_evidence_is_path_like_string(candidate)) {
+        ext <- tolower(tools::file_ext(candidate))
+        if (nzchar(ext)) {
+          return(.cluster_evidence_load_user_added_data_from_file(candidate))
+        }
+        return(.cluster_evidence_load_user_added_data_from_directory(candidate))
+      }
+    }
+  }
+
+  .cluster_evidence_load_user_added_data_from_object(user_added_data)
+}
+
+.cluster_evidence_user_added_prompt_lines <- function(user_added_data) {
+  entries <- user_added_data$entries %||% list()
+  if (!is.list(entries) || !length(entries)) {
+    return(character(0))
+  }
+
+  lines <- "User-added data:"
+  for (entry in entries) {
+    name <- .as_scalar_character(entry$name)
+    format <- .as_scalar_character(entry$format)
+    text <- .as_scalar_character(entry$text)
+    if (is.na(text) || !nzchar(trimws(text))) {
+      next
+    }
+
+    header <- paste0(
+      "File: ",
+      if (is.na(name) || !nzchar(name)) "inline_object" else name,
+      " [",
+      if (is.na(format) || !nzchar(format)) "object" else format,
+      if (isTRUE(entry$truncated)) "; truncated" else "",
+      "]"
+    )
+    body_lines <- strsplit(text, "\n", fixed = TRUE)[[1L]]
+    body_lines <- paste0("  ", body_lines)
+    lines <- c(lines, header, body_lines)
+  }
+
+  lines
+}

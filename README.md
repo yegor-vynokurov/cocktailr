@@ -475,6 +475,36 @@ plot(hc_clusters, main = "Cluster dendrogram (co-membership phi distance)", cex 
 
 <img src="man/figures/README-typical-phi-dist-hclust-1.png" width="100%" />
 
+If you already generated LLM label artifacts with
+`label_clusters(..., labels_for_imgs = TRUE)`, you can also relabel the base-R
+`hclust` leaves directly:
+
+``` r
+hc_clusters_labeled <- label_hclust_leaves(
+  hc_clusters,
+  label_registry = "auto",
+  x = res,
+  label_field = "plot_label_short"
+)
+
+plot(hc_clusters_labeled, main = "Cluster dendrogram with human-readable labels", cex = 0.7)
+```
+
+If you prefer a one-call helper, the same workflow can be run directly with:
+
+``` r
+cluster_hclust_plot(
+  x = res,
+  clusters = c("c_1", "c_2", "c_4"),
+  label_registry = "auto",
+  label_field = "plot_label_short",
+  cex = 0.7
+)
+```
+
+This convenience wrapper internally runs
+`cluster_phi_dist() -> hclust() -> label_hclust_leaves() -> plot()`.
+
 
 ``` r
 
@@ -652,15 +682,90 @@ run <- label_clusters(
   x = res,
   clusters = strong_labels[1],
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 600
+  num_predict = 2400
 )
 
 run$summary
 run$results[[1]]$review$file
 ```
+
+If you want figure-ready label decodings for `cocktail_plot()`, ask
+`label_clusters()` to also build a plotting registry:
+
+``` r
+plot_clusters <- utils::head(
+  select_clusters(
+    x = res,
+    min_phi = 0.20,
+    min_k = 1,
+    min_score = 0.3,
+    mode = "strict",
+    return = "labels"
+  ),
+  2
+)
+
+run_plot <- label_clusters(
+  x = res,
+  clusters = plot_clusters,
+  model = "gemma4:12b",
+  variant = "label_primary_v1",
+  workflow_steps = 1,
+  timeout_sec = 600,
+  num_predict = 2400,
+  labels_for_imgs = TRUE
+)
+
+cocktail_plot(
+  x = res,
+  clusters = run_plot$summary$cluster,
+  label_clusters = TRUE,
+  label_registry = "auto"
+)
+```
+
+The dendrogram still shows stable numeric cluster IDs, while the top caption
+adds a compact legend with human-readable labels plus review-card filenames.
+The registry is saved automatically as `cluster_label_registry.csv` next to the
+review cards. If you prefer not to use auto-discovery, you can still pass
+`run_plot$label_registry` explicitly.
+
+If you want a cautious exploratory fallback after a non-accepted strict
+result, you can
+also enable:
+
+``` r
+run_spec <- label_clusters(
+  x = res,
+  clusters = plot_clusters,
+  model = "gemma4:12b",
+  variant = "label_primary_v1",
+  workflow_steps = 1,
+  speculative_fallback_mode = "after_nonaccepted",
+  timeout_sec = 600,
+  num_predict = 2400,
+  labels_for_imgs = TRUE
+)
+
+run_spec$summary[, c("cluster", "run_status", "label_tier", "review_status")]
+```
+
+In that mode, accepted labels remain unchanged. If the strict pass abstains
+or would otherwise end in the placeholder branch, `label_clusters()` starts
+an internal soft-label ladder on the same model by default: it tries
+`label_soft_v1` first, then escalates to the more label-forcing
+`label_broad_v1`. Tentative fallback labels appear with `*` in plot
+legends or `hclust` leaf labels, for example:
+
+- accepted: `c_12: Mixed Deciduous Woodland`
+- speculative: `c_27: Woodland-transition assemblage*`
+
+The plot legend adds the note:
+
+- `* tentative / speculative label; strict validation did not accept a stable evidence-backed label`
 
 Recommended defaults for the current MVP labeling workflow:
 
@@ -668,16 +773,30 @@ Recommended defaults for the current MVP labeling workflow:
 - `species_cluster_phi = TRUE`
 - `save_vegmatrix = TRUE`
 - `model = "gemma4:12b"`
-- `variant = "strict_abstention_gate_v1"`
+- `variant = "label_primary_v1"`
 - `workflow_steps = 1`
 
 Notes:
 
 - If you omit `clusters`, `label_clusters()` processes up to the first 10 clusters selected by score.
+- `workflow_steps = 3` is available when a weaker model tends to turn the label itself into a paragraph; it splits the run into draft analysis, short-label selection, and explanation.
+- If that Stage-B selection cascade fully exhausts `label_primary_v1 -> label_soft_v1 -> label_broad_v1`, the workflow now stops cleanly with a deterministic review-needed fallback label `chaotic cluster` instead of spending one more fragile LLM call on explanation generation.
+- `label_mode = "open"` is the default. Switch to `label_mode = "constrained"` when a small model should choose from the packaged coarse vocabulary, or use `label_mode = "dynamic"` together with `workflow_steps = 3` when Stage B should reuse candidate labels proposed by Stage A.
+- `speculative_fallback_mode = "after_nonaccepted"` is optional and off by default.
+- In that mode, the speculative ladder reuses your explicit `model` by default; set `options(cocktailr.speculative_fallback_model = "...")` only if you want an explicit override.
+- The internal soft ladder is still benchmarked most around `phi4-mini:latest` with `num_ctx = 8192` and `num_predict = 2400`.
+- For ordinary local labeling, `gemma4:12b` remains the recommended baseline.
+- Smaller models such as `phi4-mini` are still experimental for this task: they may lack enough ecological/background knowledge for stable cluster labeling and can fall back to generic labels or abstentions more often.
+- `semantic_layer = TRUE` optionally enriches the evidence bundle with indicator-derived ecological axes from the external EIVE/Tichy tables under `data-raw/external/`.
+- That semantic step uses an auxiliary Excel reader (`readxl` if available, otherwise the packaged `xml2` fallback path). If enrichment cannot be built, `label_clusters()` records the outcome in `summary$semantic_layer_status` and continues with the plain evidence bundle.
 - The default saved artifact is a compact markdown review card under `temp/reports/cluster_reviews/`.
 - Raw LLM logs via `log_dir` are optional and not part of the default workflow.
-- For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 600` are safer than lower defaults.
-- If `num_predict = 600` causes an EOF-like truncation error, increase it to `1200` or higher.
+- Public prompt selection is intentionally small now: use only `label_primary_v1`, `label_soft_v1`, or `label_broad_v1`; older prompt IDs are compatibility aliases, and retired prompt texts live locally under `temp/prompt_archive/cluster_labeling/`.
+- For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 2400` are the current recommended strict-pass settings.
+- If the strict pass still hits an EOF-like truncation error, `label_clusters()` now retries automatically at `4800` and then `9600`.
+- Final prompt messages are budget-aware by default: `prompt_budget_chars = 10000`, with lower-priority evidence blocks trimmed first if needed.
+- The JSON schema is still enforced, but it is now passed through the structured-output `format` field rather than embedded verbatim inside the prompt text.
+- If validation fails only because label fields are too long or use forbidden punctuation, `label_clusters()` now runs a lightweight repair pass that edits the parsed JSON without resending the full evidence bundle.
 
 If you want to inspect the evidence object directly before any LLM call:
 
@@ -705,10 +824,10 @@ run_syn <- label_clusters(
   x = res_syn,
   clusters = "c_1",
   model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
+  variant = "label_primary_v1",
   workflow_steps = 1,
   timeout_sec = 600,
-  num_predict = 600
+  num_predict = 2400
 )
 ```
 

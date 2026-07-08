@@ -1,0 +1,55 @@
+{
+  "vocabulary_version": "0.1.0",
+  "vocabulary_name": "coarse_label_vocabulary_core_v1",
+  "description": "Compact coarse label vocabulary for constrained local-model cluster labeling.",
+  "labels": [
+    {
+      "canonical_label": "woodland_like_assemblage",
+      "display_label": "Woodland-like Assemblage",
+      "short_description": "Broad woody or shaded forest cluster with trees, woodland herbs, or fern-rich understorey signal.",
+      "use_when": "Use when the topological species or first phi-ranked species point clearly toward trees, shade herbs, or woodland structure."
+    },
+    {
+      "canonical_label": "wet_meadow_like_assemblage",
+      "display_label": "Wet Meadow-like Assemblage",
+      "short_description": "Broad moist meadow, marsh-edge, sedge-rich, or wet graminoid-herb cluster.",
+      "use_when": "Use when the species core suggests wetness, sedges, marsh herbs, or moisture-tolerant graminoids."
+    },
+    {
+      "canonical_label": "dry_meadow_like_assemblage",
+      "display_label": "Dry Meadow-like Assemblage",
+      "short_description": "Broad dry grass-forb, calcareous meadow, or steppe-leaning open herb cluster.",
+      "use_when": "Use when the strongest signal comes from dry meadow, forb-grass, or steppe-like species."
+    },
+    {
+      "canonical_label": "mixed_herbaceous_assemblage",
+      "display_label": "Mixed Herbaceous Assemblage",
+      "short_description": "Mostly herbaceous cluster with a visible plant-community signal, but without a clean wet-versus-dry direction.",
+      "use_when": "Use when the cluster is clearly herbaceous but neither wet meadow nor dry meadow is defensible."
+    },
+    {
+      "canonical_label": "transition_edge_assemblage",
+      "display_label": "Transition Edge Assemblage",
+      "short_description": "Mixed ecotonal cluster combining signals from two directions, such as woodland-meadow or wet-dry overlap.",
+      "use_when": "Use when the evidence bundle shows two competing broad directions and neither clearly dominates."
+    },
+    {
+      "canonical_label": "ruderal_like_assemblage",
+      "display_label": "Ruderal-like Assemblage",
+      "short_description": "Broad disturbed, nitrophilous, or anthropogenic herb cluster.",
+      "use_when": "Use when disturbance-tolerant or ruderal herbs dominate the directional signal."
+    },
+    {
+      "canonical_label": "mixed_generalist_assemblage",
+      "display_label": "Mixed Generalist Assemblage",
+      "short_description": "Diffuse mixed cluster with weak dominance and broad generalist composition.",
+      "use_when": "Use when the cluster is internally real but no stronger coarse family is safer than a general mixed label."
+    },
+    {
+      "canonical_label": "chaotic_plant_assemblage",
+      "display_label": "Chaotic Plant Assemblage",
+      "short_description": "Very weakly structured mixed cluster used only as the last broad coarse label inside the constrained vocabulary.",
+      "use_when": "Use only if none of the other listed labels are even broadly defensible."
+    }
+  ]
+}

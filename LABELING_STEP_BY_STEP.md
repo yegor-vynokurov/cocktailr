@@ -1,770 +1,967 @@
 # Labeling Step by Step
 
-This document describes the recommended end-to-end labeling workflow in
-English:
+This is the official end-to-end guide for running cluster labeling in
+`cocktailr` on a real dataset with a local Ollama model such as
+`phi4-mini:latest`.
 
-1. initialize the package
-2. generate or load a dataset
-3. run Cocktail clustering
-4. choose cluster IDs
-5. build evidence
-6. run one-step local LLM labeling
-7. validate the result
-8. save the final human-review markdown card to disk
+The goal is practical, not experimental:
 
-## Quick Flow Example
+1. prepare one vegetation dataset
+2. run Cocktail clustering
+3. choose clusters to label
+4. run a smoke test on one cluster
+5. run full batch labeling
+6. inspect review cards, summaries, logs, and plots
 
-This is the shortest recommended end-to-end run.
+This guide is written for users who are not already familiar with LLM
+settings. It uses one clear path and keeps optional knobs to a minimum.
 
-It:
+## What This Guide Assumes
 
-- loads the current development version of the package
-- generates a synthetic dataset
-- runs Cocktail clustering
-- labels the top score-ranked clusters with the current default
-  `gemma4:12b` + `strict_abstention_gate_v1` + `workflow_steps = 1`
-- saves compact markdown review cards under
-  `temp/reports/cluster_reviews/`
+- You have a local `cocktailr` source checkout.
+- You can run PowerShell and R on the same machine.
+- Ollama is installed locally.
+- The model you want to use is available in `ollama list`, or you can
+  download it with `ollama pull`.
 
-For Ollama installation and model setup, see
-[llm_operation.md](llm_operation.md).
+The shell examples below use PowerShell on Windows. If your local paths
+are different, change `root` and the dataset path once at the top.
 
-```r
-pkgload::load_all("D:/documents/coctrailr/cocktailr")
-syn <- generate_synthetic_vegetation_data(seed = 42)
-res <- cocktail_cluster(
-  vegmatrix = syn$wide_matrix,
-  progress = FALSE,
-  plot_values = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix = TRUE
-)
-run <- label_clusters(
-  x = res,
-  model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 1200
-)
+## The Few Settings You Actually Need To Care About
+
+For a first real run, only these settings normally matter:
+
+- `MODEL_NAME`
+  The Ollama model name, for example `"phi4-mini:latest"`.
+- `OLLAMA_OPTIONS$num_ctx`
+  The Ollama context window. Start with `8192L` if the model supports
+  it; use `4096L` if you need a smaller run.
+- `PROMPT_BUDGET_CHARS`
+  How much evidence text is allowed into the assembled prompt.
+- `NUM_PREDICT`
+  How much output the model may generate.
+- `TIMEOUT_SEC`
+  How long one LLM call may take before timing out.
+
+For a first run, do not change these:
+
+- `variant = "label_primary_v1"`
+- `label_mode = "open"`
+- `use_brainstorm = TRUE`
+- `semantic_layer`
+- `workflow_steps`
+- `internal_prompt_version`
+- `speculative_fallback_mode`
+
+The staged public workflow already knows how to use the main prompt
+ladder. You do not need to manually chain `label_soft_v1` or
+`label_broad_v1`.
+
+This guide intentionally leaves `semantic_layer = FALSE`. Turn it on
+only if you already know that the optional semantic resources are
+prepared and you want that extra enrichment layer.
+
+## What Gets Written Automatically vs What This Guide Saves Explicitly
+
+`label_clusters()` automatically writes:
+
+- markdown review cards under `review_dir`
+- `cluster_label_registry.csv` next to those review cards when
+  `labels_for_imgs = TRUE`
+
+This guide also saves a few convenience files explicitly so that the run
+is easy to reopen later:
+
+- `..._run.rds`
+- `..._summary.csv`
+- `..._label_registry_copy.csv`
+- plot PNG files
+
+## Final Folder Layout
+
+This guide keeps every artifact for one run under one timestamped
+folder:
+
+```text
+temp/reports/forest_steppe_single_model_labeling/<timestamp>/
+  input/
+  clustering/
+  runs/
+    <MODEL_SLUG>/
+      smoke/
+      full/
+  plots/
+  evaluation/
+  session/
 ```
 
-The current default recommendation is:
+The most useful outputs at the end are:
 
-- one-step workflow: `workflow_steps = 1`
-- model: `gemma4:12b`
-- prompt variant: `strict_abstention_gate_v1`
-- safer first-run overrides on unknown local hardware:
-  `timeout_sec = 600`, `num_predict = 600` (or 1200 if we have EOF error)
-- final saved artifact: compact markdown review card under
-  dataset-aware subfolders of `temp/reports/cluster_reviews/`
-- no `log_dir` by default
+- `clustering/selected_clusters.csv`
+- `runs/<MODEL_SLUG>/full/<MODEL_SLUG>_run.rds`
+- `runs/<MODEL_SLUG>/full/<MODEL_SLUG>_summary.csv`
+- `runs/<MODEL_SLUG>/full/cluster_reviews/...`
+- `runs/<MODEL_SLUG>/full/llm_logs/...` if `debug = TRUE`
+- `runs/<MODEL_SLUG>/full/<MODEL_SLUG>_label_registry_copy.csv`
+- `plots/<MODEL_SLUG>_cluster_hclust_labels.png`
+- `plots/<MODEL_SLUG>_full_cocktail_plot_page01.png`
+- `plots/<MODEL_SLUG>_full_cocktail_plot_page02.png` and more if needed
 
-## 0. Before You Start
+Important: in this guide we keep `review_dir` inside the run folder, so
+for plotting we pass `run$label_registry` explicitly. Do not rely on
+`label_registry = "auto"` here.
 
-You need:
+## 1. One-Time Model Check In PowerShell
 
-- `cocktailr` installed or loaded from a local development checkout
-- a local Ollama installation
-- at least one local model available in Ollama
+Open PowerShell and confirm that Ollama is available:
 
-Working-directory recommendation:
+```powershell
+ollama --version
+ollama list
+ollama pull phi4-mini:latest
+```
 
-- open `cocktailr/cocktailr.Rproj` when possible
-- review-card paths like `temp/reports/cluster_reviews/` are now
-  resolved against the local `cocktailr` source root automatically when
-  that checkout can be detected
-- the same source-root resolution is now used for relative log paths
-  like `temp/llm_logs/`
-- the `temp/` folder itself is not required to exist in advance;
-  review-card and log directories are created automatically on demand
-- deleting `temp/` is safe; a fresh clone without that folder will
-  recreate it when you first save a review card or enable LLM logging
+If you want another model, pull that model instead and later change
+`MODEL_NAME` in R.
 
-For Ollama setup, model installation, and troubleshooting, see
-[llm_operation.md](llm_operation.md).
+## 2. Step 1 In PowerShell: Create A Run Folder
 
-If you work from a local source checkout and want the newest functions
-in the current R session:
+```powershell
+Set-Location D:\documents\coctrailr\cocktailr
+
+$stamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
+
+$BASE_REPORT_DIR = "temp/reports/forest_steppe_single_model_labeling"
+$REPORT_ROOT = "$BASE_REPORT_DIR/$stamp"
+$env:REPORT_ROOT = $REPORT_ROOT
+
+$REPORT_ROOT_FILE = "$BASE_REPORT_DIR/_ACTIVE_REPORT_ROOT.txt"
+
+New-Item -ItemType Directory -Force -Path $BASE_REPORT_DIR | Out-Null
+$REPORT_ROOT | Out-File $REPORT_ROOT_FILE -Encoding utf8
+
+New-Item -ItemType Directory -Force -Path `
+  "$REPORT_ROOT/input", `
+  "$REPORT_ROOT/clustering", `
+  "$REPORT_ROOT/runs", `
+  "$REPORT_ROOT/plots", `
+  "$REPORT_ROOT/evaluation", `
+  "$REPORT_ROOT/session" | Out-Null
+
+ollama list | Out-File "$REPORT_ROOT/session/ollama_list.txt" -Encoding utf8
+git rev-parse HEAD | Out-File "$REPORT_ROOT/session/git_commit.txt" -Encoding utf8
+git status --short | Out-File "$REPORT_ROOT/session/git_status.txt" -Encoding utf8
+
+Write-Host "Active REPORT_ROOT: $REPORT_ROOT"
+Write-Host "Marker file: $REPORT_ROOT_FILE"
+```
+
+Why this step matters:
+
+- every run gets its own folder
+- later R steps can rediscover the active run folder
+- environment details are saved up front
+
+## 3. Step 2 In R: Load The Package And Fix The Main Settings
+
+Open `cocktailr.Rproj` in RStudio, or start R in the project root.
 
 ```r
-pkgload::load_all("path/to/cocktailr")
-```
-e.g. pkgload::load_all("D:/documents/coctrailr/cocktailr")
+root <- normalizePath(
+  "D:/documents/coctrailr/cocktailr",
+  winslash = "/",
+  mustWork = TRUE
+)
 
-Otherwise:
+report_root_file <- file.path(
+  root,
+  "temp",
+  "reports",
+  "forest_steppe_single_model_labeling",
+  "_ACTIVE_REPORT_ROOT.txt"
+)
+
+report_root_rel <- Sys.getenv("REPORT_ROOT", unset = "")
+
+if (!nzchar(report_root_rel) && file.exists(report_root_file)) {
+  report_root_rel <- trimws(readLines(
+    report_root_file,
+    warn = FALSE,
+    encoding = "UTF-8"
+  )[1])
+}
+
+if (!nzchar(report_root_rel)) {
+  stop(
+    "REPORT_ROOT is not set and _ACTIVE_REPORT_ROOT.txt was not found. Run the PowerShell step first.",
+    call. = FALSE
+  )
+}
+
+Sys.setenv(REPORT_ROOT = report_root_rel)
+
+report_root <- normalizePath(
+  file.path(root, report_root_rel),
+  winslash = "/",
+  mustWork = FALSE
+)
+
+dir.create(file.path(report_root, "session"), recursive = TRUE, showWarnings = FALSE)
+
+if (!requireNamespace("pkgload", quietly = TRUE)) {
+  stop(
+    "Please install the 'pkgload' package once with install.packages(\"pkgload\").",
+    call. = FALSE
+  )
+}
+
+pkgload::load_all(path = root, quiet = TRUE)
+
+writeLines(
+  capture.output(sessionInfo()),
+  file.path(report_root, "session", "R_sessionInfo.txt")
+)
+
+MODEL_NAME <- "phi4-mini:latest"
+MODEL_SLUG <- gsub(":", "_", MODEL_NAME)
+MODEL_SLUG <- gsub("[^A-Za-z0-9_-]+", "_", MODEL_SLUG)
+MODEL_SLUG <- sub("^_+", "", MODEL_SLUG)
+MODEL_SLUG <- sub("_+$", "", MODEL_SLUG)
+
+OLLAMA_OPTIONS <- list(
+  num_ctx = 8192L
+)
+
+PROMPT_BUDGET_CHARS <- 10000L
+NUM_PREDICT <- 2400L
+TIMEOUT_SEC <- 600L
+
+MODEL_NAME
+MODEL_SLUG
+report_root
+```
+
+If you installed `cocktailr` as a regular R package instead of working
+from a source checkout, you can replace the `pkgload::load_all(...)`
+line with:
 
 ```r
 library(cocktailr)
 ```
 
-## 1. Understand What `cocktail_cluster()` Accepts
+If package loading fails because of a missing R dependency, install that
+dependency once and rerun this step.
 
-`cocktail_cluster()` does **not** read a file path directly.
+## 4. Step 3: Prepare The Real Dataset
 
-You must first load your dataset into R, then pass the resulting object
-to `cocktail_cluster()`.
+This example uses the forest-steppe species table:
 
-Supported input types:
-
-- **wide format**
-  A matrix or data frame with plots in rows and species in columns.
-- **long format**
-  A data frame with one row per plot-species record plus a numeric value
-  column. In this case you must use `input_format = "long"`.
-
-## 2. Option A: Generate a Synthetic Dataset
-
-This is the easiest way to test the full pipeline.
-
-```r
-library(cocktailr)
-
-syn <- generate_synthetic_vegetation_data(seed = 42)
+```text
+D:/documents/coctrailr/cocktailr/data-raw/external/forest_steppe_chytry_2021/Chytry-Krystof_forest-steppe-v1_2021-05-24_SPE.csv
 ```
 
-Useful returned objects:
+Expected input columns:
 
-- `syn$wide_matrix`
-  Ready for `cocktail_cluster()` as wide input
-- `syn$long_table`
-  Ready for `cocktail_cluster(..., input_format = "long")`
-- `syn$plot_truth`
-  Synthetic ground truth for plots
-- `syn$species_truth`
-  Synthetic ground truth for species
-- `syn$community_profiles`
-  Human-readable community descriptions
+- `PLOT_ID`
+- `TAXON`
+- `LAYER`
+- `COVER`
 
-Important:
+The LLM labeling workflow does not need the original site metadata here.
+We only prepare a long table with:
 
-- `syn` itself is a **list**
-- do **not** pass `vegmatrix = syn` to `cocktail_cluster()`
-- use `syn$wide_matrix` for wide input
-- use `syn$long_table` for long input
-
-Correct synthetic-data path:
+- anonymized plot IDs
+- species names
+- numeric cover values
 
 ```r
-res <- cocktail_cluster(
-  vegmatrix = syn$wide_matrix,
-  progress = FALSE,
-  plot_values = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix = TRUE
-)
-```
+dir.create(file.path(report_root, "input"), recursive = TRUE, showWarnings = FALSE)
 
-
-## 3. Option B: Load the Shipped Example Dataset
-
-The package ships with CSV exports in `inst/extdata`.
-
-### 3.1 Load the shipped wide CSV
-
-```r
-extdir <- system.file("extdata", package = "cocktailr")
-
-veg_wide <- read.csv(
-  file.path(extdir, "synthetic_vegetation_wide.csv"),
-  row.names = 1,
-  check.names = FALSE
+spe_path <- file.path(
+  root,
+  "data-raw",
+  "external",
+  "forest_steppe_chytry_2021",
+  "Chytry-Krystof_forest-steppe-v1_2021-05-24_SPE.csv"
 )
 
-vm <- as.matrix(veg_wide)
-storage.mode(vm) <- "numeric"
-```
+if (!file.exists(spe_path)) {
+  stop("SPE.csv was not found at: ", spe_path, call. = FALSE)
+}
 
-Use `vm` as the input to `cocktail_cluster()`. If you want review cards
-to remember where the data came from, later pass
-`dataset_path = file.path(extdir, "synthetic_vegetation_wide.csv")` to
-`cocktail_cluster()`.
-
-### 3.2 Load the shipped long CSV
-
-```r
-extdir <- system.file("extdata", package = "cocktailr")
-
-veg_long <- read.csv(
-  file.path(extdir, "synthetic_vegetation_long.csv"),
-  check.names = FALSE
-)
-```
-
-Use `veg_long` with `input_format = "long"`.
-If you want review cards to remember the file origin, later pass
-`dataset_path = file.path(extdir, "synthetic_vegetation_long.csv")` to
-`cocktail_cluster()`.
-
-## 4. Option C: Load Your Own Wide Dataset
-
-If your own vegetation table is already in wide format and stored as
-CSV, the usual pattern is:
-
-```r
-veg_wide <- read.csv(
-  "my_vegetation_wide.csv",
-  row.names = 1,
-  check.names = FALSE
+spe_raw <- utils::read.csv(
+  spe_path,
+  stringsAsFactors = FALSE,
+  fileEncoding = "UTF-8"
 )
 
-vm <- as.matrix(veg_wide)
-storage.mode(vm) <- "numeric"
-```
+required_cols <- c("PLOT_ID", "TAXON", "LAYER", "COVER")
+missing_cols <- setdiff(required_cols, names(spe_raw))
 
-When you cluster your own CSV-backed data, it is useful to also pass
-the same file path as `dataset_path = "my_vegetation_wide.csv"` to
-`cocktail_cluster()`. Then saved review cards can be grouped by dataset
-automatically.
+if (length(missing_cols)) {
+  stop(
+    "SPE.csv is missing required columns: ",
+    paste(missing_cols, collapse = ", "),
+    call. = FALSE
+  )
+}
 
-Requirements:
-
-- rows = plots
-- columns = species
-- cell values = numeric cover or abundance values
-
-If your plot IDs are not in the first CSV column, adjust the import
-first so that the final object is still a plots x species matrix or data
-frame.
-
-## 5. Option D: Load Your Own Long Dataset
-
-If your vegetation table is stored as plot-species-value rows:
-
-```r
-veg_long <- read.csv(
-  "my_vegetation_long.csv",
-  check.names = FALSE
+cover_map <- c(
+  "r" = 0.1,
+  "+" = 0.5,
+  "1" = 2.5,
+  "m" = 4.0,
+  "a" = 8.75,
+  "b" = 18.75,
+  "3" = 37.5,
+  "4" = 62.5,
+  "5" = 87.5
 )
-```
 
-The default expected column names are:
+unknown_cover <- setdiff(unique(spe_raw$COVER), names(cover_map))
 
-- `plot`
-- `species`
-- `value`
+if (length(unknown_cover)) {
+  stop(
+    "Unknown COVER code(s): ",
+    paste(unknown_cover, collapse = ", "),
+    call. = FALSE
+  )
+}
 
-If your table already uses those names, you can pass it directly as long
-input. If not, either rename the columns first or pass a custom mapping.
+plot_ids <- sort(unique(spe_raw$PLOT_ID))
 
-Example with custom column names:
+plot_lookup <- data.frame(
+  PLOT_ID = plot_ids,
+  plot = sprintf("plot_%03d", seq_along(plot_ids)),
+  stringsAsFactors = FALSE
+)
 
-```r
-res <- cocktail_cluster(
-  vegmatrix = veg_long,
-  input_format = "long",
-  long = list(
-    plot = "PlotObservationID",
-    species = "Harmonized_name_wfo",
-    value = "Relative_cover"
+spe_sanitized <- merge(
+  spe_raw[, c("PLOT_ID", "TAXON", "COVER")],
+  plot_lookup,
+  by = "PLOT_ID",
+  all.x = TRUE,
+  sort = FALSE
+)
+
+spe_sanitized$species <- spe_sanitized$TAXON
+spe_sanitized$value <- unname(cover_map[spe_sanitized$COVER])
+
+veg_long <- aggregate(
+  value ~ plot + species,
+  data = spe_sanitized[, c("plot", "species", "value")],
+  FUN = sum
+)
+
+veg_long$value <- pmin(veg_long$value, 100)
+veg_long <- veg_long[order(veg_long$plot, veg_long$species), ]
+rownames(veg_long) <- NULL
+
+prep_path <- file.path(report_root, "input", "veg_long_numeric_eval_v1.csv")
+
+utils::write.csv(
+  veg_long,
+  prep_path,
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+utils::write.csv(
+  plot_lookup,
+  file.path(report_root, "input", "plot_id_lookup_private.csv"),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+utils::write.csv(
+  data.frame(
+    raw_code = names(cover_map),
+    numeric_value = unname(cover_map),
+    stringsAsFactors = FALSE
   ),
-  progress = FALSE,
-  plot_values = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix = TRUE,
-  dataset_path = "my_vegetation_long.csv"
+  file.path(report_root, "input", "cover_conversion_table.csv"),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
 )
+
+head(veg_long)
 ```
 
-## 6. Run Cocktail Clustering
+Files written here:
 
-For labeling workflows, the recommended defaults are:
+- `input/veg_long_numeric_eval_v1.csv`
+- `input/plot_id_lookup_private.csv`
+- `input/cover_conversion_table.csv`
 
-- `plot_values = "rel_cover"`
-- `species_cluster_phi = TRUE`
-- `save_vegmatrix = TRUE`
-- `progress = FALSE`
+## 5. Step 4: Run Cocktail Clustering
 
-If you generated data with `generate_synthetic_vegetation_data()`, the
-most common next step is:
-
-```r
-res <- cocktail_cluster(
-  vegmatrix = syn$wide_matrix,
-  progress = FALSE,
-  plot_values = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix = TRUE
-)
-```
-
-Do not use `vegmatrix = syn`, because `syn` is a list returned by the
-generator, not a matrix or data frame.
-
-### 6.1 Wide input
+You do not need to convert the long table to wide format manually.
+`cocktail_cluster()` can read long input directly.
 
 ```r
-res <- cocktail_cluster(
-  vegmatrix = vm,
-  progress = FALSE,
-  plot_values = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix = TRUE,
-  dataset_path = "my_vegetation_wide.csv"
-)
-```
+dir.create(file.path(report_root, "clustering"), recursive = TRUE, showWarnings = FALSE)
 
-### 6.2 Long input
-
-```r
 res <- cocktail_cluster(
   vegmatrix = veg_long,
   input_format = "long",
+  long = list(plot = "plot", species = "species", value = "value"),
   progress = FALSE,
   plot_values = "rel_cover",
   species_cluster_phi = TRUE,
   save_vegmatrix = TRUE,
-  dataset_path = "my_vegetation_long.csv"
+  dataset_path = prep_path,
+  dataset_label = "real_eval_long_numeric_v1",
+  dataset_type = "real"
 )
+
+res_path <- file.path(report_root, "clustering", "res_real_eval_long_numeric_v1.rds")
+saveRDS(res, res_path)
+
+res_path
 ```
 
-Why these defaults matter:
+Why these settings matter:
 
-- `plot_values = "rel_cover"` makes plot support values more useful for
-  later evidence interpretation
-- `species_cluster_phi = TRUE` keeps species-cluster phi evidence for
-  later labeling
-- `save_vegmatrix = TRUE` keeps the aligned vegetation matrix inside the
-  Cocktail object for downstream functions
+- `input_format = "long"` uses the prepared long table directly
+- `plot_values = "rel_cover"` keeps cover-aware plot summaries
+- `species_cluster_phi = TRUE` keeps phi-based species evidence
+- `save_vegmatrix = TRUE` keeps the aligned vegetation matrix for later
+  evidence summaries
 
-## 7. Choose Cluster IDs to Label
+## 6. Step 5: Choose Which Clusters To Label
 
-The simplest default is:
-
-```r
-cluster_ids <- clusters_at_cut(res, phi_cut = 0.25)
-cluster_ids
-```
-
-This returns cluster labels such as:
+Start with the default strict selection rule:
 
 ```r
-[1] "c_1" "c_4" "c_9"
-```
-
-If you want a score-based alternative instead:
-
-```r
-cluster_ids <- select_clusters(
+selection_table <- select_clusters(
   x = res,
-  min_phi = 0.20,
-  min_k = 1,
-  min_score = 0.3,
+  min_phi = 0.2,
+  min_k = 1L,
+  min_score = 1,
   mode = "strict",
-  return = "labels"
+  return = "table"
+)
+
+selected_clusters <- selection_table$cluster
+
+utils::write.csv(
+  selection_table,
+  file.path(report_root, "clustering", "selected_clusters_table.csv"),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+utils::write.csv(
+  data.frame(cluster = selected_clusters, stringsAsFactors = FALSE),
+  file.path(report_root, "clustering", "selected_clusters.csv"),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+selection_table
+length(selected_clusters)
+```
+
+What to look at:
+
+- `selected_clusters.csv`
+  The simple reusable cluster list.
+- `selected_clusters_table.csv`
+  The same selection with `h`, `k`, `m`, and `score`.
+
+If you already know which clusters you want, you can replace
+`selected_clusters` later with something like:
+
+```r
+selected_clusters <- c("c_12", "c_27", "c_35")
+```
+
+Optional baseline plot before labeling:
+
+```r
+dir.create(file.path(report_root, "plots"), recursive = TRUE, showWarnings = FALSE)
+
+cluster_hclust_plot(
+  x = res,
+  clusters = selected_clusters,
+  label_leaves = FALSE,
+  file = file.path(report_root, "plots", "baseline_cluster_hclust_ids.png")
 )
 ```
 
-For the rest of this document, we use one chosen cluster:
+## 7. Step 6: Optional Dry Run On One Cluster
+
+This step is useful when you want to inspect the assembled request
+before making a real Ollama call.
 
 ```r
-cluster_id <- cluster_ids[1]
-```
+dry_cluster <- selected_clusters[[1]]
 
-## 8. Build Evidence for One Cluster
-
-```r
-ev <- cluster_evidence(res, cluster = cluster_id)
-print(ev)
-```
-
-Important parts to inspect:
-
-- `ev$meta$cluster_id`
-- `ev$context$cluster_metrics`
-- `ev$summaries$species_topological`
-- `ev$summaries$species_phi`
-- `ev$summaries$plots_prototype`
-- `ev$limitations`
-
-This is the evidence bundle that will be passed to the model.
-
-## 9. Run One-Step Labeling (Default)
-
-The current default recommendation is one-step labeling:
-
-```r
-ans <- llm_label_cluster(
-  evidence = ev,
-  model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 1200
+ev <- cluster_evidence(
+  x = res,
+  cluster = dry_cluster,
+  top_n_phi = 10L,
+  n_prototype_plots = 5L,
+  n_borderline_plots = 5L
 )
-```
 
-What this does:
-
-- uses the evidence bundle from `cluster_evidence()`
-- calls the local Ollama model
-- asks for structured JSON output
-- does **not** save intermediate raw logs by default
-
-Why these extra arguments are recommended for the first real run:
-
-- the package-level defaults are stricter: `timeout_sec = 120` and
-  `num_predict = 1200`
-- on slower local hardware, the model may need more than 120 seconds to
-  finish one structured response
-- reducing `num_predict` while increasing `timeout_sec` is often a safer
-  starting point than using the built-in defaults immediately
-
-Short troubleshooting note:
-
-- if you get an error like
-  `Timeout was reached [localhost]: Operation timed out ... with 0 bytes received`,
-  the model usually did not finish the full response before the HTTP
-  timeout
-- this is usually a local Ollama performance or model-loading issue,
-  not a `cluster_evidence()` issue
-- first try: `timeout_sec = 600` and `num_predict = 600` (or num_predict = 1200 if we have EOF error)
-
-If you only want to inspect the request before calling the model:
-
-```r
-req <- llm_label_cluster(
+dry <- llm_label_cluster(
   evidence = ev,
-  model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
-  workflow_steps = 1,
+  model = MODEL_NAME,
+  variant = "label_primary_v1",
+  label_mode = "open",
+  use_brainstorm = TRUE,
+  timeout_sec = TIMEOUT_SEC,
+  num_predict = NUM_PREDICT,
+  prompt_budget_chars = PROMPT_BUDGET_CHARS,
+  ollama_options = OLLAMA_OPTIONS,
   dry_run = TRUE
 )
 
-names(req)
-req$request$model
-```
-
-## 10. Read the Labeling Output
-
-The most important output fields are:
-
-```r
-ans$output$status
-ans$output$canonical_label
-ans$output$display_label
-ans$output$interpretation_summary
-```
-
-Meaning:
-
-- `status`
-  Either `labeled` or `abstain`
-- `canonical_label`
-  Machine-friendly snake_case label
-- `display_label`
-  Human-readable label for reports and review
-- `interpretation_summary`
-  Short natural-language explanation
-
-The human-readable label is usually:
-
-```r
-ans$output$display_label
-```
-
-## 11. Validate the Output
-
-```r
-val <- validate_cluster_label(ans, ev)
-print(val)
-```
-
-Important fields:
-
-```r
-val$validation_status
-val$needs_human_review
-val$evidence_coverage
-val$issues
-```
-
-This step checks:
-
-- required fields
-- evidence ID integrity
-- separation between data-backed claims and external knowledge
-- unsupported ecological overreach
-
-## 12. Save the Final Review Card to Disk
-
-The recommended root location for final labeling artifacts is:
-
-```r
-temp/reports/cluster_reviews/
-```
-
-This is a generated-report location, not a stable package data
-location. `render_cluster_review()` can create dataset-aware subfolders
-there automatically.
-
-Example:
-
-```r
-review <- render_cluster_review(
-  x = ans,
-  evidence = ev,
-  validation = val,
-  review_dir = file.path("temp", "reports", "cluster_reviews")
+saveRDS(
+  dry,
+  file.path(report_root, "session", paste0(MODEL_SLUG, "_dry_run.rds"))
 )
 
-review$file
-getwd()
+names(dry)
+dry$request$model
+dry$request$options
 ```
 
-Default saved file:
+Dry run is optional, but it is often the fastest way to confirm that:
 
-- `<cluster_id>_review.md`
-  Compact human-review markdown card
+- the model name is correct
+- `num_ctx` is being passed
+- the prompt is assembled successfully
 
-The default compact card also records:
+Dry run does not write review cards and does not contact Ollama.
 
-- the model used for generation
-- the prompt file paths used for that answer
+## 8. Step 7: Smoke Test On One Cluster
 
-If dataset provenance is known:
-
-- synthetic data from `generate_synthetic_vegetation_data()` already
-  carry dataset metadata automatically
-- real datasets can be grouped by file if you pass
-  `dataset_path = ...` to `cocktail_cluster()`
-- if no dataset can be identified, `render_cluster_review()` falls back
-  to a timestamped folder
-
-If you want the expanded card plus sidecar metadata JSON:
+Do this before a full batch run.
 
 ```r
-review_full <- render_cluster_review(
-  x = ans,
-  evidence = ev,
-  validation = val,
-  review_dir = file.path("temp", "reports", "cluster_reviews"),
-  full = TRUE
+model_root <- file.path(report_root, "runs", MODEL_SLUG)
+smoke_root <- file.path(model_root, "smoke")
+
+dir.create(smoke_root, recursive = TRUE, showWarnings = FALSE)
+
+smoke_cluster <- selected_clusters[[1]]
+
+smoke_run <- label_clusters(
+  x = res,
+  clusters = smoke_cluster,
+  model = MODEL_NAME,
+  variant = "label_primary_v1",
+  label_mode = "open",
+  use_brainstorm = TRUE,
+  timeout_sec = TIMEOUT_SEC,
+  num_predict = NUM_PREDICT,
+  prompt_budget_chars = PROMPT_BUDGET_CHARS,
+  ollama_options = OLLAMA_OPTIONS,
+  review_dir = file.path(smoke_root, "cluster_reviews"),
+  log_dir = file.path(smoke_root, "llm_logs"),
+  debug = TRUE,
+  labels_for_imgs = TRUE,
+  verbose = TRUE
 )
 
-review_full$file
-review_full$metadata_file
+saveRDS(
+  smoke_run,
+  file.path(smoke_root, paste0(MODEL_SLUG, "_smoke_run.rds"))
+)
+
+utils::write.csv(
+  smoke_run$summary,
+  file.path(smoke_root, paste0(MODEL_SLUG, "_smoke_summary.csv")),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+smoke_run$summary
 ```
 
-The markdown card is the main final artifact of the default workflow.
+Good signs in `smoke_run$summary`:
 
-Important:
+- `run_status` is not a hard failure
+- `validation_status` is valid
+- `review_file` points to an existing `.md` file
+- `failure_reason` is empty or `NA`
 
-- the folder name is `cluster_reviews` (plural), not `cluster_review`
-- if a local `cocktailr` source checkout is detected, relative
-  `review_dir` values are resolved against that package root
-- if no source checkout can be detected, relative `review_dir` still
-  falls back to the current `getwd()`
-- the most reliable way to find the written file is to inspect
-  `review$file`
+An `output_status = "abstain"` can still be acceptable for a weaker
+model. It is not automatically a pipeline failure.
 
-## 13. Run the Same Workflow for Multiple Clusters
+Where to look after the smoke test:
 
-Recommended high-level shortcut:
+- `runs/<MODEL_SLUG>/smoke/<MODEL_SLUG>_smoke_run.rds`
+- `runs/<MODEL_SLUG>/smoke/<MODEL_SLUG>_smoke_summary.csv`
+- `runs/<MODEL_SLUG>/smoke/cluster_reviews/...`
+- `runs/<MODEL_SLUG>/smoke/llm_logs/...` because `debug = TRUE`
+
+## 9. Step 8: Run Full Labeling
+
+If you want a smaller first batch, replace `selected_clusters` with
+something like `head(selected_clusters, 10)` here.
 
 ```r
+res <- readRDS(
+  file.path(report_root, "clustering", "res_real_eval_long_numeric_v1.rds")
+)
+
+selected_clusters <- utils::read.csv(
+  file.path(report_root, "clustering", "selected_clusters.csv"),
+  stringsAsFactors = FALSE
+)[["cluster"]]
+
+model_root <- file.path(report_root, "runs", MODEL_SLUG)
+full_root <- file.path(model_root, "full")
+
+dir.create(full_root, recursive = TRUE, showWarnings = FALSE)
+
 run <- label_clusters(
   x = res,
-  model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 1200,
-  review_dir = file.path("temp", "reports", "cluster_reviews")
+  clusters = selected_clusters,
+  model = MODEL_NAME,
+  variant = "label_primary_v1",
+  label_mode = "open",
+  use_brainstorm = TRUE,
+  timeout_sec = TIMEOUT_SEC,
+  num_predict = NUM_PREDICT,
+  prompt_budget_chars = PROMPT_BUDGET_CHARS,
+  ollama_options = OLLAMA_OPTIONS,
+  review_dir = file.path(full_root, "cluster_reviews"),
+  log_dir = file.path(full_root, "llm_logs"),
+  debug = TRUE,
+  labels_for_imgs = TRUE,
+  verbose = TRUE
 )
 
-run$summary
-```
-
-or other example with number of clusters: 
-```r
-run <- label_clusters(
-  x = res,
-  clusters = c("c_12", "c_35"),
-  model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 1200
+saveRDS(
+  run,
+  file.path(full_root, paste0(MODEL_SLUG, "_run.rds"))
 )
 
-run$summary
-run$results$c_12$review$file
-```
+summary_tbl <- run$summary
+summary_tbl$model_slug <- MODEL_SLUG
+summary_tbl$model_name <- MODEL_NAME
 
-```r
-run <- label_clusters(
-  x = res,
-  model = "qwen3.5:9b-q4_K_M",
-  variant = "strict_abstention_gate_v1",
-  workflow_steps = 2,
-  timeout_sec = 600,
-  num_predict = 1200,
-  review_dir = file.path("temp", "reports", "cluster_reviews")
-)
-```
-
-Notes:
-
-- if you omit `clusters`, `label_clusters()` processes up to the first
-  10 clusters selected by score
-- by default `verbose = TRUE`, so the function prints short progress
-  messages such as LLM start, retry/repair, EOF-triggered `num_predict`
-  increase, and saved review paths
-- use `verbose = FALSE` for quiet batch runs
-- for each cluster it builds evidence, runs the LLM, validates the
-  output, tries one validator-guided repair pass if needed, and saves a
-  review card
-- if no valid structured result is obtained after the bounded retry
-  budget, it still writes a placeholder markdown card with the cluster,
-  model, prompt provenance, and failure reason
-
-other example:
-
-```r
-run <- label_clusters(
-  x = res,
-  clusters = c("c_12", "c_26"),
-  model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 1200
+utils::write.csv(
+  summary_tbl,
+  file.path(full_root, paste0(MODEL_SLUG, "_summary.csv")),
+  row.names = FALSE,
+  fileEncoding = "UTF-8"
 )
 
-run$summary
-run$results$c_12$review$file
-```
+if (inherits(run$label_registry, "cluster_label_registry")) {
+  registry_tbl <- as.data.frame(run$label_registry, stringsAsFactors = FALSE)
+  registry_tbl$model_slug <- MODEL_SLUG
+  registry_tbl$model_name <- MODEL_NAME
 
-Manual low-level loop:
-
-```r
-cluster_ids <- clusters_at_cut(res, phi_cut = 0.25)
-
-for (cluster_id in cluster_ids) {
-  ev <- cluster_evidence(res, cluster = cluster_id)
-
-  ans <- llm_label_cluster(
-    evidence = ev,
-    model = "gemma4:12b",
-    variant = "strict_abstention_gate_v1",
-    workflow_steps = 1,
-    timeout_sec = 600,
-    num_predict = 1200
+  utils::write.csv(
+    registry_tbl,
+    file.path(full_root, paste0(MODEL_SLUG, "_label_registry_copy.csv")),
+    row.names = FALSE,
+    fileEncoding = "UTF-8"
   )
+}
 
-  val <- validate_cluster_label(ans, ev)
+summary_tbl
+```
 
-  review <- render_cluster_review(
-    x = ans,
-    evidence = ev,
-    validation = val,
-    review_dir = file.path("temp", "reports", "cluster_reviews")
-  )
+Where to look after the full run:
 
-  review$file
+- `runs/<MODEL_SLUG>/full/<MODEL_SLUG>_run.rds`
+- `runs/<MODEL_SLUG>/full/<MODEL_SLUG>_summary.csv`
+- `runs/<MODEL_SLUG>/full/cluster_reviews/...`
+- `runs/<MODEL_SLUG>/full/llm_logs/...`
+- `runs/<MODEL_SLUG>/full/<MODEL_SLUG>_label_registry_copy.csv`
+
+Also note:
+
+- `run$label_registry_file` points to the automatically written
+  `cluster_label_registry.csv`
+- that registry file lives next to the review cards, not in the root of
+  `full_root`
+- inside `cluster_reviews/` and `llm_logs/`, expect a dataset-specific
+  subfolder derived from `dataset_label`; in this guide that slug is
+  `real_eval_long_numeric_v1`
+
+## 10. Step 9: Inspect The Results
+
+Read the saved summary table:
+
+```r
+summary_path <- file.path(
+  report_root,
+  "runs",
+  MODEL_SLUG,
+  "full",
+  paste0(MODEL_SLUG, "_summary.csv")
+)
+
+summary_tbl <- utils::read.csv(
+  summary_path,
+  stringsAsFactors = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+summary_tbl[, intersect(
+  c(
+    "cluster",
+    "run_status",
+    "output_status",
+    "validation_status",
+    "display_label",
+    "canonical_label",
+    "failure_reason",
+    "review_file"
+  ),
+  names(summary_tbl)
+)]
+```
+
+Open the first review card:
+
+```r
+first_review <- summary_tbl$review_file[!is.na(summary_tbl$review_file)][1]
+first_review
+file.exists(first_review)
+
+if (file.exists(first_review)) {
+  file.edit(first_review)
 }
 ```
 
-## 14. Advanced Options
-
-These are **not** the default path, but you may need them later:
-
-- different prompt variants:
-  `concise_label_v1`, `conservative_interpretation_v1`,
-  `abstain_first_v1`, `strict_abstention_gate_v1`
-- two-step workflow:
-  `workflow_steps = 2`
-- raw run logging for debugging:
-  `log_dir = ...`
-
-For the current project default, keep:
-
-- `workflow_steps = 1`
-- no `log_dir`
-- final saved review card only
-
-## 15. Common Problems
-
-### `could not find function "llm_label_cluster"`
-
-You are probably using an old loaded package state.
-
-Use:
+List all review cards:
 
 ```r
-pkgload::load_all("path/to/cocktailr")
+review_files <- list.files(
+  file.path(report_root, "runs", MODEL_SLUG, "full", "cluster_reviews"),
+  pattern = "_review\\.md$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+review_files
 ```
 
-or reinstall the local package, then reload it.
-
-### `vegmatrix must be a matrix or data.frame`
-
-You probably passed:
-
-- a file path string
-- a list
-- or another unsupported object
-
-Load the dataset into R first with `read.csv()` or build a matrix/data
-frame explicitly.
-
-### `Timeout was reached ... with 0 bytes received`
-
-This usually means:
-
-- Ollama accepted the request
-- the local model did not finish the full structured response within the
-  current timeout window
-- the HTTP request expired before any final response was returned
-
-The most practical first fix is:
+If `debug = TRUE`, list log files:
 
 ```r
-ans <- llm_label_cluster(
-  evidence = ev,
-  model = "gemma4:12b",
-  variant = "strict_abstention_gate_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 1200
+log_files <- list.files(
+  file.path(report_root, "runs", MODEL_SLUG, "full", "llm_logs"),
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+log_files
+```
+
+## 11. Step 10: Render The Labeled Plots
+
+If your R session has restarted, reload the saved objects first:
+
+```r
+res <- readRDS(
+  file.path(report_root, "clustering", "res_real_eval_long_numeric_v1.rds")
+)
+
+selected_clusters <- utils::read.csv(
+  file.path(report_root, "clustering", "selected_clusters.csv"),
+  stringsAsFactors = FALSE
+)[["cluster"]]
+
+run <- readRDS(
+  file.path(
+    report_root,
+    "runs",
+    MODEL_SLUG,
+    "full",
+    paste0(MODEL_SLUG, "_run.rds")
+  )
 )
 ```
 
-Also check:
-
-- whether this was the first run after model load or after a long idle
-  period
-- whether `ollama ps` shows heavy CPU offload
-- whether a smaller model answers faster on the same machine
-
-### The long-format table is not recognized correctly
-
-Make sure you used:
+Now render the plots:
 
 ```r
-input_format = "long"
+dir.create(file.path(report_root, "plots"), recursive = TRUE, showWarnings = FALSE)
+
+cluster_hclust_plot(
+  x = res,
+  clusters = selected_clusters,
+  label_registry = run$label_registry,
+  file = file.path(report_root, "plots", paste0(MODEL_SLUG, "_cluster_hclust_labels.png"))
+)
+
+cocktail_plot(
+  x = res,
+  clusters = selected_clusters,
+  label_clusters = TRUE,
+  label_registry = run$label_registry,
+  file = file.path(report_root, "plots", paste0(MODEL_SLUG, "_full_cocktail_plot.png"))
+)
+
+list.files(file.path(report_root, "plots"), full.names = TRUE)
 ```
 
-and, if needed:
+Important plotting note:
+
+- `cluster_hclust_plot()` writes one PNG file
+- `cocktail_plot()` may write more than one PNG page
+- if you ask for
+  `.../phi4-mini_latest_full_cocktail_plot.png`, you should expect files
+  such as:
+  - `..._full_cocktail_plot_page01.png`
+  - `..._full_cocktail_plot_page02.png`
+
+If you want to inspect the saved registry as a plain table:
 
 ```r
-long = list(plot = "...", species = "...", value = "...")
+registry_copy_path <- file.path(
+  report_root,
+  "runs",
+  MODEL_SLUG,
+  "full",
+  paste0(MODEL_SLUG, "_label_registry_copy.csv")
+)
+
+registry_tbl <- utils::read.csv(
+  registry_copy_path,
+  stringsAsFactors = FALSE,
+  fileEncoding = "UTF-8"
+)
+
+registry_tbl
 ```
 
-### The model is not available
+## 12. What To Check First When Something Looks Wrong
 
-Install it first in Ollama, for example:
+### Package load step fails
+
+Check that you are pointing at the correct project root and that
+`pkgload` is installed:
+
+```r
+root
+file.exists(file.path(root, "DESCRIPTION"))
+```
+
+If you are using a source checkout, prefer:
+
+```r
+pkgload::load_all(path = root, quiet = TRUE)
+```
+
+### Ollama does not respond
+
+In PowerShell:
 
 ```powershell
-ollama pull gemma4:12b
+ollama list
+ollama ps
 ```
 
-## Related Documents
+If needed:
 
-- [README.md](README.md)
-  Short project overview and the default workflow only
-- [llm_operation.md](llm_operation.md)
-  Ollama setup, model selection, and troubleshooting
-- [temp/README.md](temp/README.md)
-  Policy for temporary generated artifacts and experimental assets
+```powershell
+ollama stop phi4-mini:latest
+```
+
+Then rerun the smoke test.
+
+### The model is too slow or times out
+
+Try smaller settings:
+
+```r
+OLLAMA_OPTIONS <- list(num_ctx = 4096L)
+PROMPT_BUDGET_CHARS <- 6000L
+NUM_PREDICT <- 1200L
+TIMEOUT_SEC <- 900L
+```
+
+### You get many abstentions
+
+Inspect:
+
+- `summary_tbl$output_status`
+- `summary_tbl$failure_reason`
+- review cards
+- `llm_logs/`
+
+Possible causes:
+
+- the model is too small for the task
+- the context window is too small
+- the prompt budget is too small
+- the cluster is genuinely mixed and hard to name
+
+### You have review cards but no labeled plots
+
+Check:
+
+```r
+inherits(run$label_registry, "cluster_label_registry")
+run$label_registry_file
+```
+
+Then call plotting helpers with:
+
+```r
+label_registry = run$label_registry
+```
+
+Do not rely on `label_registry = "auto"` in this guide, because the
+review artifacts live inside the run folder, not under the default
+auto-discovery root.
+
+## 13. Minimal Process Map
+
+```text
+PowerShell step
+  -> create REPORT_ROOT
+
+R setup step
+  -> load package
+  -> fix model and LLM settings
+
+Data step
+  -> raw SPE.csv
+  -> anonymized numeric long table
+
+Clustering step
+  -> cocktail_cluster()
+  -> Cocktail object res
+
+Selection step
+  -> selected_clusters.csv
+
+Optional dry run
+  -> inspect assembled request without contacting Ollama
+
+Smoke test
+  -> one-cluster review card
+  -> one-cluster summary
+  -> logs
+
+Full run
+  -> review cards
+  -> summary CSV
+  -> label registry
+  -> logs
+
+Plotting step
+  -> labeled cluster hclust PNG
+  -> labeled cocktail plot PNG pages
+```
+
+## 14. The Main Files Most Users Actually Need
+
+If you only want the final practical outputs, start here:
+
+- `runs/<MODEL_SLUG>/full/<MODEL_SLUG>_summary.csv`
+- `runs/<MODEL_SLUG>/full/cluster_reviews/...`
+- `runs/<MODEL_SLUG>/full/<MODEL_SLUG>_label_registry_copy.csv`
+- `plots/<MODEL_SLUG>_cluster_hclust_labels.png`
+- `plots/<MODEL_SLUG>_full_cocktail_plot_page01.png`
