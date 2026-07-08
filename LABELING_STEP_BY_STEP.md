@@ -113,6 +113,8 @@ for plotting we pass `run$label_registry` explicitly. Do not rely on
 
 ## 1. One-Time Model Check In PowerShell
 
+1) install the Ollama https://ollama.com/download/ locally
+
 Open PowerShell and confirm that Ollama is available:
 
 ```powershell
@@ -120,6 +122,9 @@ ollama --version
 ollama list
 ollama pull phi4-mini:latest
 ```
+first command check the version of the ollama on your pc
+second command show list of the available models on your pc. If it is first downloading, the list will be empty. 
+third command initiates the downloading the chosen model to the your pc. Model phi4-mini:latest is approximatelly 2.5 Gb. 
 
 If you want another model, pull that model instead and later change
 `MODEL_NAME` in R.

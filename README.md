@@ -665,173 +665,95 @@ dplyr::glimpse(hea2)
 
 ### 8) Optional: evidence-first local LLM labeling and review
 
-After clustering and cluster diagnostics, you can optionally run a local LLM-based labeling workflow. This does **not** replace the classical Cocktail workflow; it builds on top of it.
+After clustering and cluster diagnostics, you can optionally add a local
+LLM-based labeling layer. This does **not** replace the classical Cocktail
+workflow. It is a downstream interpretation step built on top of the cluster
+structure and species evidence already produced by `cocktailr`.
 
-The recommended high-level entry point is `label_clusters()`. Internally it combines:
+The labeling workflow can:
 
-- `cluster_evidence()` for deterministic fact extraction
-- `llm_label_cluster()` for schema-constrained local model calls via Ollama
-- `validate_cluster_label()` for evidence-aware validation
-- `render_cluster_review()` for a final human-review markdown card
+- build a deterministic evidence bundle for each cluster (`cluster_evidence()`)
+- send that evidence to a local Ollama model such as `phi4-mini:latest`
+  (`label_clusters()` or `llm_label_cluster()`)
+- validate the returned label against the evidence
+  (`validate_cluster_label()`)
+- write one markdown review card per cluster (`render_cluster_review()`)
+- build a plotting registry for human-readable labels on figures
+  (`labels_for_imgs = TRUE`)
 
 Minimal example:
-
 
 ``` r
 run <- label_clusters(
   x = res,
-  clusters = strong_labels[1],
-  model = "gemma4:12b",
+  clusters = strong_labels,
+  model = "phi4-mini:latest",
   variant = "label_primary_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 2400
-)
-
-run$summary
-run$results[[1]]$review$file
-```
-
-If you want figure-ready label decodings for `cocktail_plot()`, ask
-`label_clusters()` to also build a plotting registry:
-
-``` r
-plot_clusters <- utils::head(
-  select_clusters(
-    x = res,
-    min_phi = 0.20,
-    min_k = 1,
-    min_score = 0.3,
-    mode = "strict",
-    return = "labels"
-  ),
-  2
-)
-
-run_plot <- label_clusters(
-  x = res,
-  clusters = plot_clusters,
-  model = "gemma4:12b",
-  variant = "label_primary_v1",
-  workflow_steps = 1,
   timeout_sec = 600,
   num_predict = 2400,
   labels_for_imgs = TRUE
+)
+
+run$summary
+run$label_registry
+run$label_registry_file
+```
+
+Main outputs:
+
+- `run$summary` - one row per cluster result table
+- review cards written under `review_dir`
+- `cluster_label_registry.csv` next to the review cards when
+  `labels_for_imgs = TRUE`
+
+The saved registry can be used directly in figure helpers. This makes it
+possible to keep stable numeric cluster IDs in the plot structure while also
+showing short human-readable labels for interpretation.
+
+``` r
+cluster_hclust_plot(
+  x = res,
+  clusters = strong_labels,
+  label_registry = run$label_registry
 )
 
 cocktail_plot(
   x = res,
-  clusters = run_plot$summary$cluster,
+  clusters = strong_labels,
   label_clusters = TRUE,
-  label_registry = "auto"
+  label_registry = run$label_registry
 )
 ```
 
-The dendrogram still shows stable numeric cluster IDs, while the top caption
-adds a compact legend with human-readable labels plus review-card filenames.
-The registry is saved automatically as `cluster_label_registry.csv` next to the
-review cards. If you prefer not to use auto-discovery, you can still pass
-`run_plot$label_registry` explicitly.
+Figure behavior:
 
-If you want a cautious exploratory fallback after a non-accepted strict
-result, you can
-also enable:
+- `cluster_hclust_plot()` can show human-readable labels directly on the
+  cluster-distance dendrogram leaves
+- `cocktail_plot()` keeps numeric cluster IDs on the Cocktail dendrogram and
+  adds a compact label legend with review-card filenames
+- large Cocktail plots can be written as several PNG pages when needed
 
-``` r
-run_spec <- label_clusters(
-  x = res,
-  clusters = plot_clusters,
-  model = "gemma4:12b",
-  variant = "label_primary_v1",
-  workflow_steps = 1,
-  speculative_fallback_mode = "after_nonaccepted",
-  timeout_sec = 600,
-  num_predict = 2400,
-  labels_for_imgs = TRUE
-)
+An optional semantic enrichment layer is also available. When the external
+indicator tables are present, `semantic_layer = TRUE` adds extra ecological
+context to the evidence bundle before labeling.
 
-run_spec$summary[, c("cluster", "run_status", "label_tier", "review_status")]
-```
+In practical tests, the labeling layer also showed a useful pattern. When the
+number of selected clusters is too high, labels often become repetitive and
+fall back to broad names such as `grassland` for many different clusters. When
+the number of selected clusters is closer to a good ecological level, two things
+usually improve:
 
-In that mode, accepted labels remain unchanged. If the strict pass abstains
-or would otherwise end in the placeholder branch, `label_clusters()` starts
-an internal soft-label ladder on the same model by default: it tries
-`label_soft_v1` first, then escalates to the more label-forcing
-`label_broad_v1`. Tentative fallback labels appear with `*` in plot
-legends or `hclust` leaf labels, for example:
+- labels are less repetitive across clusters
+- nearby clusters in the cluster-distance tree often receive related but not
+  identical names
 
-- accepted: `c_12: Mixed Deciduous Woodland`
-- speculative: `c_27: Woodland-transition assemblage*`
+For example, a ruderal cluster may appear next to a cluster with disturbed
+vegetation structure. This suggests that the labeling step is
+capturing real cluster meaning rather than only producing generic names.
 
-The plot legend adds the note:
-
-- `* tentative / speculative label; strict validation did not accept a stable evidence-backed label`
-
-Recommended defaults for the current MVP labeling workflow:
-
-- `plot_values = "rel_cover"`
-- `species_cluster_phi = TRUE`
-- `save_vegmatrix = TRUE`
-- `model = "gemma4:12b"`
-- `variant = "label_primary_v1"`
-- `workflow_steps = 1`
-
-Notes:
-
-- If you omit `clusters`, `label_clusters()` processes up to the first 10 clusters selected by score.
-- `workflow_steps = 3` is available when a weaker model tends to turn the label itself into a paragraph; it splits the run into draft analysis, short-label selection, and explanation.
-- If that Stage-B selection cascade fully exhausts `label_primary_v1 -> label_soft_v1 -> label_broad_v1`, the workflow now stops cleanly with a deterministic review-needed fallback label `chaotic cluster` instead of spending one more fragile LLM call on explanation generation.
-- `label_mode = "open"` is the default. Switch to `label_mode = "constrained"` when a small model should choose from the packaged coarse vocabulary, or use `label_mode = "dynamic"` together with `workflow_steps = 3` when Stage B should reuse candidate labels proposed by Stage A.
-- `speculative_fallback_mode = "after_nonaccepted"` is optional and off by default.
-- In that mode, the speculative ladder reuses your explicit `model` by default; set `options(cocktailr.speculative_fallback_model = "...")` only if you want an explicit override.
-- The internal soft ladder is still benchmarked most around `phi4-mini:latest` with `num_ctx = 8192` and `num_predict = 2400`.
-- For ordinary local labeling, `gemma4:12b` remains the recommended baseline.
-- Smaller models such as `phi4-mini` are still experimental for this task: they may lack enough ecological/background knowledge for stable cluster labeling and can fall back to generic labels or abstentions more often.
-- `semantic_layer = TRUE` optionally enriches the evidence bundle with indicator-derived ecological axes from the external EIVE/Tichy tables under `data-raw/external/`.
-- That semantic step uses an auxiliary Excel reader (`readxl` if available, otherwise the packaged `xml2` fallback path). If enrichment cannot be built, `label_clusters()` records the outcome in `summary$semantic_layer_status` and continues with the plain evidence bundle.
-- The default saved artifact is a compact markdown review card under `temp/reports/cluster_reviews/`.
-- Raw LLM logs via `log_dir` are optional and not part of the default workflow.
-- Public prompt selection is intentionally small now: use only `label_primary_v1`, `label_soft_v1`, or `label_broad_v1`; older prompt IDs are compatibility aliases, and retired prompt texts live locally under `temp/prompt_archive/cluster_labeling/`.
-- For a first real run on unknown local hardware, `timeout_sec = 600` and `num_predict = 2400` are the current recommended strict-pass settings.
-- If the strict pass still hits an EOF-like truncation error, `label_clusters()` now retries automatically at `4800` and then `9600`.
-- Final prompt messages are budget-aware by default: `prompt_budget_chars = 10000`, with lower-priority evidence blocks trimmed first if needed.
-- The JSON schema is still enforced, but it is now passed through the structured-output `format` field rather than embedded verbatim inside the prompt text.
-- If validation fails only because label fields are too long or use forbidden punctuation, `label_clusters()` now runs a lightweight repair pass that edits the parsed JSON without resending the full evidence bundle.
-
-If you want to inspect the evidence object directly before any LLM call:
-
-
-``` r
-ev <- cluster_evidence(res, cluster = strong_labels[1])
-print(ev)
-```
-
-If you want a quick synthetic dataset specifically for testing the labeling workflow:
-
-
-``` r
-syn <- generate_synthetic_vegetation_data(seed = 42)
-
-res_syn <- cocktail_cluster(
-  vegmatrix           = syn$wide_matrix,
-  progress            = FALSE,
-  plot_values         = "rel_cover",
-  species_cluster_phi = TRUE,
-  save_vegmatrix      = TRUE
-)
-
-run_syn <- label_clusters(
-  x = res_syn,
-  clusters = "c_1",
-  model = "gemma4:12b",
-  variant = "label_primary_v1",
-  workflow_steps = 1,
-  timeout_sec = 600,
-  num_predict = 2400
-)
-```
-
-For detailed LLM setup and troubleshooting, see [llm_operation.md](llm_operation.md). For the low-level manual chain and step-by-step labeling examples, see [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
+These labels should still be treated as review-ready interpretations, not as a
+replacement for expert judgment. For full setup, exact saved files, figure
+rendering, and troubleshooting, see [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
 
 ***
 
