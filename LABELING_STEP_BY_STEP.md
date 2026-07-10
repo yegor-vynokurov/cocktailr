@@ -541,7 +541,7 @@ Dry run is optional, but it is often the fastest way to confirm that:
 
 Dry run does not write review cards and does not contact Ollama.
 
-## 8. Step 7: Smoke Test On One Cluster
+## 8. Step 7: Smoke Test On One Cluster (optional)
 
 Do this before a full batch run.
 
@@ -638,7 +638,8 @@ run <- label_clusters(
   log_dir = file.path(full_root, "llm_logs"),
   debug = TRUE,
   labels_for_imgs = TRUE,
-  verbose = TRUE
+  verbose = TRUE, 
+  semantic_layer = TRUE
 )
 
 saveRDS(
