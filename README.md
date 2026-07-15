@@ -781,8 +781,6 @@ Additional documentation:
 
 - [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md)
   Full English step-by-step procedure for dataset loading, clustering, labeling, validation, and saved review cards.
-- [llm_operation.md](llm_operation.md)
-  Local Ollama setup, model recommendations, and troubleshooting.
 
 ***
 

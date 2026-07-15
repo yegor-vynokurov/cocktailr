@@ -793,7 +793,8 @@ run_syn <- label_clusters(
 )
 ```
 
-For detailed LLM setup and troubleshooting, see [llm_operation.md](llm_operation.md). For the low-level manual chain and step-by-step labeling examples, see [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
+For full setup, troubleshooting, and the step-by-step labeling workflow, see
+[LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md).
 
 ***
 
@@ -821,8 +822,6 @@ Additional documentation:
 
 - [LABELING_STEP_BY_STEP.md](LABELING_STEP_BY_STEP.md)
   Full English step-by-step procedure for dataset loading, clustering, labeling, validation, and saved review cards.
-- [llm_operation.md](llm_operation.md)
-  Local Ollama setup, model recommendations, and troubleshooting.
 
 ***
 
