@@ -18,3 +18,8 @@ data-raw/external/*
 !data-raw/external/ellenberg_tichy_2023/*.xlsx
 !data-raw/external/forest_steppe_chytry_2021/
 !data-raw/external/forest_steppe_chytry_2021/*.csv
+
+
+.agents
+.planning
+.copier-answers.planning-lite.yml
