@@ -29,6 +29,12 @@
 #' compact placeholder review card that records the cluster, model, prompt
 #' provenance, and the failure reason.
 #'
+#' For labeled outputs, \code{display_label} now keeps the full stored human
+#' label. Plot-facing shortening is deferred to
+#' \code{\link{cluster_label_registry}}, which derives explicit preview fields
+#' such as \code{plot_label_short}, \code{legend_label}, and
+#' \code{hclust_label_compact}.
+#'
 #' @param x A \code{"cocktail"} object produced by
 #'   \code{\link{cocktail_cluster}}.
 #' @param clusters Optional cluster identifiers to process. Accepts numeric IDs
@@ -71,6 +77,13 @@
 #'   selects the versioned internal prompt folder under
 #'   \code{inst/prompts/internal_cluster_labeling/}, and \code{debug}
 #'   controls whether per-stage LLM log files are collected.
+#' @param short_label_with_llm Logical. Forwarded to
+#'   \code{\link{llm_label_cluster}}. Default \code{FALSE}; when enabled, the
+#'   label-decision stage may spend an extra LLM repair call on optional
+#'   shortening-only recovery while \code{display_label} still preserves the
+#'   full stored human label. The extra shortening-repair prompt is available
+#'   only when the selected \code{internal_prompt_version} bundle includes it
+#'   (for example the packaged \code{"v2"} bundle).
 #' @param max_iterations Integer workflow budget. Currently allowed values are
 #'   \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports
 #'   the full EOF retry ladder \code{2400 -> 4800 -> 9600}.
@@ -103,7 +116,10 @@
 #'     review artifact for each cluster
 #'   \item \code{selection}: the resolved cluster table used for the run
 #'   \item \code{label_registry}: optional flat registry table for downstream
-#'     plotting, present when \code{labels_for_imgs = TRUE}
+#'     plotting, present when \code{labels_for_imgs = TRUE}; its
+#'     \code{display_label} column stores the full label while
+#'     \code{plot_label_short}, \code{legend_label}, and
+#'     \code{hclust_label_compact} store deterministic plot previews
 #'   \item \code{label_registry_file}: optional path to the saved registry CSV,
 #'     present when \code{labels_for_imgs = TRUE}
 #' }
@@ -170,6 +186,7 @@ label_clusters <- function(
     max_retries = 1L,
     workflow_steps = 3L,
     use_brainstorm = TRUE,
+    short_label_with_llm = FALSE,
     internal_prompt_version = .default_cluster_label_internal_prompt_version(),
     debug = FALSE,
     max_iterations = 3L,
@@ -192,6 +209,10 @@ label_clusters <- function(
     "workflow_steps"
   )
   use_brainstorm <- .arg_single_flag(use_brainstorm, "use_brainstorm")
+  short_label_with_llm <- .arg_single_flag(
+    short_label_with_llm,
+    "short_label_with_llm"
+  )
   internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
     internal_prompt_version
   )
@@ -321,6 +342,7 @@ label_clusters <- function(
       max_retries = max_retries,
       workflow_steps = workflow_steps,
       use_brainstorm = use_brainstorm,
+      short_label_with_llm = short_label_with_llm,
       internal_prompt_version = internal_prompt_version,
       dry_run = TRUE,
       request_fn = request_fn
@@ -347,6 +369,7 @@ label_clusters <- function(
       max_retries = max_retries,
       workflow_steps = workflow_steps,
       use_brainstorm = use_brainstorm,
+      short_label_with_llm = short_label_with_llm,
       internal_prompt_version = internal_prompt_version,
       max_iterations = max_iterations,
       review_dir = review_dir,
@@ -653,6 +676,7 @@ label_clusters <- function(
     max_retries,
     workflow_steps,
     use_brainstorm,
+    short_label_with_llm,
     internal_prompt_version,
     max_iterations,
     review_dir,
@@ -757,6 +781,7 @@ label_clusters <- function(
             request_fn = request_fn,
             workflow_steps = workflow_steps,
             use_brainstorm = use_brainstorm,
+            short_label_with_llm = short_label_with_llm,
             internal_prompt_version = internal_prompt_version,
             label_mode = label_mode,
             ollama_options = ollama_options
@@ -781,6 +806,7 @@ label_clusters <- function(
             max_retries = max_retries,
             workflow_steps = workflow_steps,
             use_brainstorm = use_brainstorm,
+            short_label_with_llm = short_label_with_llm,
             internal_prompt_version = internal_prompt_version,
             dry_run = FALSE,
             log_dir = log_dir,
@@ -1647,6 +1673,7 @@ label_clusters <- function(
     request_fn,
     workflow_steps,
     use_brainstorm,
+    short_label_with_llm,
     internal_prompt_version,
     label_mode,
     ollama_options
@@ -1686,6 +1713,7 @@ label_clusters <- function(
     max_retries = max_retries,
     workflow_steps = workflow_steps,
     use_brainstorm = use_brainstorm,
+    short_label_with_llm = short_label_with_llm,
     internal_prompt_version = internal_prompt_version,
     dry_run = FALSE,
     log_dir = log_dir,

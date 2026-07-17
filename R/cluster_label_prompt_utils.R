@@ -1303,6 +1303,83 @@
   )
 }
 
+.cluster_label_decision_shortening_repair_prompt <- function(
+    variant,
+    internal_prompt_version = .default_cluster_label_internal_prompt_version(),
+    long_label = NULL,
+    label_description = NULL
+) {
+  catalog <- .read_cluster_label_prompt_catalog()
+  catalog_def <- catalog$parsed
+  resolved <- .resolve_cluster_label_prompt_variant(
+    catalog_def,
+    variant
+  )$resolved_variant
+  repair_map <- catalog_def$internal_v2_label_decision_shortening_repair_variants %||% list()
+  repair_variant <- .as_scalar_character(repair_map[[resolved]] %||% NA_character_)
+
+  if (is.na(repair_variant) || !nzchar(repair_variant)) {
+    return(list(
+      public_variant = resolved,
+      variant = NULL,
+      text = NULL,
+      path = NULL,
+      available = FALSE
+    ))
+  }
+
+  variant_def <- catalog_def$variants[[repair_variant]] %||% NULL
+  if (is.null(variant_def)) {
+    stop(
+      "Shortening repair variant `",
+      repair_variant,
+      "` is missing from the prompt catalog."
+    )
+  }
+
+  prompt_path <- tryCatch(
+    .cluster_label_prompt_asset_path(
+      catalog,
+      variant_def$user_prompt_path,
+      internal_prompt_version = internal_prompt_version
+    ),
+    error = function(e) NULL
+  )
+
+  if (is.null(prompt_path) || !nzchar(prompt_path) || !file.exists(prompt_path)) {
+    return(list(
+      public_variant = resolved,
+      variant = repair_variant,
+      text = NULL,
+      path = NULL,
+      available = FALSE
+    ))
+  }
+
+  prompt_text <- trimws(.interpolate_prompt_template(
+    .read_text_file(prompt_path),
+    list(
+      "{{LONG_LABEL}}" = .null_default(.as_scalar_character(long_label), ""),
+      "{{LABEL_DESCRIPTION}}" = .null_default(.as_scalar_character(label_description), "")
+    )
+  ))
+  if (!nzchar(prompt_text)) {
+    stop(
+      "Shortening repair prompt `",
+      repair_variant,
+      "` is empty."
+    )
+  }
+
+  list(
+    public_variant = resolved,
+    variant = repair_variant,
+    text = prompt_text,
+    path = prompt_path,
+    available = TRUE
+  )
+}
+
 .default_cluster_label_speculative_variants <- function() {
   opt <- getOption("cocktailr.speculative_fallback_variants", NULL)
 

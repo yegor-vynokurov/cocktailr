@@ -10,7 +10,8 @@
 #' The default visual convention supported by this registry is:
 #' \itemize{
 #'   \item keep `cluster` / `plot_label_id` as the on-plot identifier,
-#'   \item use `display_label` or `plot_label_short` when a short label is needed,
+#'   \item use `display_label` as the full stored human label,
+#'   \item use `plot_label_short` when a short plot preview is needed,
 #'   \item use `legend_label` in legends or figure captions,
 #'   \item use `hclust_label_compact` for dense `hclust` leaf labeling.
 #' }
@@ -22,10 +23,17 @@
 #'   \describe{
 #'     \item{cluster}{Cluster ID such as `"c_12"`.}
 #'     \item{plot_label_id}{Stable ID recommended for direct plot annotation.}
-#'     \item{plot_label_short}{Human-readable short label when available, otherwise the cluster ID.}
-#'     \item{legend_label}{Preformatted `cluster: label` text for legends or captions.}
-#'     \item{hclust_label_compact}{Compact `cluster: label` text for dense `hclust` leaf labels, with controlled truncation when needed.}
-#'     \item{display_label, canonical_label}{Structured labels returned by the LLM.}
+#'     \item{plot_label_short}{Deterministic plot-preview label: the full label
+#'       when it already fits within three words, otherwise the first three
+#'       whitespace-delimited words plus literal `" ..."`; falls back to the
+#'       cluster ID when no label is available.}
+#'     \item{legend_label}{Preformatted `cluster: preview` text for legends or
+#'       captions.}
+#'     \item{hclust_label_compact}{Compact `cluster: preview` text for dense
+#'       `hclust` leaf labels.}
+#'     \item{display_label, canonical_label}{Structured labels returned by the
+#'       LLM: `display_label` stores the full human label, while
+#'       `canonical_label` stores the short/projected programmatic form.}
 #'     \item{public_display_label, public_canonical_label, public_label_source}{Downstream-only public label projection, including the post-abstain fallback when applicable.}
 #'     \item{label_available}{Whether a non-empty labeled output is available.}
 #'     \item{accepted_label}{Whether a labeled output is available and the review status is `"accepted"`.}
@@ -288,9 +296,13 @@ cluster_label_registry <- function(x) {
     !used_placeholder
   accepted_label <- label_available && identical(review_status, "accepted")
   display_label_plot <- .cluster_label_display_with_marker(display_label, plot_marker)
+  display_label_preview <- .cluster_label_registry_plot_preview(display_label_plot)
   public_display_label_plot <- .cluster_label_display_with_marker(
     public_display_label,
     if (identical(public_label_source, "model_output")) plot_marker else ""
+  )
+  public_display_label_preview <- .cluster_label_registry_plot_preview(
+    public_display_label_plot
   )
 
   confidence <- output$confidence %||% list()
@@ -306,27 +318,27 @@ cluster_label_registry <- function(x) {
     score = .cluster_label_registry_numeric(summary_row$score),
     plot_label_id = cluster_id,
     plot_label_short = if (label_available) {
-      display_label_plot
-    } else if (.is_non_empty_scalar_character(public_display_label_plot) &&
+      display_label_preview
+    } else if (.is_non_empty_scalar_character(public_display_label_preview) &&
         identical(public_label_source, "post_abstain_fallback")) {
-      public_display_label_plot
+      public_display_label_preview
     } else {
       cluster_id
     },
     legend_label = .cluster_label_registry_legend_label(
       cluster_id = cluster_id,
-      display_label = display_label_plot,
+      display_label = display_label_preview,
       output_status = output_status,
       used_placeholder = used_placeholder,
-      public_display_label = public_display_label_plot,
+      public_display_label = public_display_label_preview,
       public_label_source = public_label_source
     ),
     hclust_label_compact = .cluster_label_registry_hclust_label(
       cluster_id = cluster_id,
-      display_label = display_label_plot,
+      display_label = display_label_preview,
       output_status = output_status,
       used_placeholder = used_placeholder,
-      public_display_label = public_display_label_plot,
+      public_display_label = public_display_label_preview,
       public_label_source = public_label_source,
       plot_marker = plot_marker
     ),
@@ -465,6 +477,45 @@ cluster_label_registry <- function(x) {
   as.numeric(x)
 }
 
+.cluster_label_registry_plot_preview_word_limit <- function() {
+  3L
+}
+
+.cluster_label_registry_plot_preview <- function(
+    label,
+    word_limit = .cluster_label_registry_plot_preview_word_limit(),
+    ellipsis = " ..."
+) {
+  label <- .as_scalar_character(label)
+  if (is.na(label) || !nzchar(label)) {
+    return(NA_character_)
+  }
+
+  word_limit <- suppressWarnings(as.integer(word_limit))
+  if (is.na(word_limit) || word_limit < 1L) {
+    return(label)
+  }
+
+  marker_suffix <- ""
+  if (grepl("\\*$", label, perl = TRUE)) {
+    marker_suffix <- "*"
+    label <- sub("\\*$", "", label, perl = TRUE)
+    label <- trimws(label)
+  }
+
+  words <- strsplit(label, "[[:space:]]+", perl = TRUE)[[1]]
+  words <- words[nzchar(words)]
+  if (length(words) <= word_limit) {
+    return(paste0(label, marker_suffix))
+  }
+
+  paste0(
+    paste(words[seq_len(word_limit)], collapse = " "),
+    ellipsis,
+    marker_suffix
+  )
+}
+
 .cluster_label_registry_legend_label <- function(
     cluster_id,
     display_label,
@@ -551,7 +602,7 @@ cluster_label_registry <- function(x) {
   if (.is_non_empty_scalar_character(display_label) &&
       identical(output_status, "labeled") &&
       !isTRUE(used_placeholder)) {
-    return(.cluster_label_registry_simplify_hclust_text(display_label))
+    return(display_label)
   }
 
   if (identical(output_status, "abstain") &&
@@ -728,17 +779,21 @@ cluster_label_registry <- function(x) {
       display_label[[i]],
       plot_marker[[i]]
     )
+    display_label_preview <- .cluster_label_registry_plot_preview(display_label_plot)
     public_display_label_plot <- .cluster_label_display_with_marker(
       public_display_label[[i]],
       if (identical(public_label_source[[i]], "model_output")) plot_marker[[i]] else ""
     )
+    public_display_label_preview <- .cluster_label_registry_plot_preview(
+      public_display_label_plot
+    )
 
     .cluster_label_registry_hclust_label(
       cluster_id = reg$cluster[[i]],
-      display_label = display_label_plot,
+      display_label = display_label_preview,
       output_status = output_status[[i]],
       used_placeholder = used_placeholder[[i]],
-      public_display_label = public_display_label_plot,
+      public_display_label = public_display_label_preview,
       public_label_source = public_label_source[[i]],
       plot_marker = plot_marker[[i]]
     )

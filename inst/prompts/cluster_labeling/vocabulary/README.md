@@ -72,7 +72,7 @@ less constrained in practice.
 
 - Prefer broad ecological directions over fine syntaxonomic names
 - Keep `canonical_label` stable and lowercase snake_case
-- Keep `display_label` short and human-readable
+- Keep `display_label` human-readable; plot previews are derived later when needed
 - Keep `short_description` compact and concrete
 - Use `use_when` to explain the signal, not to write an essay
 

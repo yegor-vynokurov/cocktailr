@@ -12,6 +12,10 @@
 #'   \item leaves a manual notes section for human review.
 #' }
 #'
+#' For labeled outputs, the rendered card shows the full stored
+#' \code{display_label} and, when shorter, a separate plot-preview label derived
+#' from the registry preview rule.
+#'
 #' When \code{file} or \code{review_dir} is supplied, the function can write a
 #' markdown artifact to disk. The default card is intentionally compact; set
 #' \code{full = TRUE} to include the full review bundle and to save the JSON
@@ -289,6 +293,12 @@ print.cluster_review_artifact <- function(x, ...) {
     unsupported_claim_issue_count = sum(issues$category == "unsupported_claims"),
     proposed_canonical_label = .as_scalar_character(output$canonical_label),
     proposed_display_label = .as_scalar_character(output$display_label),
+    proposed_plot_preview_label = .cluster_label_registry_plot_preview(
+      .cluster_label_display_with_marker(
+        output$display_label,
+        .cluster_label_validation_plot_marker(validation)
+      )
+    ),
     public_canonical_label = public_label$public_canonical_label %||% NA_character_,
     public_display_label = public_label$public_display_label %||% NA_character_,
     public_label_source = public_label$public_label_source %||% NA_character_,
@@ -976,6 +986,9 @@ print.cluster_review_artifact <- function(x, ...) {
     output$display_label,
     metadata$plot_marker %||% ""
   )
+  plot_preview_label <- .as_scalar_character(
+    metadata$proposed_plot_preview_label %||% NA_character_
+  )
 
   lines <- c("- Status: `labeled`")
 
@@ -991,6 +1004,11 @@ print.cluster_review_artifact <- function(x, ...) {
     lines,
     paste0("- Canonical label: ", .md_code(.as_scalar_character(output$canonical_label))),
     paste0("- Display label: ", .md_code(display_label)),
+    if (!is.na(plot_preview_label) &&
+        nzchar(plot_preview_label) &&
+        !identical(plot_preview_label, display_label)) {
+      paste0("- Plot preview label: ", .md_code(plot_preview_label))
+    },
     if (!is.na(label_summary) && nzchar(label_summary)) {
       paste0("- Label summary: ", label_summary)
     },
@@ -1902,11 +1920,42 @@ print.cluster_review_artifact <- function(x, ...) {
     skip_reason = .as_scalar_character(stage$skip_reason %||% NULL),
     attempts = as.integer(stage$attempts %||% NA_integer_),
     retry_exhausted = isTRUE(stage$retry_exhausted),
+    repair_source = .as_scalar_character(stage$repair_source %||% NULL),
+    repair_variant = .as_scalar_character(stage$repair_variant %||% NULL),
+    repair_history_entries = length(stage$repair_history %||% list()),
+    repair_history_preview = .cluster_review_repair_history_preview(
+      stage$repair_history %||% list()
+    ),
     fallback_used = isTRUE(stage$fallback_used),
     fallback_reason = .as_scalar_character(stage$fallback_reason %||% NULL),
     error = .as_scalar_character(stage$error %||% NULL),
     debug_run_dir = .cluster_review_stage_debug_run_dir(stage)
   )
+}
+
+.cluster_review_repair_history_preview <- function(repair_history) {
+  repair_history <- repair_history %||% list()
+  if (!is.list(repair_history) || !length(repair_history)) {
+    return(list())
+  }
+
+  lapply(repair_history, function(entry) {
+    candidate <- entry$parsed_output_candidate %||% list()
+    list(
+      attempt = as.integer(entry$attempt %||% NA_integer_),
+      error = .as_scalar_character(entry$error %||% NULL),
+      response_content = .as_scalar_character(entry$response_content %||% NULL),
+      candidate_display_label = .as_scalar_character(
+        candidate$display_label %||% candidate$label_decision_text %||% NULL
+      ),
+      candidate_canonical_label = .as_scalar_character(
+        candidate$canonical_label %||% NULL
+      ),
+      repair_instruction = .as_scalar_character(
+        entry$repair_instruction %||% NULL
+      )
+    )
+  })
 }
 
 .cluster_review_stage_output_status <- function(stage) {
@@ -2040,6 +2089,66 @@ print.cluster_review_artifact <- function(x, ...) {
       !file.exists(file.path(stage_dir, "error.txt"))) {
     .write_text_file(file.path(stage_dir, "error.txt"), error_text)
   }
+
+  .write_cluster_review_repair_history_artifacts(stage, stage_dir)
+}
+
+.write_cluster_review_repair_history_artifacts <- function(stage, stage_dir) {
+  repair_history <- stage$repair_history %||% list()
+  if (!is.list(repair_history) || !length(repair_history)) {
+    return(invisible(NULL))
+  }
+
+  .write_cluster_review_json_artifact(
+    file.path(stage_dir, "repair_history.json"),
+    .cluster_review_repair_history_preview(repair_history)
+  )
+
+  for (i in seq_along(repair_history)) {
+    entry <- repair_history[[i]]
+    attempt_index <- as.integer(entry$attempt %||% i)
+    if (is.na(attempt_index) || attempt_index < 1L) {
+      attempt_index <- i
+    }
+
+    request_path <- file.path(stage_dir, paste0("request_attempt", attempt_index, ".json"))
+    if (is.list(entry$request) && !file.exists(request_path)) {
+      .write_cluster_review_json_artifact(request_path, entry$request)
+    }
+
+    response_content_path <- file.path(
+      stage_dir,
+      paste0("response_content_attempt", attempt_index, ".txt")
+    )
+    .write_cluster_review_text_artifact_if_missing(
+      response_content_path,
+      .as_scalar_character(entry$response_content %||% NULL)
+    )
+
+    response_envelope_path <- file.path(
+      stage_dir,
+      paste0("response_attempt", attempt_index, "_envelope.json")
+    )
+    response_raw <- .as_scalar_character(entry$response_raw %||% NULL)
+    if (.is_non_empty_scalar_character(response_raw) &&
+        !file.exists(response_envelope_path)) {
+      .write_text_file(response_envelope_path, response_raw)
+    }
+
+    parsed_candidate <- entry$parsed_output_candidate %||% NULL
+    parsed_candidate_path <- file.path(
+      stage_dir,
+      paste0("parsed_output_candidate_attempt", attempt_index, ".json")
+    )
+    if (is.list(parsed_candidate) && !file.exists(parsed_candidate_path)) {
+      .write_cluster_review_json_artifact(
+        parsed_candidate_path,
+        parsed_candidate
+      )
+    }
+  }
+
+  invisible(NULL)
 }
 
 .write_cluster_review_json_artifact <- function(path, x) {

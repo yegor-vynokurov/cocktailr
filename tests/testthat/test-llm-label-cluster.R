@@ -368,7 +368,7 @@ test_that("llm_label_cluster assembles labeled output and coerces label-only tex
   expect_s3_class(res, "cluster_label_result")
   expect_equal(res$output$status, "labeled")
   expect_equal(res$output$canonical_label, "compact_species")
-  expect_equal(res$output$display_label, "compact species")
+  expect_equal(res$output$display_label, "compact species core")
   expect_true(.is_non_empty_scalar_character(res$output$label_summary))
   expect_identical(res$output$explanation, res$output$label_summary)
   expect_true(isTRUE(res$workflow$summary$attempts >= 1L))
@@ -431,7 +431,7 @@ test_that("llm_label_cluster preserves label-only abstain decisions and falls ba
   expect_true(isTRUE(res$workflow$explanation$fallback_used))
 })
 
-test_that("llm_label_cluster auto-coerces an overly long label-decision reply without retry", {
+test_that("llm_label_cluster retries a malformed long label-decision reply and keeps the repaired full label", {
   ev <- .build_test_cluster_evidence()
   state <- new.env(parent = emptyenv())
   state$selection_calls <- 0L
@@ -471,12 +471,12 @@ test_that("llm_label_cluster auto-coerces an overly long label-decision reply wi
     request_fn = fake_request
   )
 
-  expect_equal(state$selection_calls, 1L)
+  expect_equal(state$selection_calls, 2L)
   expect_equal(res$output$status, "labeled")
-  expect_equal(res$output$canonical_label, "this_answer_is_too_long_and")
-  expect_equal(res$output$display_label, "This answer is too long and")
+  expect_equal(res$output$canonical_label, "compact_species")
+  expect_equal(res$output$display_label, "compact species core")
   expect_equal(length(res$workflow$label$attempts), 1L)
-  expect_equal(res$workflow$label$attempts[[1]]$attempts, 1L)
+  expect_equal(res$workflow$label$attempts[[1]]$attempts, 2L)
   expect_equal(res$workflow$label$attempts[[1]]$result, "labeled")
 })
 

@@ -194,7 +194,7 @@ test_that("validate_cluster_label does not reject habitat wording via the disabl
   expect_false(val$needs_human_review)
 })
 
-test_that("cluster label schema asset encodes label length and format limits", {
+test_that("cluster label schema asset keeps canonical limits without encoding the short-plot word budget in display_label", {
   schema_path <- cocktailr:::.package_asset_path("schemas", "cluster_label_output_schema.json")
   schema <- jsonlite::read_json(
     schema_path,
@@ -202,11 +202,9 @@ test_that("cluster label schema asset encodes label length and format limits", {
   )
 
   expect_equal(schema$properties$canonical_label$maxLength, 64)
-  expect_equal(schema$properties$display_label$maxLength, 80)
-  expect_equal(
-    schema$properties$display_label$pattern,
-    "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$)\\S+(?:\\s+\\S+){0,5}$"
-  )
+  expect_true(is.null(schema$properties$display_label$maxLength) ||
+    schema$properties$display_label$maxLength > 80)
+  expect_false(grepl("\\{0,5\\}", schema$properties$display_label$pattern %||% ""))
 })
 
 test_that("validate_cluster_label rejects overly long canonical labels", {
@@ -220,26 +218,28 @@ test_that("validate_cluster_label rejects overly long canonical labels", {
   expect_true(any(val$issues$code == "canonical_label_too_long"))
 })
 
-test_that("validate_cluster_label rejects overly long display labels", {
+test_that("validate_cluster_label accepts long display labels when they only exceed the old short-plot budget", {
   ev <- .build_validation_test_cluster_evidence()
   output <- .build_valid_label_output(ev)
-  output$display_label <- paste(rep("a", 81), collapse = "")
+  output$display_label <- paste(
+    "Dry base-rich shrubland with Ligustrum and oak canopy mosaic under warm calcareous edge conditions and persistent ruderal herbs"
+  )
 
   val <- validate_cluster_label(output, ev)
 
-  expect_equal(val$validation_status, "schema_error")
-  expect_true(any(val$issues$code == "display_label_too_long"))
+  expect_equal(val$validation_status, "valid")
+  expect_false(any(val$issues$code == "display_label_too_long"))
 })
 
-test_that("validate_cluster_label rejects display labels with too many words", {
+test_that("validate_cluster_label accepts display labels with many words when punctuation remains valid", {
   ev <- .build_validation_test_cluster_evidence()
   output <- .build_valid_label_output(ev)
-  output$display_label <- "one two three four five six seven"
+  output$display_label <- "dry base-rich open shrubland with ligustrum and oak canopy"
 
   val <- validate_cluster_label(output, ev)
 
-  expect_equal(val$validation_status, "schema_error")
-  expect_true(any(val$issues$code == "display_label_too_many_words"))
+  expect_equal(val$validation_status, "valid")
+  expect_false(any(val$issues$code == "display_label_too_many_words"))
 })
 
 test_that("validate_cluster_label rejects forbidden punctuation in display labels", {

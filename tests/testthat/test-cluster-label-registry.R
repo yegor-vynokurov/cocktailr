@@ -36,7 +36,7 @@
     cluster_id = ev$meta$cluster_id,
     status = "labeled",
     canonical_label = "sp1_sp2_cluster",
-    display_label = "sp1-sp2 cluster",
+    display_label = "dry base-rich shrubland with ligustrum and oak canopy",
     label_summary = "A compact recurring species core supports a short compositional label.",
     interpretation_summary = "The cluster is defined by a compact recurring species core and consistent prototype plots.",
     basis_in_data = list(
@@ -231,10 +231,10 @@ test_that("cluster_label_registry flattens batch output into plotting-ready fiel
   row2 <- reg[reg$cluster == "c_2", , drop = FALSE]
 
   expect_equal(row1$plot_label_id[[1]], "c_1")
-  expect_equal(row1$plot_label_short[[1]], "sp1-sp2 cluster")
-  expect_equal(row1$legend_label[[1]], "c_1: sp1-sp2 cluster")
-  expect_equal(row1$hclust_label_compact[[1]], "c_1: sp1-sp2")
-  expect_equal(row1$display_label[[1]], "sp1-sp2 cluster")
+  expect_equal(row1$plot_label_short[[1]], "dry base-rich shrubland ...")
+  expect_equal(row1$legend_label[[1]], "c_1: dry base-rich shrubland ...")
+  expect_equal(row1$hclust_label_compact[[1]], "c_1: dry base-rich shrubland ...")
+  expect_equal(row1$display_label[[1]], "dry base-rich shrubland with ligustrum and oak canopy")
   expect_equal(row1$canonical_label[[1]], "sp1_sp2_cluster")
   expect_true(row1$label_available[[1]])
   expect_true(row1$accepted_label[[1]])
@@ -322,6 +322,51 @@ test_that("cluster_label_registry exposes post-abstain public fallback separatel
   expect_equal(row$legend_label[[1]], "c_1: Chaotic Cluster")
   expect_equal(row$hclust_label_compact[[1]], "c_1: Chaotic Cluster")
   expect_equal(row$review_status[[1]], "abstained")
+})
+
+test_that("cluster_label_registry leaves short display labels unchanged on plot-facing fields", {
+  x <- .build_registry_test_cocktail()
+  ev <- cluster_evidence(x, "c_1", top_n_phi = 3, n_prototype_plots = 2, n_borderline_plots = 2)
+  out <- .build_registry_valid_output(ev)
+  out$display_label <- "mesic woodland edge"
+  out$canonical_label <- "mesic_woodland_edge"
+  val <- validate_cluster_label(out, ev)
+
+  llm <- list(
+    provider = "ollama",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    workflow_steps = 3L,
+    output = out
+  )
+  class(llm) <- c("cluster_label_result", "list")
+
+  batch <- list(
+    summary = data.frame(cluster = "c_1", stringsAsFactors = FALSE),
+    results = list(
+      list(
+        evidence = ev,
+        validation = val,
+        llm_result = llm,
+        review = list(file = "temp/reports/cluster_reviews/demo/c_1_review.md"),
+        run_status = "success",
+        used_placeholder = FALSE,
+        repair_used = FALSE,
+        iterations_used = 1L,
+        num_predict_used = 600L
+      )
+    ),
+    selection = data.frame(stringsAsFactors = FALSE)
+  )
+  class(batch) <- c("cluster_label_batch_result", "list")
+
+  reg <- cluster_label_registry(batch)
+  row <- reg[1, , drop = FALSE]
+
+  expect_equal(row$display_label[[1]], "mesic woodland edge")
+  expect_equal(row$plot_label_short[[1]], "mesic woodland edge")
+  expect_equal(row$legend_label[[1]], "c_1: mesic woodland edge")
+  expect_equal(row$hclust_label_compact[[1]], "c_1: mesic woodland edge")
 })
 
 test_that("cluster_label_registry returns a typed empty registry for empty batch results", {
@@ -430,18 +475,14 @@ test_that("cluster_label_registry carries speculative plotting metadata", {
   expect_false(row2$accepted_label[[1]])
   expect_equal(
     row2$plot_label_short[[1]],
-    "Calcareous open grasslands heliophilous drought specialists*"
+    "Calcareous open grasslands ...*"
   )
   expect_equal(
     row2$legend_label[[1]],
-    "c_2: Calcareous open grasslands heliophilous drought specialists*"
+    "c_2: Calcareous open grasslands ...*"
   )
   expect_match(row2$hclust_label_compact[[1]], "^c_2: ")
-  expect_true(endsWith(row2$hclust_label_compact[[1]], "...*"))
-  expect_lt(
-    nchar(row2$hclust_label_compact[[1]], type = "chars"),
-    nchar(row2$legend_label[[1]], type = "chars")
-  )
+  expect_equal(row2$hclust_label_compact[[1]], "c_2: Calcareous open grasslands ...*")
   expect_lte(
     nchar(row2$hclust_label_compact[[1]], type = "chars"),
     cocktailr:::.cluster_label_registry_hclust_label_max_chars()
@@ -494,7 +535,7 @@ test_that("reading a saved registry refreshes stale compact hclust labels", {
 
   expect_equal(
     reg_loaded$hclust_label_compact,
-    c("c_1: Mixed Herbaceous", "c_2: Disturbance Flora")
+    c("c_1: Mixed Herbaceous Community", "c_2: Disturbance Flora Association")
   )
 })
 
@@ -525,7 +566,7 @@ test_that("compact hclust labels keep cluster prefixes across fallback states", 
   expect_true(all(startsWith(reg$hclust_label_compact, paste0(reg$cluster, ": "))))
 })
 
-test_that("compact hclust labels strip generic grouping nouns from labeled output", {
+test_that("compact hclust labels preserve three-word labels under the plot-preview contract", {
   reg <- data.frame(
     cluster = c("c_1", "c_2"),
     display_label = c("Mixed Herbaceous Community", "Disturbance Flora Association"),
@@ -540,7 +581,7 @@ test_that("compact hclust labels strip generic grouping nouns from labeled outpu
 
   reg <- cocktailr:::.cluster_label_registry_add_hclust_label_compact(reg)
 
-  expect_equal(reg$hclust_label_compact[[1]], "c_1: Mixed Herbaceous")
-  expect_equal(reg$hclust_label_compact[[2]], "c_2: Disturbance Flora")
+  expect_equal(reg$hclust_label_compact[[1]], "c_1: Mixed Herbaceous Community")
+  expect_equal(reg$hclust_label_compact[[2]], "c_2: Disturbance Flora Association")
 })
 

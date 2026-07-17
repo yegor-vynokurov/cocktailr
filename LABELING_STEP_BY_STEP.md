@@ -57,6 +57,10 @@ The staged public workflow already knows how to use the main prompt
 ladder. You do not need to manually chain `label_soft_v1` or
 `label_broad_v1`.
 
+Leave `short_label_with_llm = FALSE` for normal runs. If you turn it on,
+the extra shortening-repair prompt is available only in internal prompt
+bundles that include it, such as the packaged `v2` bundle.
+
 This guide intentionally leaves `semantic_layer = FALSE`. Turn it on
 only if you already know that the optional semantic resources are
 prepared and you want that extra enrichment layer.
@@ -725,6 +729,13 @@ summary_tbl[, intersect(
   names(summary_tbl)
 )]
 ```
+
+Interpret the saved label fields as follows:
+
+- `display_label` is the full stored human label
+- `canonical_label` is the short/projected programmatic label
+- plot-shortened previews live in `cluster_label_registry.csv` as
+  `plot_label_short`, `legend_label`, and `hclust_label_compact`
 
 Open the first review card:
 

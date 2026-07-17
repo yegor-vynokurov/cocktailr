@@ -29,8 +29,7 @@
     "display_label": {
       "type": ["string", "null"],
       "minLength": 1,
-      "maxLength": 80,
-      "pattern": "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$)\\S+(?:\\s+\\S+){0,5}$"
+      "pattern": "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$).+\\S$"
     },
     "label_summary": {
       "type": ["string", "null"],

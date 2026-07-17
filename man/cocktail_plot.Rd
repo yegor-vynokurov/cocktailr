@@ -70,9 +70,8 @@ where each element specifies one highlighted cluster; or
 a \strong{combination of clusters} (e.g.
 \code{list(c(1,4,6,14), c(2,12,17))}).
 }
-A one-column data frame such as
-\code{read.csv("selected_clusters.csv")} is treated as one
-highlighted cluster per row.
+A one-column data frame such as \code{read.csv("selected_clusters.csv")}
+is treated as one highlighted cluster per row.
 Within each supplied cluster set, if both an ancestor and descendant are present,
 only the topmost (ancestor) is used for elbow labelling and band
 placement. All valid supplied IDs are considered for labels at

@@ -41,6 +41,7 @@
     "label_decision_primary_v2",
     "label_decision_soft_v2",
     "label_decision_broad_v2",
+    "label_decision_shorten_repair_v1",
     "label_summary_pass_v2",
     "abstain_reason_pass_v2"
   ],
@@ -50,6 +51,11 @@
     "label_primary_v1": "label_decision_primary_v2",
     "label_soft_v1": "label_decision_soft_v2",
     "label_broad_v1": "label_decision_broad_v2"
+  },
+  "internal_v2_label_decision_shortening_repair_variants": {
+    "label_primary_v1": "label_decision_shorten_repair_v1",
+    "label_soft_v1": "label_decision_shorten_repair_v1",
+    "label_broad_v1": "label_decision_shorten_repair_v1"
   },
   "internal_v2_label_summary_variant": "label_summary_pass_v2",
   "internal_v2_abstain_reason_variant": "abstain_reason_pass_v2",
@@ -149,6 +155,13 @@
       "task_type": "label_decision",
       "temperature": 0.12,
       "top_p": 0.95
+    },
+    "label_decision_shorten_repair_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v2/user_label_decision_shorten_repair_v1.md",
+      "description": "Internal shortening-only repair instruction for overlong labeled answers before semantic fallback.",
+      "task_type": "label_decision_repair",
+      "temperature": 0.0,
+      "top_p": 0.8
     },
     "label_summary_pass_v2": {
       "user_prompt_path": "../internal_cluster_labeling/v1/user_label_summary_pass_v2.md",

@@ -84,7 +84,7 @@
   "unknown"
 }
 
-test_that("selection rung gets exactly one local repair cycle for invalid long label-decision text", {
+test_that("selection rung preserves overlong open labels when optional shortening is enabled", {
   ev <- .build_phase3_test_cluster_evidence()
   state <- new.env(parent = emptyenv())
   state$selection_calls <- 0L
@@ -93,14 +93,14 @@ test_that("selection rung gets exactly one local repair cycle for invalid long l
     content <- if (identical(.phase3_request_stage(payload), "selection")) {
       state$selection_calls <- state$selection_calls + 1L
       if (identical(state$selection_calls, 1L)) {
-        "This answer is far too long and should trigger a local retry instead of being accepted as a short label."
+        "Dry base-rich grassland with sedge and thyme core"
       } else {
         .phase3_selection_text(
-          display_label = "compact species core"
+          display_label = "dry base-rich grassland"
         )
       }
     } else if (identical(.phase3_request_stage(payload), "summary")) {
-      "The same compact species core recurs across the evidence bundle."
+      "The same dry base-rich grassland signal recurs across the evidence bundle."
     } else {
       stop("Unexpected stage in test request.")
     }
@@ -116,17 +116,31 @@ test_that("selection rung gets exactly one local repair cycle for invalid long l
     evidence = ev,
     model = "fake-model",
     variant = "label_primary_v1",
+    internal_prompt_version = "v2",
     use_brainstorm = FALSE,
+    short_label_with_llm = TRUE,
     max_retries = 5L,
     timeout_sec = 1,
     request_fn = fake_request
   )
 
-  expect_equal(state$selection_calls, 2L)
+  expect_equal(state$selection_calls, 1L)
   expect_equal(res$output$status, "labeled")
-  expect_equal(res$output$canonical_label, "compact_species_core")
+  expect_equal(
+    res$output$display_label,
+    "Dry base-rich grassland with sedge and thyme core"
+  )
+  expect_match(
+    res$output$canonical_label,
+    "^dry_base_rich_grassland",
+    perl = TRUE
+  )
+  expect_equal(res$workflow$label$selected_public_variant, "label_primary_v1")
+  expect_equal(length(res$workflow$label$attempts), 1L)
+  expect_null(res$workflow$label$repair_source)
+  expect_null(res$workflow$label$repair_variant)
   expect_true(.is_non_empty_scalar_character(res$output$label_summary))
-  expect_equal(res$workflow$label$attempts[[1]]$attempts, 2L)
+  expect_equal(res$workflow$label$attempts[[1]]$attempts, 1L)
 })
 
 test_that("label-decision parser derives canonical_label programmatically from short raw label text", {
@@ -187,6 +201,7 @@ test_that("summary rung retries empty text before accepting the rung", {
     model = "fake-model",
     variant = "label_primary_v1",
     use_brainstorm = FALSE,
+    short_label_with_llm = TRUE,
     max_retries = 1L,
     timeout_sec = 1,
     request_fn = fake_request
@@ -312,7 +327,7 @@ test_that("all-abstain path stays abstain and assembles fallback abstain reason 
   expect_true(isTRUE(res$workflow$abstain_reason$fallback_used))
 })
 
-test_that("failed label-decision rungs surface transparent retry-exhausted reasons", {
+test_that("overlong labels that still fail shortening remain transparent after ladder exhaustion", {
   ev <- .build_phase3_test_cluster_evidence()
   state <- new.env(parent = emptyenv())
   state$selection_calls <- 0L
@@ -321,7 +336,7 @@ test_that("failed label-decision rungs surface transparent retry-exhausted reaso
     task_type <- .phase3_request_stage(payload)
     content <- if (identical(task_type, "selection")) {
       state$selection_calls <- state$selection_calls + 1L
-      "This invalid answer is much too long to count as a short label and keeps the rung unusable."
+      "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
     } else {
       ""
     }
@@ -346,9 +361,23 @@ test_that("failed label-decision rungs surface transparent retry-exhausted reaso
   expect_equal(state$selection_calls, 6L)
   expect_equal(res$output$status, "abstain")
   expect_equal(res$workflow$label$selected_public_variant, "selection_all_abstain")
+  expect_null(res$workflow$label$repair_source %||% NULL)
+  expect_equal(
+    res$workflow$label$attempts[[1]]$repair_source,
+    "shortening_branch"
+  )
   expect_equal(res$workflow$label$attempts[[1]]$result, "failed_after_retry")
   expect_equal(res$workflow$label$attempts[[2]]$result, "failed_after_retry")
   expect_equal(res$workflow$label$attempts[[3]]$result, "failed_after_retry")
+  expect_length(res$workflow$label$attempts[[1]]$repair_history, 2L)
+  expect_equal(
+    res$workflow$label$attempts[[1]]$repair_history[[1]]$response_content,
+    "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
+  )
+  expect_equal(
+    res$workflow$label$attempts[[1]]$repair_history[[2]]$response_content,
+    "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
+  )
   expect_match(
     res$workflow$label$failure_messages[[1]],
     "invalid label-decision output after 2 attempt(s)",
@@ -356,7 +385,7 @@ test_that("failed label-decision rungs surface transparent retry-exhausted reaso
   )
   expect_match(
     res$workflow$label$failure_messages[[1]],
-    "Could not normalize a usable short label",
+    "Label-decision output failed text validation",
     fixed = TRUE
   )
 })

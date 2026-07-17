@@ -256,6 +256,39 @@ test_that("label_clusters uses text-only validator repair without falling back t
   state$saw_validator_repair <- FALSE
   state$saw_validator_repair_outside_selection <- FALSE
   state$repair_iteration_started <- FALSE
+  state$validation_calls <- 0L
+
+  original_validate <- get("validate_cluster_label", envir = asNamespace("cocktailr"))
+  mocked_validate <- function(x, evidence, ...) {
+    state$validation_calls <- state$validation_calls + 1L
+    base <- original_validate(x, evidence, ...)
+
+    if (!identical(x$repair$source %||% NULL, "validator_text_only")) {
+      issues <- .new_cluster_label_issue_table()
+      issues <- rbind(
+        issues,
+        data.frame(
+          severity = "error",
+          category = "unsupported_claims",
+          code = "forced_validator_repair_test",
+          message = "Forced validator failure to exercise validator_text_only repair.",
+          location = "label_summary",
+          stringsAsFactors = FALSE
+        )
+      )
+      base$validation_status <- "unsupported_claims"
+      base$is_valid <- FALSE
+      base$needs_human_review <- TRUE
+      base$issues <- issues
+    }
+
+    base
+  }
+
+  assignInNamespace("validate_cluster_label", mocked_validate, ns = "cocktailr")
+  withr::defer(
+    assignInNamespace("validate_cluster_label", original_validate, ns = "cocktailr")
+  )
 
   fake_request <- function(url, payload, timeout_sec) {
     stage <- .label_clusters_request_stage(payload)
@@ -314,13 +347,214 @@ test_that("label_clusters uses text-only validator repair without falling back t
 
   expect_true(isTRUE(state$saw_validator_repair))
   expect_false(isTRUE(state$saw_validator_repair_outside_selection))
+  expect_gte(state$validation_calls, 2L)
   expect_equal(res$summary$run_status[[1]], "success")
   expect_true(res$summary$validation_status[[1]] %in% c("valid", "valid_with_warnings"))
   expect_true(isTRUE(res$summary$repair_used[[1]]))
   expect_equal(
+    res$results$c_1$llm_result$output$label_summary,
+    "A compact recurring species core is visible in the evidence bundle."
+  )
+  expect_equal(
     res$results$c_1$llm_result$repair$source %||% NA_character_,
     "validator_text_only"
   )
+})
+
+test_that("label_clusters keeps a valid long full label even when optional shortening is enabled", {
+  x <- .build_label_clusters_test_cocktail()
+  state <- new.env(parent = emptyenv())
+  state$selection_calls <- 0L
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = {
+        state$selection_calls <- state$selection_calls + 1L
+        if (identical(state$selection_calls, 1L)) {
+          "Dry base-rich grassland with sedge and thyme core"
+        } else {
+          "dry base-rich grassland"
+        }
+      },
+      summary = "A dry base-rich grassland signal is consistently visible in the evidence bundle.",
+      abstain_reason = "ABSTAIN",
+      stop("Unexpected stage in shortening-repair test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-shortening-repair")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v2",
+    short_label_with_llm = TRUE,
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$selection_calls, 1L)
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_false(isTRUE(res$summary$repair_used[[1]]))
+  expect_equal(
+    res$results$c_1$llm_result$output$display_label,
+    "Dry base-rich grassland with sedge and thyme core"
+  )
+  expect_match(
+    res$results$c_1$llm_result$output$canonical_label,
+    "^dry_base_rich_grassland",
+    perl = TRUE
+  )
+  expect_equal(res$results$c_1$llm_result$workflow$label$selected_public_variant, "label_primary_v1")
+  expect_null(res$results$c_1$llm_result$workflow$label$repair_source)
+  expect_null(res$results$c_1$llm_result$workflow$label$repair_variant)
+})
+
+test_that("label_clusters review logs preserve exhausted shortening attempts without debug mode", {
+  x <- .build_label_clusters_test_cocktail()
+  state <- new.env(parent = emptyenv())
+  state$selection_calls <- 0L
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = {
+        state$selection_calls <- state$selection_calls + 1L
+        "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
+      },
+      abstain_reason = "Signal remains too mixed for a stable short label.",
+      summary = "",
+      stop("Unexpected stage in shortening-log test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-shortening-log-capture")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v2",
+    short_label_with_llm = TRUE,
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  model_logs_dir <- res$results$c_1$review$model_logs_dir
+  attempt_dir <- file.path(
+    model_logs_dir,
+    "stage2_label_decision",
+    "attempt1_label_primary_v1"
+  )
+  repair_history_path <- file.path(attempt_dir, "repair_history.json")
+  response_attempt1_path <- file.path(attempt_dir, "response_content_attempt1.txt")
+  response_attempt2_path <- file.path(attempt_dir, "response_content_attempt2.txt")
+  parsed_candidate1_path <- file.path(attempt_dir, "parsed_output_candidate_attempt1.json")
+
+  expect_equal(state$selection_calls, 6L)
+  expect_equal(res$summary$output_status[[1]], "abstain")
+  expect_true(file.exists(repair_history_path))
+  expect_true(file.exists(response_attempt1_path))
+  expect_true(file.exists(response_attempt2_path))
+  expect_true(file.exists(parsed_candidate1_path))
+  expect_equal(
+    paste(readLines(response_attempt1_path, warn = FALSE), collapse = "\n"),
+    "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
+  )
+  expect_equal(
+    paste(readLines(response_attempt2_path, warn = FALSE), collapse = "\n"),
+    "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
+  )
+
+  repair_history <- jsonlite::fromJSON(repair_history_path, simplifyVector = FALSE)
+  expect_length(repair_history, 2L)
+  expect_match(
+    repair_history[[1]]$repair_instruction,
+    "2-3 words",
+    fixed = TRUE
+  )
+})
+
+test_that("label_clusters keeps optional shortening disabled by default and falls back to softer prompts", {
+  x <- .build_label_clusters_test_cocktail()
+  state <- new.env(parent = emptyenv())
+  state$selection_calls <- 0L
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = {
+        state$selection_calls <- state$selection_calls + 1L
+        if (identical(state$selection_calls, 1L)) {
+          "Dry base-rich grassland with sedge and thyme core"
+        } else {
+          "dry base-rich grassland"
+        }
+      },
+      summary = "A dry base-rich grassland signal is consistently visible in the evidence bundle.",
+      abstain_reason = "ABSTAIN",
+      stop("Unexpected stage in default-off shortening test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-shortening-default-off")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v2",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$selection_calls, 1L)
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_false(isTRUE(res$summary$repair_used[[1]]))
+  expect_equal(res$results$c_1$llm_result$workflow$label$selected_public_variant, "label_primary_v1")
+  expect_null(res$results$c_1$llm_result$workflow$label$repair_source)
+  expect_null(res$results$c_1$llm_result$workflow$label$repair_variant)
 })
 
 test_that("cluster_evidence loads single txt, json, and yaml user_added_data files", {

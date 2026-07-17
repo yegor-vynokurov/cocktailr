@@ -14,6 +14,12 @@
 #'     instruction
 #' }
 #'
+#' For labeled outputs, \code{output$display_label} stores the full human label
+#' while \code{output$canonical_label} stores the short/projected snake_case
+#' form. Plot-facing shortening is handled later by
+#' \code{\link{cluster_label_registry}} and downstream plot helpers rather than
+#' by rewriting the saved \code{display_label}.
+#'
 #' This function currently supports \code{provider = "ollama"}.
 #'
 #' @param evidence A \code{"cluster_evidence"} object, typically produced by
@@ -66,6 +72,13 @@
 #'   analysis step before label decision. If \code{FALSE}, the downstream
 #'   label-decision and summary / abstain-reason stages use the cluster
 #'   evidence directly without a brainstorm pass.
+#' @param short_label_with_llm Logical. If \code{TRUE}, the label-decision
+#'   stage may use the optional internal shortening-repair prompt when a reply
+#'   fails the short-label projection checks. Default \code{FALSE}; the default
+#'   path avoids extra shortening-only LLM calls and still preserves the full
+#'   stored label in \code{display_label}. The shortening-repair prompt is
+#'   available only when the selected \code{internal_prompt_version} bundle
+#'   includes that asset (for example the packaged \code{"v2"} bundle).
 #' @param internal_prompt_version Character scalar naming the subdirectory
 #'   under \code{inst/prompts/internal_cluster_labeling/} that contains the
 #'   active internal service-prompt bundle. Default \code{"v1"}. Copy that
@@ -101,7 +114,8 @@
 #'   \item \code{prompt}
 #'   \item \code{request}
 #'   \item \code{response}
-#'   \item \code{output}
+#'   \item \code{output} (including the full stored \code{display_label} and
+#'     the projected \code{canonical_label})
 #'   \item \code{attempts}
 #'   \item \code{workflow_steps}
 #'   \item \code{schema_path}
@@ -157,6 +171,7 @@ llm_label_cluster <- function(
     max_retries = 1L,
     workflow_steps = 3L,
     use_brainstorm = TRUE,
+    short_label_with_llm = FALSE,
     internal_prompt_version = .default_cluster_label_internal_prompt_version(),
     dry_run = FALSE,
     debug = FALSE,
@@ -182,6 +197,10 @@ llm_label_cluster <- function(
     "workflow_steps"
   )
   use_brainstorm <- .arg_single_flag(use_brainstorm, "use_brainstorm")
+  short_label_with_llm <- .arg_single_flag(
+    short_label_with_llm,
+    "short_label_with_llm"
+  )
   internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
     internal_prompt_version
   )
@@ -216,6 +235,7 @@ llm_label_cluster <- function(
     max_retries = max_retries,
     workflow_steps = workflow_steps,
     use_brainstorm = use_brainstorm,
+    short_label_with_llm = short_label_with_llm,
     internal_prompt_version = internal_prompt_version,
     dry_run = dry_run,
     log_dir = log_dir,
@@ -264,6 +284,197 @@ llm_label_cluster <- function(
     "If you abstain, return only `ABSTAIN`.",
     "Do not add JSON, markdown, commentary, code fences, or multiple fields.",
     "Do not return `canonical_label`, `display_label`, `label_summary`, or `abstain_reason`."
+  )
+}
+
+.cluster_label_decision_overlength_error_patterns <- function() {
+  c(
+    "display_label is too long for the final contract.",
+    "display_label has too many words for the final contract.",
+    "canonical_label is too long for the final contract."
+  )
+}
+
+.is_cluster_label_decision_overlength_error <- function(message) {
+  message <- .as_scalar_character(message)
+  if (is.na(message) || !nzchar(message)) {
+    return(FALSE)
+  }
+
+  patterns <- .cluster_label_decision_overlength_error_patterns()
+  any(vapply(patterns, grepl, logical(1), x = message, fixed = TRUE))
+}
+
+.cluster_label_error_candidate_output <- function(x) {
+  if (inherits(x, "error")) {
+    candidate <- x$parsed_output_candidate %||%
+      attr(x, "parsed_output_candidate", exact = TRUE)
+    if (is.list(candidate)) {
+      return(candidate)
+    }
+    return(NULL)
+  }
+
+  if (is.list(x)) {
+    return(x)
+  }
+
+  NULL
+}
+
+.cluster_label_decision_repair_source_from_history <- function(
+    repair_history,
+    prompt_bundle
+) {
+  if (!is.list(prompt_bundle)) {
+    return(NULL)
+  }
+
+  label_mode <- .as_scalar_character(prompt_bundle$label_mode_effective %||% "open")
+  if (!identical(label_mode, "open")) {
+    return(NULL)
+  }
+
+  repair_history <- repair_history %||% list()
+  if (!length(repair_history)) {
+    return(NULL)
+  }
+
+  repair_errors <- vapply(repair_history, function(entry) {
+    .as_scalar_character(entry$error)
+  }, character(1))
+  repair_errors <- repair_errors[!is.na(repair_errors) & nzchar(repair_errors)]
+
+  if (!length(repair_errors)) {
+    return(NULL)
+  }
+
+  if (all(vapply(repair_errors, .is_cluster_label_decision_overlength_error, logical(1)))) {
+    return("shortening_branch")
+  }
+
+  NULL
+}
+
+.cluster_label_decision_repair_source <- function(attempt, prompt_bundle) {
+  if (!is.list(attempt) || !is.list(prompt_bundle)) {
+    return(NULL)
+  }
+
+  if (!identical(.as_scalar_character(attempt$output$status), "labeled")) {
+    return(NULL)
+  }
+
+  .cluster_label_decision_repair_source_from_history(
+    repair_history = attempt$repair_history %||% list(),
+    prompt_bundle = prompt_bundle
+  )
+}
+
+.cluster_label_decision_failed_label_text <- function(
+    content,
+    parsed_output_candidate = NULL
+) {
+  candidate <- .cluster_label_error_candidate_output(parsed_output_candidate)
+  candidate_label <- .as_scalar_character(
+    candidate$display_label %||% candidate$label_decision_text %||% NULL
+  )
+  if (.is_non_empty_scalar_character(candidate_label)) {
+    return(candidate_label)
+  }
+
+  content <- .as_scalar_character(content)
+  if (is.na(content) || !nzchar(trimws(content))) {
+    return("")
+  }
+
+  gsub("\\s+", " ", trimws(content), perl = TRUE)
+}
+
+.cluster_label_shortening_description_text <- function(draft_analysis_text) {
+  draft_analysis_text <- .as_scalar_character(draft_analysis_text)
+
+  main_signal_lines <- .cluster_label_draft_section_lines(
+    draft_analysis_text,
+    "main signal"
+  )
+  conflict_lines <- .cluster_label_draft_section_lines(
+    draft_analysis_text,
+    "noise or conflicts"
+  )
+  overclaim_lines <- .cluster_label_draft_section_lines(
+    draft_analysis_text,
+    "what not to overclaim"
+  )
+
+  parts <- character(0)
+  if (length(main_signal_lines)) {
+    parts <- c(
+      parts,
+      paste(
+        "Main signal:",
+        paste(utils::head(main_signal_lines, 2L), collapse = "; ")
+      )
+    )
+  }
+  if (length(conflict_lines)) {
+    parts <- c(
+      parts,
+      paste(
+        "Conflicts:",
+        paste(utils::head(conflict_lines, 2L), collapse = "; ")
+      )
+    )
+  }
+  if (length(overclaim_lines)) {
+    parts <- c(
+      parts,
+      paste(
+        "Do not overclaim:",
+        paste(utils::head(overclaim_lines, 2L), collapse = "; ")
+      )
+    )
+  }
+
+  description <- paste(parts[nzchar(parts)], collapse = "\n")
+  if (!nzchar(description) && .is_non_empty_scalar_character(draft_analysis_text)) {
+    description <- gsub("\\s+", " ", trimws(draft_analysis_text), perl = TRUE)
+  }
+
+  if (nchar(description, type = "chars") > 900L) {
+    description <- paste0(substr(description, 1L, 897L), "...")
+  }
+
+  if (nzchar(description)) {
+    description
+  } else {
+    "No extra description was available."
+  }
+}
+
+.new_cluster_label_stage_failure <- function(
+    message,
+    prompt_bundle,
+    request = NULL,
+    response = NULL,
+    output = NULL,
+    attempts = NA_integer_,
+    logs = NULL,
+    repair_history = list()
+) {
+  structure(
+    list(
+      message = .as_scalar_character(message),
+      call = NULL,
+      prompt = prompt_bundle,
+      request = request,
+      response = response,
+      output = output,
+      attempts = as.integer(attempts),
+      logs = logs,
+      repair_history = repair_history
+    ),
+    class = c("cluster_label_stage_failure", "error", "condition")
   )
 }
 
@@ -765,6 +976,11 @@ llm_label_cluster <- function(
 
   messages_current <- request_payload$messages
   last_error <- NULL
+  last_payload_attempt <- NULL
+  last_parsed_outer <- NULL
+  last_content <- NULL
+  last_candidate_output <- NULL
+  repair_history <- list()
 
   # Keep stage-level retries local to one prompt bundle. Structural repair
   # happens by appending the invalid reply and a constrained correction
@@ -772,6 +988,7 @@ llm_label_cluster <- function(
   for (attempt in seq_len(max_retries + 1L)) {
     payload_attempt <- request_payload
     payload_attempt$messages <- messages_current
+    last_payload_attempt <- payload_attempt
 
     if (!is.null(log_paths$request_prefix)) {
       .write_text_file(
@@ -787,6 +1004,7 @@ llm_label_cluster <- function(
 
     resp <- request_fn(endpoint, payload_attempt, timeout_sec)
     parsed_outer <- .ensure_ollama_envelope(resp)
+    last_parsed_outer <- parsed_outer
 
     if (!is.null(log_paths$response_prefix)) {
       .write_text_file(
@@ -796,6 +1014,7 @@ llm_label_cluster <- function(
     }
 
     content <- .extract_ollama_message_content(parsed_outer$parsed)
+    last_content <- content
     if (!is.null(log_paths$response_content_prefix)) {
       .write_text_file(
         paste0(log_paths$response_content_prefix, "_attempt", attempt, ".txt"),
@@ -807,6 +1026,10 @@ llm_label_cluster <- function(
       parse_output_fn(content),
       error = function(e) e
     )
+    candidate_output <- .cluster_label_error_candidate_output(parsed_output)
+    if (is.list(candidate_output)) {
+      last_candidate_output <- candidate_output
+    }
 
     .write_stage_attempt_diagnostics(
       log_paths = log_paths,
@@ -893,11 +1116,40 @@ llm_label_cluster <- function(
         output = parsed_output,
         attempts = attempt,
         schema_path = prompt_bundle$schema_path,
-        logs = log_paths
+        logs = log_paths,
+        repair_history = repair_history
       ))
     }
 
     last_error <- parsed_output
+    repair_message <- conditionMessage(parsed_output)
+    repair_instruction_text <- if (attempt <= max_retries) {
+      if (is.function(repair_instruction)) {
+        repair_instruction(
+          error_message = repair_message,
+          attempt = attempt,
+          prompt_bundle = prompt_bundle,
+          variant = variant,
+          stage_name = stage_name,
+          content = content,
+          parsed_output = parsed_output
+        )
+      } else {
+        repair_instruction
+      }
+    } else {
+      NULL
+    }
+    repair_instruction_text <- .as_scalar_character(repair_instruction_text)
+    repair_history[[length(repair_history) + 1L]] <- list(
+      attempt = attempt,
+      error = repair_message,
+      repair_instruction = repair_instruction_text,
+      request = payload_attempt,
+      response_raw = parsed_outer$body_text,
+      response_content = content,
+      parsed_output_candidate = candidate_output
+    )
 
     if (attempt > max_retries) {
       break
@@ -907,7 +1159,7 @@ llm_label_cluster <- function(
       messages_current,
       list(
         list(role = "assistant", content = content),
-        list(role = "user", content = repair_instruction)
+        list(role = "user", content = repair_instruction_text)
       )
     )
   }
@@ -957,10 +1209,30 @@ llm_label_cluster <- function(
   }
 
   stop(
-    "Failed to obtain a valid LLM stage result after ",
-    max_retries + 1L,
-    " attempt(s): ",
-    conditionMessage(last_error)
+    .new_cluster_label_stage_failure(
+      message = paste0(
+        "Failed to obtain a valid LLM stage result after ",
+        max_retries + 1L,
+        " attempt(s): ",
+        conditionMessage(last_error)
+      ),
+      prompt_bundle = prompt_bundle,
+      request = last_payload_attempt,
+      response = if (!is.null(last_parsed_outer)) {
+        list(
+          status_code = last_parsed_outer$status_code,
+          envelope = last_parsed_outer$parsed,
+          raw = last_parsed_outer$body_text,
+          content = last_content
+        )
+      } else {
+        NULL
+      },
+      output = last_candidate_output,
+      attempts = max_retries + 1L,
+      logs = log_paths,
+      repair_history = repair_history
+    )
   )
 }
 
@@ -1070,12 +1342,6 @@ llm_label_cluster <- function(
   }
 
   display_label_trimmed <- trimws(display_label)
-  if (nchar(display_label_trimmed, type = "chars") > .cluster_label_max_display_length()) {
-    return(list(ok = FALSE, message = "display_label is too long for the final contract."))
-  }
-  if (.cluster_label_word_count(display_label_trimmed) > .cluster_label_max_display_words()) {
-    return(list(ok = FALSE, message = "display_label has too many words for the final contract."))
-  }
   if (grepl(
     .cluster_label_forbidden_display_punctuation_pattern(),
     display_label_trimmed,
@@ -1154,18 +1420,6 @@ llm_label_cluster <- function(
   }
 
   display_label_trimmed <- trimws(display_label)
-  if (nchar(display_label_trimmed, type = "chars") > .cluster_label_max_display_length()) {
-    return(list(
-      ok = FALSE,
-      message = "display_label is too long for the final contract."
-    ))
-  }
-  if (.cluster_label_word_count(display_label_trimmed) > .cluster_label_max_display_words()) {
-    return(list(
-      ok = FALSE,
-      message = "display_label has too many words for the final contract."
-    ))
-  }
   if (grepl(
     .cluster_label_forbidden_display_punctuation_pattern(),
     display_label_trimmed,
@@ -1310,29 +1564,34 @@ llm_label_cluster <- function(
     "open"
   }
 
-  # In constrained/dynamic modes, changing canonical labels may break the
-  # vocabulary/candidate contract. For now we only auto-shorten open labels.
-  if (!identical(label_mode, "open")) {
-    return(output)
-  }
-
   display_label <- .as_scalar_character(output$display_label)
 
   if (!.is_non_empty_scalar_character(display_label)) {
     display_label <- .as_scalar_character(output$label_decision_text)
   }
 
-  shortened <- .cluster_label_shorten_display_label_for_contract(display_label)
-
-  if (!.is_non_empty_scalar_character(shortened)) {
+  if (!.is_non_empty_scalar_character(display_label)) {
     return(output)
   }
 
-  output$display_label <- shortened
-  output$canonical_label <- .cluster_label_canonical_for_contract(shortened)
+  display_label <- trimws(display_label)
+  output$display_label <- display_label
+
+  projected_label <- .cluster_label_shorten_display_label_for_contract(
+    display_label
+  )
+  canonical_source <- if (.is_non_empty_scalar_character(projected_label)) {
+    projected_label
+  } else {
+    display_label
+  }
+
+  if (identical(label_mode, "open")) {
+    output$canonical_label <- .cluster_label_canonical_for_contract(canonical_source)
+  }
 
   if (!is.null(output$label_decision_text)) {
-    output$label_decision_text <- shortened
+    output$label_decision_text <- display_label
   }
 
   output
@@ -1347,6 +1606,11 @@ llm_label_cluster <- function(
     prompt_bundle,
     stage_name = "label_selection"
 ) {
+  output <- .harmonize_cluster_label_prompt_contract_output(
+    output = output,
+    prompt_bundle = prompt_bundle
+  )
+
   output <- .cluster_label_coerce_output_to_final_contract(
     output = output,
     prompt_bundle = prompt_bundle
@@ -1374,6 +1638,14 @@ llm_label_cluster <- function(
     prompt_bundle = prompt_bundle
   )
 
+  decision_contract <- .cluster_label_label_decision_output_is_valid(output)
+  if (!isTRUE(decision_contract$ok)) {
+    stop(
+      "Label-decision output failed text validation: ",
+      decision_contract$message
+    )
+  }
+
   output <- .cluster_label_coerce_output_to_final_contract(
     output = output,
     prompt_bundle = prompt_bundle
@@ -1382,7 +1654,7 @@ llm_label_cluster <- function(
   decision_contract <- .cluster_label_label_decision_output_is_valid(output)
   if (!isTRUE(decision_contract$ok)) {
     stop(
-      "Label-decision output failed text validation: ",
+      "Label-decision output failed text validation after final normalization: ",
       decision_contract$message
     )
   }
@@ -2187,6 +2459,7 @@ llm_label_cluster <- function(
     max_retries,
     request_fn,
     label_stage_log_paths,
+    short_label_with_llm,
     internal_prompt_version
 ) {
   cascade <- .cluster_label_decision_cascade_variants(variant)
@@ -2198,6 +2471,20 @@ llm_label_cluster <- function(
   for (i in seq_along(cascade$public_variants)) {
     public_variant <- cascade$public_variants[[i]]
     decision_variant <- cascade$internal_variants[[i]]
+    shortening_repair_prompt <- if (isTRUE(short_label_with_llm)) {
+      .cluster_label_decision_shortening_repair_prompt(
+        variant = public_variant,
+        internal_prompt_version = internal_prompt_version
+      )
+    } else {
+      list(
+        public_variant = public_variant,
+        variant = NULL,
+        text = NULL,
+        path = NULL,
+        available = FALSE
+      )
+    }
     prompt_bundle <- .build_cluster_label_decision_prompt(
       evidence = evidence,
       decision_variant = decision_variant,
@@ -2238,14 +2525,44 @@ llm_label_cluster <- function(
             content = content,
             cluster_id = evidence$meta$cluster_id
           )
-          .assert_cluster_label_label_decision_stage_output(
-            output = output,
-            prompt_bundle = prompt_bundle,
-            stage_name = "label_decision"
+          output <- tryCatch(
+            .assert_cluster_label_label_decision_stage_output(
+              output = output,
+              prompt_bundle = prompt_bundle,
+              stage_name = "label_decision"
+            ),
+            error = function(e) e
           )
+          if (inherits(output, "error")) {
+            output$parsed_output_candidate <- .parse_cluster_label_label_decision_text(
+              content = content,
+              cluster_id = evidence$meta$cluster_id
+            )
+            stop(output)
+          }
+          output
         },
         stage_name = "label_decision",
-        repair_instruction = .default_label_decision_stage_repair_instruction()
+        repair_instruction = function(error_message, content = NULL, parsed_output = NULL, ...) {
+          if (isTRUE(shortening_repair_prompt$available) &&
+              .is_cluster_label_decision_overlength_error(error_message)) {
+            dynamic_shortening_prompt <- .cluster_label_decision_shortening_repair_prompt(
+              variant = public_variant,
+              internal_prompt_version = internal_prompt_version,
+              long_label = .cluster_label_decision_failed_label_text(
+                content = content,
+                parsed_output_candidate = parsed_output
+              ),
+              label_description = .cluster_label_shortening_description_text(
+                draft_analysis_text
+              )
+            )
+            if (isTRUE(dynamic_shortening_prompt$available)) {
+              return(dynamic_shortening_prompt$text)
+            }
+          }
+          .default_label_decision_stage_repair_instruction()
+        }
       ),
       error = function(e) e
     )
@@ -2271,7 +2588,30 @@ llm_label_cluster <- function(
         error = conditionMessage(attempt),
         attempts = decision_retry_budget + 1L,
         retry_exhausted = TRUE,
-        logs = stage_log_paths
+        prompt = attempt$prompt %||% prompt_bundle,
+        request = attempt$request %||% NULL,
+        response = attempt$response %||% NULL,
+        output = attempt$output %||% .cluster_label_error_candidate_output(attempt),
+        repair_history = attempt$repair_history %||% list(),
+        repair_source = .cluster_label_decision_repair_source_from_history(
+          repair_history = attempt$repair_history %||% list(),
+          prompt_bundle = prompt_bundle
+        ),
+        repair_variant = if (
+          isTRUE(shortening_repair_prompt$available) &&
+            identical(
+              .cluster_label_decision_repair_source_from_history(
+                repair_history = attempt$repair_history %||% list(),
+                prompt_bundle = prompt_bundle
+              ),
+              "shortening_branch"
+            )
+        ) {
+          shortening_repair_prompt$variant
+        } else {
+          NULL
+        },
+        logs = attempt$logs %||% stage_log_paths
       )
       next
     }
@@ -2279,6 +2619,16 @@ llm_label_cluster <- function(
     attempt$public_variant <- public_variant
     attempt$selection_variant <- decision_variant
     attempt$result <- .as_scalar_character(attempt$output$status)
+    attempt$repair_source <- .cluster_label_decision_repair_source(
+      attempt = attempt,
+      prompt_bundle = prompt_bundle
+    )
+    attempt$repair_variant <- if (identical(attempt$repair_source, "shortening_branch") &&
+                                  isTRUE(shortening_repair_prompt$available)) {
+      shortening_repair_prompt$variant
+    } else {
+      NULL
+    }
     attempt$retry_exhausted <- FALSE
     attempts[[length(attempts) + 1L]] <- attempt
 
@@ -2311,6 +2661,8 @@ llm_label_cluster <- function(
       selected_stage = attempt,
       exhausted = FALSE,
       failure_messages = failure_messages,
+      repair_source = attempt$repair_source %||% NULL,
+      repair_variant = attempt$repair_variant %||% NULL,
       logs = label_stage_log_paths
     ))
   }
@@ -2330,6 +2682,8 @@ llm_label_cluster <- function(
     selected_stage = NULL,
     exhausted = TRUE,
     failure_messages = failure_messages,
+    repair_source = NULL,
+    repair_variant = NULL,
     logs = label_stage_log_paths
   )
 }
@@ -2928,6 +3282,7 @@ llm_label_cluster <- function(
     max_retries,
     workflow_steps,
     use_brainstorm,
+    short_label_with_llm,
     internal_prompt_version,
     dry_run,
     log_dir,
@@ -3289,6 +3644,7 @@ llm_label_cluster <- function(
       max_retries = max_retries,
       request_fn = request_fn,
       label_stage_log_paths = workflow_logs$stages$label,
+      short_label_with_llm = short_label_with_llm,
       internal_prompt_version = internal_prompt_version
     )
 

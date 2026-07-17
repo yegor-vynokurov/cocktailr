@@ -145,6 +145,26 @@ test_that("render_cluster_review builds a readable compact markdown artifact by 
   expect_false(grepl("## Manual review notes", art$markdown, fixed = TRUE))
 })
 
+test_that("render_cluster_review shows full display label and separate plot preview when they differ", {
+  ev <- .build_review_test_cluster_evidence()
+  output <- .build_review_label_output(ev)
+  output$display_label <- "dry base-rich shrubland with ligustrum and oak canopy"
+  output$canonical_label <- "dry_base_rich_shrubland"
+
+  art <- render_cluster_review(output, ev)
+
+  expect_match(
+    art$markdown,
+    "- Display label: `dry base-rich shrubland with ligustrum and oak canopy`",
+    fixed = TRUE
+  )
+  expect_match(
+    art$markdown,
+    "- Plot preview label: `dry base-rich shrubland ...`",
+    fixed = TRUE
+  )
+})
+
 test_that("render_cluster_review full=TRUE builds an expanded markdown artifact", {
   ev <- .build_review_test_cluster_evidence()
   output <- .build_review_label_output(ev)

@@ -15,15 +15,25 @@ processed cluster. Important columns include:
 \describe{
 \item{cluster}{Cluster ID such as \code{"c_12"}.}
 \item{plot_label_id}{Stable ID recommended for direct plot annotation.}
-\item{plot_label_short}{Human-readable short label when available, otherwise the cluster ID.}
-\item{legend_label}{Preformatted \code{cluster: label} text for legends or captions.}
-\item{hclust_label_compact}{Compact \code{cluster: label} text for dense \code{hclust} leaf labels, with controlled truncation when needed.}
-\item{display_label, canonical_label}{Structured labels returned by the LLM.}
+\item{plot_label_short}{Deterministic plot-preview label: the full label
+when it already fits within three words, otherwise the first three
+whitespace-delimited words plus literal \code{" ..."}; falls back to the
+cluster ID when no label is available.}
+\item{legend_label}{Preformatted \code{cluster: preview} text for legends or
+captions.}
+\item{hclust_label_compact}{Compact \code{cluster: preview} text for dense
+\code{hclust} leaf labels.}
+\item{display_label, canonical_label}{Structured labels returned by the
+LLM: \code{display_label} stores the full human label, while
+\code{canonical_label} stores the short/projected programmatic form.}
+\item{public_display_label, public_canonical_label, public_label_source}{Downstream-only public label projection, including the post-abstain fallback when applicable.}
 \item{label_available}{Whether a non-empty labeled output is available.}
 \item{accepted_label}{Whether a labeled output is available and the review status is \code{"accepted"}.}
 \item{review_status, validation_status, output_status}{Review and validation summaries.}
 \item{review_file, review_metadata_file}{Saved review-card artifact paths, when present.}
 \item{model, variant, workflow_steps}{Prompt / model provenance.}
+\item{selected_label_variant, label_stage_exhausted}{Resolved stage-B rung
+and whether the public selection cascade was fully exhausted.}
 \item{dataset_type, dataset_label, dataset_path}{Dataset provenance carried through evidence extraction.}
 }
 }
@@ -37,7 +47,8 @@ review status, prompt provenance, and artifact paths in scalar columns.
 The default visual convention supported by this registry is:
 \itemize{
 \item keep \code{cluster} / \code{plot_label_id} as the on-plot identifier,
-\item use \code{display_label} or \code{plot_label_short} when a short label is needed,
+\item use \code{display_label} as the full stored human label,
+\item use \code{plot_label_short} when a short plot preview is needed,
 \item use \code{legend_label} in legends or figure captions,
 \item use \code{hclust_label_compact} for dense \code{hclust} leaf labeling.
 }

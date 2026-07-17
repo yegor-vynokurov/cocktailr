@@ -23,3 +23,6 @@ data-raw/external/*
 .agents
 .planning
 .copier-answers.planning-lite.yml
+
+.venv-graphify-ext
+graphify-out

@@ -277,34 +277,6 @@ validate_cluster_label <- function(x, evidence) {
       )
     } else {
       display_label_trimmed <- trimws(display_label)
-      display_word_count <- .cluster_label_word_count(display_label_trimmed)
-
-      if (nchar(display_label_trimmed, type = "chars") > .cluster_label_max_display_length()) {
-        add_issue(
-          "error",
-          "schema",
-          "display_label_too_long",
-          sprintf(
-            "display_label must be at most %d characters long.",
-            .cluster_label_max_display_length()
-          ),
-          "display_label"
-        )
-      }
-
-      if (display_word_count > .cluster_label_max_display_words()) {
-        add_issue(
-          "error",
-          "schema",
-          "display_label_too_many_words",
-          sprintf(
-            "display_label must contain at most %d words.",
-            .cluster_label_max_display_words()
-          ),
-          "display_label"
-        )
-      }
-
       if (grepl(.cluster_label_forbidden_display_punctuation_pattern(), display_label_trimmed, perl = TRUE)) {
         add_issue(
           "error",
