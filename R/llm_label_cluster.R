@@ -1440,7 +1440,7 @@ llm_label_cluster <- function(
   list(ok = TRUE, message = NULL)
 }
 
-.cluster_label_shorten_display_label_for_contract <- function(display_label) {
+.cluster_label_prepare_display_label_for_contract <- function(display_label) {
   display_label <- .as_scalar_character(display_label)
 
   if (is.na(display_label) || !nzchar(trimws(display_label))) {
@@ -1492,6 +1492,16 @@ llm_label_cluster <- function(
     return(NA_character_)
   }
 
+  text
+}
+
+.cluster_label_shorten_display_label_for_contract <- function(display_label) {
+  text <- .cluster_label_prepare_display_label_for_contract(display_label)
+
+  if (is.na(text) || !nzchar(text)) {
+    return(NA_character_)
+  }
+
   max_words <- getOption(
     "cocktailr.label_final_target_max_words",
     .cluster_label_max_display_words()
@@ -1515,6 +1525,47 @@ llm_label_cluster <- function(
   }
 
   if (nzchar(text)) text else NA_character_
+}
+
+.cluster_label_project_canonical_label_for_contract <- function(display_label) {
+  text <- .cluster_label_prepare_display_label_for_contract(display_label)
+
+  if (is.na(text) || !nzchar(text)) {
+    return(NA_character_)
+  }
+
+  max_words <- getOption(
+    "cocktailr.label_final_target_canonical_max_words",
+    .cluster_label_max_canonical_words()
+  )
+
+  words <- strsplit(text, "\\s+", perl = TRUE)[[1L]]
+  truncated <- length(words) > max_words
+
+  if (truncated) {
+    text <- paste(words[seq_len(max_words)], collapse = " ")
+  }
+
+  canonical <- .cluster_label_canonical_for_contract(text)
+  if (is.na(canonical) || !nzchar(canonical)) {
+    return(NA_character_)
+  }
+
+  if (truncated) {
+    max_chars <- getOption(
+      "cocktailr.label_final_target_canonical_max_chars",
+      .cluster_label_max_canonical_length()
+    )
+    canonical <- substr(canonical, 1L, max(1L, max_chars - 1L))
+    canonical <- gsub("_+$", "", canonical, perl = TRUE)
+    canonical <- trimws(canonical)
+    if (!nzchar(canonical)) {
+      return(NA_character_)
+    }
+    canonical <- paste0(canonical, "_")
+  }
+
+  canonical
 }
 
 .cluster_label_canonical_for_contract <- function(display_label) {
@@ -1580,14 +1631,11 @@ llm_label_cluster <- function(
   projected_label <- .cluster_label_shorten_display_label_for_contract(
     display_label
   )
-  canonical_source <- if (.is_non_empty_scalar_character(projected_label)) {
-    projected_label
-  } else {
-    display_label
-  }
 
   if (identical(label_mode, "open")) {
-    output$canonical_label <- .cluster_label_canonical_for_contract(canonical_source)
+    output$canonical_label <- .cluster_label_project_canonical_label_for_contract(
+      display_label
+    )
   }
 
   if (!is.null(output$label_decision_text)) {
@@ -1638,14 +1686,6 @@ llm_label_cluster <- function(
     prompt_bundle = prompt_bundle
   )
 
-  decision_contract <- .cluster_label_label_decision_output_is_valid(output)
-  if (!isTRUE(decision_contract$ok)) {
-    stop(
-      "Label-decision output failed text validation: ",
-      decision_contract$message
-    )
-  }
-
   output <- .cluster_label_coerce_output_to_final_contract(
     output = output,
     prompt_bundle = prompt_bundle
@@ -1654,7 +1694,7 @@ llm_label_cluster <- function(
   decision_contract <- .cluster_label_label_decision_output_is_valid(output)
   if (!isTRUE(decision_contract$ok)) {
     stop(
-      "Label-decision output failed text validation after final normalization: ",
+      "Label-decision output failed text validation: ",
       decision_contract$message
     )
   }
@@ -2036,6 +2076,10 @@ llm_label_cluster <- function(
 
   canonical_label <- .as_scalar_character(selection_output$canonical_label)
   display_label <- .as_scalar_character(selection_output$display_label)
+  category_label <- .as_scalar_character(selection_output$category_label)
+  subcategory_labels <- .cluster_label_subcategory_labels_text(
+    selection_output$subcategory_labels
+  )
   label_summary <- .as_scalar_character(selection_output$label_summary)
   abstain_reason <- .as_scalar_character(selection_output$abstain_reason)
 
@@ -2043,6 +2087,8 @@ llm_label_cluster <- function(
     SELECTION_STATUS = if (status %in% c("labeled", "abstain")) status else "",
     CANONICAL_LABEL = if (.is_non_empty_scalar_character(canonical_label)) canonical_label else "",
     DISPLAY_LABEL = if (.is_non_empty_scalar_character(display_label)) display_label else "",
+    CATEGORY_LABEL = if (.is_non_empty_scalar_character(category_label)) category_label else "",
+    SUBCATEGORY_LABELS = if (.is_non_empty_scalar_character(subcategory_labels)) subcategory_labels else "",
     LABEL_SUMMARY = if (.is_non_empty_scalar_character(label_summary)) label_summary else "",
     ABSTAIN_REASON = if (.is_non_empty_scalar_character(abstain_reason)) abstain_reason else ""
   )
@@ -2077,7 +2123,9 @@ llm_label_cluster <- function(
       status = "labeled",
       label_decision_text = "placeholder label",
       canonical_label = "placeholder_label",
-      display_label = "placeholder label"
+      display_label = "placeholder label",
+      category_label = "mixed meadow",
+      subcategory_labels = c("dry", "transition")
     ),
     abstain_decision = list(
       schema_version = "0.1.0",
@@ -2085,7 +2133,9 @@ llm_label_cluster <- function(
       status = "abstain",
       label_decision_text = "ABSTAIN",
       canonical_label = NULL,
-      display_label = NULL
+      display_label = NULL,
+      category_label = NULL,
+      subcategory_labels = character(0)
     ),
     label_summary = "Placeholder short label summary for dry-run assembly.",
     abstain_reason = "Placeholder abstain reason for dry-run assembly."
@@ -2127,6 +2177,10 @@ llm_label_cluster <- function(
 
   canonical_label <- .as_scalar_character(selection_output$canonical_label)
   display_label <- .as_scalar_character(selection_output$display_label)
+  category_label <- .as_scalar_character(selection_output$category_label)
+  subcategory_labels <- .cluster_label_subcategory_labels(
+    selection_output$subcategory_labels
+  )
   label_summary <- .as_scalar_character(selection_output$label_summary)
   abstain_reason <- .as_scalar_character(selection_output$abstain_reason)
 
@@ -2135,6 +2189,9 @@ llm_label_cluster <- function(
   }
   if (!.is_non_empty_scalar_character(display_label)) {
     display_label <- NULL
+  }
+  if (!.is_non_empty_scalar_character(category_label)) {
+    category_label <- NULL
   }
   if (!.is_non_empty_scalar_character(label_summary)) {
     label_summary <- NULL
@@ -2254,6 +2311,8 @@ llm_label_cluster <- function(
     status = status,
     canonical_label = canonical_label,
     display_label = display_label,
+    category_label = category_label,
+    subcategory_labels = subcategory_labels,
     interpretation_summary = interpretation_summary,
     basis_in_data = basis_in_data,
     key_species = key_species,
@@ -2265,6 +2324,24 @@ llm_label_cluster <- function(
     label_summary = label_summary,
     explanation = trimws(explanation_text)
   )
+}
+
+.cluster_label_subcategory_labels <- function(x) {
+  if (is.null(x)) {
+    return(character(0))
+  }
+
+  x <- .as_character_vector(x)
+  x <- trimws(x)
+  unique(x[nzchar(x)])
+}
+
+.cluster_label_subcategory_labels_text <- function(x) {
+  x <- .cluster_label_subcategory_labels(x)
+  if (!length(x)) {
+    return(NA_character_)
+  }
+  paste(x, collapse = "; ")
 }
 
 .build_cluster_label_decision_prompt <- function(
@@ -2299,6 +2376,95 @@ llm_label_cluster <- function(
   )
 }
 
+.default_cluster_label_category_variants <- function() {
+  c(
+    "category_decision_primary_v1",
+    "category_decision_soft_v1",
+    "category_decision_broad_v1"
+  )
+}
+
+.default_cluster_label_subcategory_variants <- function() {
+  c(
+    "subcategory_decision_primary_v1",
+    "subcategory_decision_soft_v1",
+    "subcategory_decision_broad_v1"
+  )
+}
+
+.is_cluster_label_decomposed_internal_prompt_version <- function(internal_prompt_version) {
+  identical(
+    .normalize_cluster_label_internal_prompt_version(internal_prompt_version),
+    "v4"
+  )
+}
+
+.build_cluster_label_category_prompt <- function(
+    evidence,
+    category_variant,
+    draft_analysis_text,
+    label_mode,
+    dynamic_candidates,
+    temperature,
+    top_p,
+    seed,
+    num_predict,
+    prompt_budget_chars,
+    internal_prompt_version
+) {
+  .build_cluster_label_prompt(
+    evidence = evidence,
+    variant = category_variant,
+    schema_path = NULL,
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    prompt_budget_chars = prompt_budget_chars,
+    include_schema = FALSE,
+    label_mode = label_mode,
+    dynamic_candidates = dynamic_candidates,
+    internal_prompt_version = internal_prompt_version,
+    extra_template_values = list(
+      "{{DRAFT_ANALYSIS_TEXT}}" = draft_analysis_text
+    )
+  )
+}
+
+.build_cluster_label_subcategory_prompt <- function(
+    evidence,
+    subcategory_variant,
+    draft_analysis_text,
+    category_label_text,
+    label_mode,
+    dynamic_candidates,
+    temperature,
+    top_p,
+    seed,
+    num_predict,
+    prompt_budget_chars,
+    internal_prompt_version
+) {
+  .build_cluster_label_prompt(
+    evidence = evidence,
+    variant = subcategory_variant,
+    schema_path = NULL,
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    prompt_budget_chars = prompt_budget_chars,
+    include_schema = FALSE,
+    label_mode = label_mode,
+    dynamic_candidates = dynamic_candidates,
+    internal_prompt_version = internal_prompt_version,
+    extra_template_values = list(
+      "{{DRAFT_ANALYSIS_TEXT}}" = draft_analysis_text,
+      "{{CATEGORY_LABEL_TEXT}}" = category_label_text
+    )
+  )
+}
+
 .build_cluster_label_summary_prompt <- function(
     evidence,
     summary_variant,
@@ -2309,7 +2475,9 @@ llm_label_cluster <- function(
     seed,
     num_predict,
     prompt_budget_chars,
-    internal_prompt_version
+    internal_prompt_version,
+    category_label_text = NULL,
+    subcategory_labels_text = NULL
 ) {
   .build_cluster_label_prompt(
     evidence = evidence,
@@ -2324,7 +2492,9 @@ llm_label_cluster <- function(
     internal_prompt_version = internal_prompt_version,
     extra_template_values = list(
       "{{DRAFT_ANALYSIS_TEXT}}" = draft_analysis_text,
-      "{{SELECTED_LABEL_TEXT}}" = selected_label_text
+      "{{SELECTED_LABEL_TEXT}}" = selected_label_text,
+      "{{CATEGORY_LABEL_TEXT}}" = category_label_text %||% "",
+      "{{SUBCATEGORY_LABELS_TEXT}}" = subcategory_labels_text %||% ""
     )
   )
 }
@@ -2686,6 +2856,151 @@ llm_label_cluster <- function(
     repair_variant = NULL,
     logs = label_stage_log_paths
   )
+}
+
+.run_cluster_label_clean_ladder <- function(
+    evidence,
+    provider,
+    model,
+    stage_name,
+    task_type,
+    variants,
+    build_prompt_fn,
+    parse_output_fn,
+    abstain_is_terminal,
+    base_url,
+    temperature,
+    top_p,
+    seed,
+    num_predict,
+    prompt_budget_chars,
+    keep_alive,
+    ollama_options,
+    endpoint,
+    timeout_sec,
+    request_fn,
+    stage_log_paths
+) {
+  attempts <- list()
+  failure_messages <- character(0)
+  clean_retry_budget <- 3L
+
+  for (i in seq_along(variants)) {
+    stage_variant <- variants[[i]]
+    prompt_bundle <- build_prompt_fn(stage_variant)
+    .expect_prompt_task_type(prompt_bundle, task_type, stage_variant)
+
+    attempt_log_paths <- .label_selection_attempt_log_paths(
+      label_stage_log_paths = stage_log_paths,
+      index = i,
+      public_variant = stage_variant
+    )
+
+    attempt <- tryCatch(
+      .run_structured_llm_stage(
+        evidence = evidence,
+        provider = provider,
+        model = model,
+        variant = stage_variant,
+        prompt_bundle = prompt_bundle,
+        keep_alive = keep_alive,
+        ollama_options = ollama_options,
+        endpoint = endpoint,
+        timeout_sec = timeout_sec,
+        max_retries = clean_retry_budget,
+        request_fn = request_fn,
+        log_paths = attempt_log_paths,
+        parse_output_fn = parse_output_fn,
+        stage_name = stage_name,
+        repair_instruction = .default_clean_name_stage_repair_instruction(stage_name)
+      ),
+      error = function(e) e
+    )
+
+    if (inherits(attempt, "error")) {
+      compact_error <- .cluster_label_compact_stage_error_message(
+        conditionMessage(attempt)
+      )
+      failure_messages <- c(
+        failure_messages,
+        paste0(
+          stage_variant,
+          ": invalid clean answer after ",
+          clean_retry_budget + 1L,
+          " attempt(s): ",
+          compact_error %||% conditionMessage(attempt)
+        )
+      )
+      attempts[[length(attempts) + 1L]] <- list(
+        variant = stage_variant,
+        result = "failed_after_retry",
+        error = conditionMessage(attempt),
+        attempts = clean_retry_budget + 1L,
+        retry_exhausted = TRUE,
+        prompt = attempt$prompt %||% prompt_bundle,
+        request = attempt$request %||% NULL,
+        response = attempt$response %||% NULL,
+        output = attempt$output %||% .cluster_label_error_candidate_output(attempt),
+        repair_history = attempt$repair_history %||% list(),
+        logs = attempt$logs %||% attempt_log_paths
+      )
+      next
+    }
+
+    attempt$result <- .as_scalar_character(attempt$output$status)
+    attempt$retry_exhausted <- FALSE
+    attempts[[length(attempts) + 1L]] <- attempt
+
+    if (identical(attempt$output$status, "abstain") && isTRUE(abstain_is_terminal)) {
+      failure_messages <- c(failure_messages, paste0(stage_variant, ": abstained"))
+      next
+    }
+
+    return(list(
+      attempts = attempts,
+      output = attempt$output,
+      selected_variant = stage_variant,
+      selected_stage = attempt,
+      exhausted = FALSE,
+      failure_messages = failure_messages,
+      logs = stage_log_paths
+    ))
+  }
+
+  list(
+    attempts = attempts,
+    output = list(
+      schema_version = "0.1.0",
+      cluster_id = evidence$meta$cluster_id,
+      status = "abstain",
+      label_decision_text = "ABSTAIN",
+      category_label = NULL,
+      subcategory_labels = character(0)
+    ),
+    selected_variant = NULL,
+    selected_stage = NULL,
+    exhausted = TRUE,
+    failure_messages = failure_messages,
+    logs = stage_log_paths
+  )
+}
+
+.default_clean_name_stage_repair_instruction <- function(stage_name) {
+  function(error_message, ...) {
+    paste(
+      "Your previous answer was not a clean name.",
+      paste0("Parser error: ", error_message),
+      "Reply again with only the requested clean name.",
+      "Do not include prefixes such as LABEL:, CATEGORY:, CATEGORY_LABEL:, SUBCATEGORY:, or SUBCATEGORY_LABELS:.",
+      "Do not include quotes, bullets, explanations, commas, brackets, or a final period.",
+      if (identical(stage_name, "subcategory_decision")) {
+        "For no safe subcategory, reply only: none"
+      } else {
+        "For no safe category, reply only: ABSTAIN"
+      },
+      sep = "\n"
+    )
+  }
 }
 
 .run_cluster_label_selection_ladder <- function(
@@ -3263,6 +3578,729 @@ llm_label_cluster <- function(
   )
 }
 
+.cluster_label_decomposed_workflow_logs <- function(workflow_logs) {
+  if (is.null(workflow_logs$run_dir) || !nzchar(workflow_logs$run_dir)) {
+    workflow_logs$stages <- stats::setNames(
+      lapply(
+        c("draft", "category", "subcategory", "summary", "abstain_reason"),
+        function(...) .null_stage_log_paths()
+      ),
+      c("draft", "category", "subcategory", "summary", "abstain_reason")
+    )
+    return(workflow_logs)
+  }
+
+  stage_names <- c("draft", "category", "subcategory", "summary", "abstain_reason")
+  stage_dirs <- c(
+    "stage1_draft",
+    "stage2_category",
+    "stage3_subcategory",
+    "stage4_label_summary",
+    "stage5_abstain_reason"
+  )
+  workflow_logs$stages <- stats::setNames(
+    lapply(seq_along(stage_names), function(i) {
+      .stage_log_paths(
+        file.path(workflow_logs$run_dir, stage_dirs[[i]]),
+        started_at = workflow_logs$started_at
+      )
+    }),
+    stage_names
+  )
+  workflow_logs
+}
+
+.cluster_label_decomposed_display_label <- function(category_label, subcategory_labels) {
+  category_label <- .as_scalar_character(category_label)
+  if (is.na(category_label) || !nzchar(trimws(category_label))) {
+    return(NA_character_)
+  }
+  gsub("\\s+", " ", trimws(category_label), perl = TRUE)
+}
+
+.cluster_label_decomposed_selection_output <- function(
+    evidence,
+    category_output,
+    subcategory_output
+) {
+  category_label <- .as_scalar_character(category_output$category_label)
+  subcategory_labels <- .cluster_label_subcategory_labels(
+    subcategory_output$subcategory_labels
+  )
+  display_label <- .cluster_label_decomposed_display_label(
+    category_label,
+    subcategory_labels
+  )
+  canonical_label <- .cluster_label_candidate_to_canonical(display_label)
+
+  list(
+    schema_version = "0.1.0",
+    cluster_id = evidence$meta$cluster_id,
+    status = "labeled",
+    label_decision_text = display_label,
+    canonical_label = canonical_label,
+    display_label = display_label,
+    category_label = category_label,
+    subcategory_labels = subcategory_labels
+  )
+}
+
+.llm_label_cluster_decomposed_pipeline <- function(
+    evidence,
+    provider,
+    model,
+    variant,
+    label_mode,
+    base_url,
+    schema_path,
+    temperature,
+    top_p,
+    seed,
+    num_predict,
+    prompt_budget_chars,
+    keep_alive,
+    ollama_options,
+    timeout_sec,
+    max_retries,
+    workflow_steps,
+    use_brainstorm,
+    short_label_with_llm,
+    internal_prompt_version,
+    dry_run,
+    log_dir,
+    request_fn,
+    draft_analysis_text_override = NULL,
+    draft_candidates_override = NULL,
+    selection_context_extra_text = NULL,
+    explanation_context_extra_text = NULL,
+    workflow_variant_suffix = NULL
+) {
+  draft_variant <- .default_cluster_label_draft_variant()
+  category_variants <- .default_cluster_label_category_variants()
+  subcategory_variants <- .default_cluster_label_subcategory_variants()
+  summary_variant <- .default_cluster_label_v2_label_summary_variant()
+  abstain_reason_variant <- .default_cluster_label_v2_abstain_reason_variant()
+  workflow_variant_suffix <- .as_scalar_character(workflow_variant_suffix)
+  if (is.na(workflow_variant_suffix) || !nzchar(workflow_variant_suffix)) {
+    workflow_variant_suffix <- "_decomposed"
+  }
+  workflow_variant <- paste0(variant, workflow_variant_suffix)
+  has_draft_override <- !is.na(.as_scalar_character(draft_analysis_text_override)) &&
+    nzchar(trimws(.as_scalar_character(draft_analysis_text_override)))
+
+  draft_prompt_bundle <- NULL
+  if (isTRUE(use_brainstorm) && !isTRUE(has_draft_override)) {
+    draft_prompt_bundle <- .build_cluster_label_prompt(
+      evidence = evidence,
+      variant = draft_variant,
+      schema_path = NULL,
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
+      include_schema = FALSE,
+      internal_prompt_version = internal_prompt_version
+    )
+    .expect_prompt_task_type(draft_prompt_bundle, "draft", draft_variant)
+  }
+
+  dry_placeholders <- .cluster_label_v2_placeholders(
+    cluster_id = evidence$meta$cluster_id
+  )
+  dry_draft_analysis_text <- if (isTRUE(has_draft_override)) {
+    .as_scalar_character(draft_analysis_text_override)
+  } else if (isTRUE(use_brainstorm)) {
+    dry_placeholders$draft_analysis
+  } else {
+    .cluster_label_brainstorm_disabled_text()
+  }
+  dry_candidates <- if (is.list(draft_candidates_override)) {
+    draft_candidates_override
+  } else if (isTRUE(use_brainstorm)) {
+    .extract_cluster_label_candidates_from_draft(dry_draft_analysis_text)
+  } else {
+    list()
+  }
+  dry_selection_context_text <- .compose_cluster_label_selection_context_text(
+    draft_analysis_text = dry_draft_analysis_text,
+    candidates = dry_candidates,
+    use_brainstorm = use_brainstorm,
+    extra_guidance_text = selection_context_extra_text
+  )
+  dry_explanation_context_text <- .compose_cluster_label_explanation_context_text(
+    draft_analysis_text = dry_draft_analysis_text,
+    use_brainstorm = use_brainstorm,
+    extra_guidance_text = explanation_context_extra_text
+  )
+
+  category_prompt_bundle <- .build_cluster_label_category_prompt(
+    evidence = evidence,
+    category_variant = category_variants[[1L]],
+    draft_analysis_text = dry_selection_context_text,
+    label_mode = label_mode,
+    dynamic_candidates = dry_candidates,
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    prompt_budget_chars = prompt_budget_chars,
+    internal_prompt_version = internal_prompt_version
+  )
+  .expect_prompt_task_type(category_prompt_bundle, "category_decision", category_variants[[1L]])
+
+  subcategory_prompt_bundle <- .build_cluster_label_subcategory_prompt(
+    evidence = evidence,
+    subcategory_variant = subcategory_variants[[1L]],
+    draft_analysis_text = dry_selection_context_text,
+    category_label_text = dry_placeholders$labeled_decision$category_label,
+    label_mode = label_mode,
+    dynamic_candidates = dry_candidates,
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    prompt_budget_chars = prompt_budget_chars,
+    internal_prompt_version = internal_prompt_version
+  )
+  .expect_prompt_task_type(subcategory_prompt_bundle, "subcategory_decision", subcategory_variants[[1L]])
+
+  dry_selection_output <- .cluster_label_decomposed_selection_output(
+    evidence = evidence,
+    category_output = list(category_label = dry_placeholders$labeled_decision$category_label),
+    subcategory_output = list(subcategory_labels = dry_placeholders$labeled_decision$subcategory_labels)
+  )
+  summary_prompt_bundle <- .build_cluster_label_summary_prompt(
+    evidence = evidence,
+    summary_variant = summary_variant,
+    draft_analysis_text = dry_explanation_context_text,
+    selected_label_text = dry_selection_output$display_label,
+    category_label_text = dry_selection_output$category_label,
+    subcategory_labels_text = .cluster_label_subcategory_labels_text(
+      dry_selection_output$subcategory_labels
+    ),
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    prompt_budget_chars = prompt_budget_chars,
+    internal_prompt_version = internal_prompt_version
+  )
+  .expect_prompt_task_type(summary_prompt_bundle, "label_summary", summary_variant)
+
+  abstain_reason_prompt_bundle <- .build_cluster_label_abstain_reason_prompt(
+    evidence = evidence,
+    abstain_reason_variant = abstain_reason_variant,
+    draft_analysis_text = dry_explanation_context_text,
+    label_decision_text = "ABSTAIN",
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    prompt_budget_chars = prompt_budget_chars,
+    internal_prompt_version = internal_prompt_version
+  )
+  .expect_prompt_task_type(abstain_reason_prompt_bundle, "abstain_reason", abstain_reason_variant)
+
+  dry_run_out <- list(
+    cluster_id = evidence$meta$cluster_id,
+    provider = provider,
+    model = model,
+    variant = workflow_variant,
+    workflow_steps = workflow_steps,
+    prompt = summary_prompt_bundle,
+    request = .build_ollama_label_request(
+      model = model,
+      prompt_bundle = summary_prompt_bundle,
+      keep_alive = keep_alive,
+      ollama_options = ollama_options
+    ),
+    schema_path = summary_prompt_bundle$schema_path,
+    workflow = list(
+      draft_variant = draft_variant,
+      draft = list(prompt = draft_prompt_bundle),
+      category = list(variants = category_variants, prompt = category_prompt_bundle),
+      subcategory = list(variants = subcategory_variants, prompt = subcategory_prompt_bundle),
+      summary_variant = summary_variant,
+      summary = list(prompt = summary_prompt_bundle),
+      abstain_reason_variant = abstain_reason_variant,
+      abstain_reason = list(prompt = abstain_reason_prompt_bundle)
+    )
+  )
+  class(dry_run_out) <- c("cluster_label_request", "list")
+
+  if (isTRUE(dry_run)) {
+    return(dry_run_out)
+  }
+
+  endpoint <- paste0(sub("/+$", "", base_url), "/api/chat")
+  workflow_logs <- .init_cluster_label_workflow_logs(
+    log_dir = log_dir,
+    cluster_id = evidence$meta$cluster_id,
+    model = model,
+    variant = workflow_variant,
+    workflow_steps = workflow_steps
+  )
+  workflow_logs <- .cluster_label_decomposed_workflow_logs(workflow_logs)
+
+  .write_workflow_metadata(
+    workflow_logs,
+    list(
+      started_at = workflow_logs$started_at,
+      cluster_id = evidence$meta$cluster_id,
+      provider = provider,
+      model = model,
+      variant = workflow_variant,
+      workflow_steps = workflow_steps,
+      use_brainstorm = isTRUE(use_brainstorm),
+      internal_prompt_version = internal_prompt_version,
+      draft_override_used = isTRUE(has_draft_override),
+      draft_variant = draft_variant,
+      category_variants = unname(category_variants),
+      subcategory_variants = unname(subcategory_variants),
+      summary_variant = summary_variant,
+      abstain_reason_variant = abstain_reason_variant,
+      final_schema_path = NULL,
+      base_url = endpoint,
+      status = "started",
+      run_dir = workflow_logs$run_dir
+    )
+  )
+
+  result <- tryCatch({
+    draft_stage <- if (isTRUE(has_draft_override)) {
+      .cluster_label_reused_draft_stage(
+        cluster_id = evidence$meta$cluster_id,
+        draft_variant = draft_variant,
+        workflow_stage_logs = workflow_logs$stages$draft,
+        draft_analysis_text = draft_analysis_text_override,
+        use_brainstorm = use_brainstorm
+      )
+    } else if (isTRUE(use_brainstorm)) {
+      .run_structured_llm_stage(
+        evidence = evidence,
+        provider = provider,
+        model = model,
+        variant = draft_variant,
+        prompt_bundle = draft_prompt_bundle,
+        keep_alive = keep_alive,
+        ollama_options = ollama_options,
+        endpoint = endpoint,
+        timeout_sec = timeout_sec,
+        max_retries = max_retries,
+        request_fn = request_fn,
+        log_paths = workflow_logs$stages$draft,
+        parse_output_fn = function(content) {
+          .parse_cluster_label_draft_text(
+            content = content,
+            cluster_id = evidence$meta$cluster_id
+          )
+        },
+        stage_name = "draft_analysis",
+        repair_instruction = .default_draft_stage_repair_instruction()
+      )
+    } else {
+      list(
+        variant = draft_variant,
+        prompt = NULL,
+        request = NULL,
+        response = NULL,
+        output = list(
+          cluster_id = evidence$meta$cluster_id,
+          status = "draft_skipped",
+          draft_analysis = .cluster_label_brainstorm_disabled_text()
+        ),
+        attempts = 0L,
+        logs = workflow_logs$stages$draft,
+        skipped = TRUE,
+        skip_reason = "brainstorm_disabled"
+      )
+    }
+
+    draft_analysis_text <- draft_stage$output$draft_analysis %||%
+      .cluster_label_brainstorm_disabled_text()
+    draft_candidates <- if (is.list(draft_candidates_override)) {
+      draft_candidates_override
+    } else if (isTRUE(use_brainstorm)) {
+      .extract_cluster_label_candidates_from_draft(draft_analysis_text)
+    } else {
+      list()
+    }
+    selection_context_text <- .compose_cluster_label_selection_context_text(
+      draft_analysis_text = draft_analysis_text,
+      candidates = draft_candidates,
+      use_brainstorm = use_brainstorm,
+      extra_guidance_text = selection_context_extra_text
+    )
+    explanation_context_text <- .compose_cluster_label_explanation_context_text(
+      draft_analysis_text = draft_analysis_text,
+      use_brainstorm = use_brainstorm,
+      extra_guidance_text = explanation_context_extra_text
+    )
+
+    category_stage <- .run_cluster_label_clean_ladder(
+      evidence = evidence,
+      provider = provider,
+      model = model,
+      stage_name = "category_decision",
+      task_type = "category_decision",
+      variants = category_variants,
+      build_prompt_fn = function(category_variant) {
+        .build_cluster_label_category_prompt(
+          evidence = evidence,
+          category_variant = category_variant,
+          draft_analysis_text = selection_context_text,
+          label_mode = label_mode,
+          dynamic_candidates = draft_candidates,
+          temperature = temperature,
+          top_p = top_p,
+          seed = seed,
+          num_predict = num_predict,
+          prompt_budget_chars = prompt_budget_chars,
+          internal_prompt_version = internal_prompt_version
+        )
+      },
+      parse_output_fn = function(content) {
+        .parse_cluster_label_category_decision_text(
+          content = content,
+          cluster_id = evidence$meta$cluster_id
+        )
+      },
+      abstain_is_terminal = TRUE,
+      base_url = base_url,
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
+      keep_alive = keep_alive,
+      ollama_options = ollama_options,
+      endpoint = endpoint,
+      timeout_sec = timeout_sec,
+      request_fn = request_fn,
+      stage_log_paths = workflow_logs$stages$category
+    )
+
+    decision_output <- category_stage$output
+    subcategory_stage <- list(
+      attempts = list(),
+      output = list(
+        schema_version = "0.1.0",
+        cluster_id = evidence$meta$cluster_id,
+        status = "subcategory_skipped",
+        subcategory_labels = character(0)
+      ),
+      selected_variant = NULL,
+      selected_stage = NULL,
+      exhausted = FALSE,
+      skipped = TRUE,
+      skip_reason = "category_abstained",
+      failure_messages = character(0),
+      logs = workflow_logs$stages$subcategory
+    )
+
+    if (!identical(decision_output$status, "abstain")) {
+      subcategory_stage <- .run_cluster_label_clean_ladder(
+        evidence = evidence,
+        provider = provider,
+        model = model,
+        stage_name = "subcategory_decision",
+        task_type = "subcategory_decision",
+        variants = subcategory_variants,
+        build_prompt_fn = function(subcategory_variant) {
+          .build_cluster_label_subcategory_prompt(
+            evidence = evidence,
+            subcategory_variant = subcategory_variant,
+            draft_analysis_text = selection_context_text,
+            category_label_text = decision_output$category_label,
+            label_mode = label_mode,
+            dynamic_candidates = draft_candidates,
+            temperature = temperature,
+            top_p = top_p,
+            seed = seed,
+            num_predict = num_predict,
+            prompt_budget_chars = prompt_budget_chars,
+            internal_prompt_version = internal_prompt_version
+          )
+        },
+        parse_output_fn = function(content) {
+          .parse_cluster_label_subcategory_decision_text(
+            content = content,
+            cluster_id = evidence$meta$cluster_id
+          )
+        },
+        abstain_is_terminal = FALSE,
+        base_url = base_url,
+        temperature = temperature,
+        top_p = top_p,
+        seed = seed,
+        num_predict = num_predict,
+        prompt_budget_chars = prompt_budget_chars,
+        keep_alive = keep_alive,
+        ollama_options = ollama_options,
+        endpoint = endpoint,
+        timeout_sec = timeout_sec,
+        request_fn = request_fn,
+        stage_log_paths = workflow_logs$stages$subcategory
+      )
+
+      if (isTRUE(subcategory_stage$exhausted) || identical(subcategory_stage$output$status, "abstain")) {
+        subcategory_stage$output <- list(
+          schema_version = "0.1.0",
+          cluster_id = evidence$meta$cluster_id,
+          status = "subcategory_ready",
+          subcategory_labels = character(0)
+        )
+        subcategory_stage$fallback_used <- TRUE
+        subcategory_stage$fallback_reason <- "No clean subcategory answer was selected; keeping category only."
+      }
+
+      decision_output <- .cluster_label_decomposed_selection_output(
+        evidence = evidence,
+        category_output = category_stage$output,
+        subcategory_output = subcategory_stage$output
+      )
+    }
+
+    summary_stage <- list(
+      variant = summary_variant,
+      prompt = NULL,
+      request = NULL,
+      response = NULL,
+      output = list(
+        cluster_id = evidence$meta$cluster_id,
+        status = "summary_skipped",
+        label_summary = NULL
+      ),
+      attempts = 0L,
+      logs = workflow_logs$stages$summary,
+      skipped = TRUE,
+      skip_reason = "category_not_selected"
+    )
+    abstain_reason_stage <- list(
+      variant = abstain_reason_variant,
+      prompt = NULL,
+      request = NULL,
+      response = NULL,
+      output = list(
+        cluster_id = evidence$meta$cluster_id,
+        status = "abstain_reason_skipped",
+        abstain_reason = NULL
+      ),
+      attempts = 0L,
+      logs = workflow_logs$stages$abstain_reason,
+      skipped = TRUE,
+      skip_reason = "category_selected"
+    )
+
+    if (!identical(decision_output$status, "abstain")) {
+      summary_prompt_bundle <- .build_cluster_label_summary_prompt(
+        evidence = evidence,
+        summary_variant = summary_variant,
+        draft_analysis_text = explanation_context_text,
+        selected_label_text = decision_output$display_label,
+        category_label_text = decision_output$category_label,
+        subcategory_labels_text = .cluster_label_subcategory_labels_text(
+          decision_output$subcategory_labels
+        ),
+        temperature = temperature,
+        top_p = top_p,
+        seed = seed,
+        num_predict = num_predict,
+        prompt_budget_chars = prompt_budget_chars,
+        internal_prompt_version = internal_prompt_version
+      )
+      .expect_prompt_task_type(summary_prompt_bundle, "label_summary", summary_variant)
+
+      summary_stage <- .run_structured_llm_stage(
+        evidence = evidence,
+        provider = provider,
+        model = model,
+        variant = summary_variant,
+        prompt_bundle = summary_prompt_bundle,
+        keep_alive = keep_alive,
+        ollama_options = ollama_options,
+        endpoint = endpoint,
+        timeout_sec = timeout_sec,
+        max_retries = .cluster_label_single_retry_budget(max_retries),
+        request_fn = request_fn,
+        log_paths = workflow_logs$stages$summary,
+        parse_output_fn = function(content) {
+          .parse_cluster_label_summary_text(
+            content = content,
+            cluster_id = evidence$meta$cluster_id
+          )
+        },
+        stage_name = "label_summary",
+        repair_instruction = .default_label_summary_stage_repair_instruction()
+      )
+
+      final_output <- .assemble_cluster_label_final_output(
+        evidence = evidence,
+        selection_output = decision_output,
+        label_summary_text = summary_stage$output$label_summary,
+        explanation_text = summary_stage$output$label_summary
+      )
+      terminal_stage <- summary_stage
+      terminal_prompt_bundle <- summary_prompt_bundle
+    } else {
+      abstain_reason_prompt_bundle <- .build_cluster_label_abstain_reason_prompt(
+        evidence = evidence,
+        abstain_reason_variant = abstain_reason_variant,
+        draft_analysis_text = explanation_context_text,
+        label_decision_text = .render_cluster_label_decision_text(decision_output),
+        temperature = temperature,
+        top_p = top_p,
+        seed = seed,
+        num_predict = num_predict,
+        prompt_budget_chars = prompt_budget_chars,
+        internal_prompt_version = internal_prompt_version
+      )
+      .expect_prompt_task_type(abstain_reason_prompt_bundle, "abstain_reason", abstain_reason_variant)
+
+      abstain_reason_stage <- .run_structured_llm_stage(
+        evidence = evidence,
+        provider = provider,
+        model = model,
+        variant = abstain_reason_variant,
+        prompt_bundle = abstain_reason_prompt_bundle,
+        keep_alive = keep_alive,
+        ollama_options = ollama_options,
+        endpoint = endpoint,
+        timeout_sec = timeout_sec,
+        max_retries = .cluster_label_single_retry_budget(max_retries),
+        request_fn = request_fn,
+        log_paths = workflow_logs$stages$abstain_reason,
+        parse_output_fn = function(content) {
+          .parse_cluster_label_abstain_reason_text(
+            content = content,
+            cluster_id = evidence$meta$cluster_id
+          )
+        },
+        stage_name = "abstain_reason",
+        repair_instruction = .default_abstain_reason_stage_repair_instruction()
+      )
+
+      final_output <- .assemble_cluster_label_final_output(
+        evidence = evidence,
+        selection_output = decision_output,
+        abstain_reason_text = abstain_reason_stage$output$abstain_reason,
+        explanation_text = abstain_reason_stage$output$abstain_reason
+      )
+      terminal_stage <- abstain_reason_stage
+      terminal_prompt_bundle <- abstain_reason_prompt_bundle
+    }
+
+    explanation_stage <- list(
+      variant = NULL,
+      prompt = NULL,
+      request = NULL,
+      response = NULL,
+      output = list(
+        cluster_id = evidence$meta$cluster_id,
+        status = "explanation_ready",
+        explanation = final_output$explanation
+      ),
+      attempts = 0L,
+      skipped = TRUE,
+      skip_reason = "programmatic_v4_passthrough",
+      fallback_used = isTRUE(terminal_stage$fallback_used),
+      source_stage = if (identical(final_output$status, "labeled")) {
+        "label_summary"
+      } else {
+        "abstain_reason"
+      }
+    )
+    explanation_stage$assembled_output <- final_output
+    .write_workflow_final_output(workflow_logs, final_output)
+
+    category_attempt_total <- sum(vapply(category_stage$attempts, function(x) {
+      as.integer(x$attempts %||% 0L)
+    }, integer(1)))
+    subcategory_attempt_total <- sum(vapply(subcategory_stage$attempts, function(x) {
+      as.integer(x$attempts %||% 0L)
+    }, integer(1)))
+    total_attempts <- as.integer(
+      (draft_stage$attempts %||% 0L) +
+        category_attempt_total +
+        subcategory_attempt_total +
+        (terminal_stage$attempts %||% 0L)
+    )
+
+    .write_workflow_metadata(
+      workflow_logs,
+      list(
+        started_at = workflow_logs$started_at,
+        finished_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+        cluster_id = evidence$meta$cluster_id,
+        provider = provider,
+        model = model,
+        variant = workflow_variant,
+        workflow_steps = workflow_steps,
+        use_brainstorm = isTRUE(use_brainstorm),
+        draft_override_used = isTRUE(has_draft_override),
+        draft_variant = draft_variant,
+        category_variants = unname(category_variants),
+        subcategory_variants = unname(subcategory_variants),
+        selected_label_variant = category_stage$selected_variant,
+        label_stage_exhausted = isTRUE(category_stage$exhausted),
+        label_stage_failure_reason = .as_scalar_character(
+          paste(category_stage$failure_messages %||% character(0), collapse = " | ")
+        ),
+        terminal_stage_name = if (identical(final_output$status, "labeled")) {
+          "label_summary"
+        } else {
+          "abstain_reason"
+        },
+        final_schema_path = terminal_prompt_bundle$schema_path,
+        base_url = endpoint,
+        status = "success",
+        executed_stages = if (identical(final_output$status, "labeled")) 4L else 3L,
+        attempts = total_attempts,
+        final_output_status = final_output$status,
+        run_dir = workflow_logs$run_dir
+      )
+    )
+
+    out <- list(
+      cluster_id = evidence$meta$cluster_id,
+      provider = provider,
+      model = model,
+      variant = workflow_variant,
+      workflow_steps = workflow_steps,
+      prompt = terminal_stage$prompt,
+      request = terminal_stage$request,
+      response = terminal_stage$response,
+      output = final_output,
+      attempts = total_attempts,
+      schema_path = terminal_prompt_bundle$schema_path,
+      logs = workflow_logs,
+      workflow = list(
+        draft_variant = draft_variant,
+        draft = draft_stage,
+        label = category_stage,
+        category = category_stage,
+        subcategory = subcategory_stage,
+        summary_variant = summary_variant,
+        summary = summary_stage,
+        abstain_reason_variant = abstain_reason_variant,
+        abstain_reason = abstain_reason_stage,
+        explanation_variant = NULL,
+        explanation = explanation_stage
+      )
+    )
+    class(out) <- c("cluster_label_result", "list")
+    out
+  }, error = function(e) {
+    if (!is.null(workflow_logs$error)) {
+      .write_text_file(workflow_logs$error, conditionMessage(e))
+    }
+    stop(e)
+  })
+
+  result
+}
+
 .llm_label_cluster_fixed_pipeline <- function(
     evidence,
     provider,
@@ -3296,6 +4334,38 @@ llm_label_cluster <- function(
   internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
     internal_prompt_version
   )
+  if (.is_cluster_label_decomposed_internal_prompt_version(internal_prompt_version)) {
+    return(.llm_label_cluster_decomposed_pipeline(
+      evidence = evidence,
+      provider = provider,
+      model = model,
+      variant = variant,
+      label_mode = label_mode,
+      base_url = base_url,
+      schema_path = schema_path,
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
+      keep_alive = keep_alive,
+      ollama_options = ollama_options,
+      timeout_sec = timeout_sec,
+      max_retries = max_retries,
+      workflow_steps = workflow_steps,
+      use_brainstorm = use_brainstorm,
+      short_label_with_llm = short_label_with_llm,
+      internal_prompt_version = internal_prompt_version,
+      dry_run = dry_run,
+      log_dir = log_dir,
+      request_fn = request_fn,
+      draft_analysis_text_override = draft_analysis_text_override,
+      draft_candidates_override = draft_candidates_override,
+      selection_context_extra_text = selection_context_extra_text,
+      explanation_context_extra_text = explanation_context_extra_text,
+      workflow_variant_suffix = workflow_variant_suffix
+    ))
+  }
   draft_variant <- .default_cluster_label_draft_variant()
   summary_variant <- .default_cluster_label_v2_label_summary_variant()
   abstain_reason_variant <- .default_cluster_label_v2_abstain_reason_variant()
@@ -3397,6 +4467,10 @@ llm_label_cluster <- function(
     summary_variant = summary_variant,
     draft_analysis_text = dry_explanation_context_text,
     selected_label_text = dry_placeholders$labeled_decision$display_label,
+    category_label_text = dry_placeholders$labeled_decision$category_label,
+    subcategory_labels_text = .cluster_label_subcategory_labels_text(
+      dry_placeholders$labeled_decision$subcategory_labels
+    ),
     temperature = temperature,
     top_p = top_p,
     seed = seed,
@@ -3688,6 +4762,10 @@ llm_label_cluster <- function(
         summary_variant = summary_variant,
         draft_analysis_text = explanation_context_text,
         selected_label_text = decision_output$display_label,
+        category_label_text = decision_output$category_label,
+        subcategory_labels_text = .cluster_label_subcategory_labels_text(
+          decision_output$subcategory_labels
+        ),
         temperature = temperature,
         top_p = top_p,
         seed = seed,

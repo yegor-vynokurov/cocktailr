@@ -93,6 +93,12 @@
   if (grepl("Task mode: `label_decision_", user_text, fixed = TRUE)) {
     return("selection")
   }
+  if (grepl("Task mode: `category_decision_", user_text, fixed = TRUE)) {
+    return("category")
+  }
+  if (grepl("Task mode: `subcategory_decision_", user_text, fixed = TRUE)) {
+    return("subcategory")
+  }
   if (grepl("Task mode: `draft_analysis_v1`", user_text, fixed = TRUE)) {
     return("draft")
   }
@@ -160,6 +166,118 @@ test_that("label_clusters runs the fixed pipeline, writes a review card, and sav
     paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n"),
     fixed = TRUE
   ))
+})
+
+test_that("label_clusters preserves experimental category fields from v3 prompts", {
+  x <- .build_label_clusters_test_cocktail()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = paste(
+        "LABEL: dry base-rich grassland",
+        "CATEGORY_LABEL: dry grassland",
+        "SUBCATEGORY_LABELS: base-rich; open",
+        sep = "\n"
+      ),
+      summary = {
+        expect_match(
+          payload$messages[[2]]$content,
+          "Chosen category label:",
+          fixed = TRUE
+        )
+        expect_match(payload$messages[[2]]$content, "dry grassland", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "base-rich; open", fixed = TRUE)
+        "The dry grassland category is refined by base-rich and open modifiers."
+      },
+      stop("Unexpected stage in v3 category-field test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-v3-category-fields")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    labels_for_imgs = TRUE,
+    internal_prompt_version = "v3",
+    request_fn = fake_request
+  )
+
+  expect_equal(res$summary$category_label[[1]], "dry grassland")
+  expect_equal(res$summary$subcategory_labels[[1]], "base-rich; open")
+  expect_equal(res$label_registry$category_label[[1]], "dry grassland")
+  expect_equal(res$label_registry$subcategory_labels[[1]], "base-rich; open")
+  expect_match(
+    paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n"),
+    "- Category label: `dry grassland`",
+    fixed = TRUE
+  )
+})
+
+test_that("label_clusters propagates decomposed v4 category fields", {
+  x <- .build_label_clusters_test_cocktail()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+    content <- switch(
+      stage,
+      draft = paste(
+        "The evidence supports dry grassland as the broad category.",
+        "Base-rich and open are plausible subcategory modifiers."
+      ),
+      category = "dry grassland",
+      subcategory = "base-rich; open",
+      summary = "The fixed dry grassland category is refined by base-rich and open modifiers.",
+      stop("Unexpected stage in v4 label_clusters category-field test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-v4-category-fields")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    labels_for_imgs = TRUE,
+    internal_prompt_version = "v4",
+    request_fn = fake_request
+  )
+
+  expect_equal(res$summary$category_label[[1]], "dry grassland")
+  expect_equal(res$summary$subcategory_labels[[1]], "base-rich; open")
+  expect_equal(res$label_registry$category_label[[1]], "dry grassland")
+  expect_equal(res$label_registry$subcategory_labels[[1]], "base-rich; open")
+  expect_match(
+    paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n"),
+    "- Category label: `dry grassland`",
+    fixed = TRUE
+  )
 })
 
 test_that("label_clusters writes review-adjacent model logs for each stage, including brainstorm", {
@@ -425,7 +543,7 @@ test_that("label_clusters keeps a valid long full label even when optional short
   expect_null(res$results$c_1$llm_result$workflow$label$repair_variant)
 })
 
-test_that("label_clusters review logs preserve exhausted shortening attempts without debug mode", {
+test_that("label_clusters review logs preserve normalized long labels without repair-history artifacts", {
   x <- .build_label_clusters_test_cocktail()
   state <- new.env(parent = emptyenv())
   state$selection_calls <- 0L
@@ -475,32 +593,19 @@ test_that("label_clusters review logs preserve exhausted shortening attempts wit
     "attempt1_label_primary_v1"
   )
   repair_history_path <- file.path(attempt_dir, "repair_history.json")
-  response_attempt1_path <- file.path(attempt_dir, "response_content_attempt1.txt")
-  response_attempt2_path <- file.path(attempt_dir, "response_content_attempt2.txt")
-  parsed_candidate1_path <- file.path(attempt_dir, "parsed_output_candidate_attempt1.json")
+  parsed_output_path <- file.path(attempt_dir, "parsed_output.json")
 
-  expect_equal(state$selection_calls, 6L)
-  expect_equal(res$summary$output_status[[1]], "abstain")
-  expect_true(file.exists(repair_history_path))
-  expect_true(file.exists(response_attempt1_path))
-  expect_true(file.exists(response_attempt2_path))
-  expect_true(file.exists(parsed_candidate1_path))
+  expect_equal(state$selection_calls, 1L)
+  expect_equal(res$summary$output_status[[1]], "labeled")
+  expect_false(file.exists(repair_history_path))
+  expect_true(file.exists(parsed_output_path))
+  parsed_output <- jsonlite::fromJSON(parsed_output_path, simplifyVector = TRUE)
   expect_equal(
-    paste(readLines(response_attempt1_path, warn = FALSE), collapse = "\n"),
+    parsed_output$display_label,
     "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
   )
-  expect_equal(
-    paste(readLines(response_attempt2_path, warn = FALSE), collapse = "\n"),
-    "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
-  )
-
-  repair_history <- jsonlite::fromJSON(repair_history_path, simplifyVector = FALSE)
-  expect_length(repair_history, 2L)
-  expect_match(
-    repair_history[[1]]$repair_instruction,
-    "2-3 words",
-    fixed = TRUE
-  )
+  expect_equal(parsed_output$canonical_label, "semi_open_cool_woodland_")
+  expect_equal(parsed_output$status, "labeled")
 })
 
 test_that("label_clusters keeps optional shortening disabled by default and falls back to softer prompts", {

@@ -150,7 +150,9 @@ validate_cluster_label <- function(x, evidence) {
     "contrastive_notes",
     "report_recommendation",
     "label_summary",
-    "explanation"
+    "explanation",
+    "category_label",
+    "subcategory_labels"
   )
   allowed_fields <- c(required_fields, optional_fields)
 
@@ -234,6 +236,8 @@ validate_cluster_label <- function(x, evidence) {
 
   canonical_label <- output$canonical_label
   display_label <- output$display_label
+  category_label <- output$category_label
+  subcategory_labels <- output$subcategory_labels
   abstain_reason <- output$abstain_reason
   label_summary <- output$label_summary
   explanation <- output$explanation
@@ -316,6 +320,27 @@ validate_cluster_label <- function(x, evidence) {
         "label_summary"
       )
     }
+    if ("category_label" %in% names(output) &&
+        !is.null(category_label) &&
+        !.is_non_empty_scalar_character(category_label)) {
+      add_issue(
+        "error",
+        "schema",
+        "invalid_category_label",
+        "category_label must be null or a non-empty string.",
+        "category_label"
+      )
+    }
+    if ("subcategory_labels" %in% names(output) &&
+        !.is_cluster_label_string_array(subcategory_labels)) {
+      add_issue(
+        "error",
+        "schema",
+        "invalid_subcategory_labels",
+        "subcategory_labels must be an array of non-empty strings.",
+        "subcategory_labels"
+      )
+    }
   }
 
   if (identical(output_status, "abstain")) {
@@ -353,6 +378,25 @@ validate_cluster_label <- function(x, evidence) {
         "unexpected_label_summary",
         "Abstaining outputs must set label_summary to null.",
         "label_summary"
+      )
+    }
+    if ("category_label" %in% names(output) && !is.null(category_label)) {
+      add_issue(
+        "error",
+        "schema",
+        "unexpected_category_label",
+        "Abstaining outputs must set category_label to null.",
+        "category_label"
+      )
+    }
+    if ("subcategory_labels" %in% names(output) &&
+        !.is_cluster_label_empty_string_array(subcategory_labels)) {
+      add_issue(
+        "error",
+        "schema",
+        "unexpected_subcategory_labels",
+        "Abstaining outputs must omit subcategory_labels or provide an empty array.",
+        "subcategory_labels"
       )
     }
   }
@@ -1079,6 +1123,18 @@ print.cluster_label_validation <- function(x, ...) {
 
 .cluster_label_max_display_words <- function() {
   6L
+}
+
+.cluster_label_max_canonical_words <- function() {
+  3L
+}
+
+.is_cluster_label_string_array <- function(x) {
+  is.character(x) && !any(is.na(x)) && all(nzchar(trimws(x)))
+}
+
+.is_cluster_label_empty_string_array <- function(x) {
+  is.null(x) || (is.character(x) && length(x) == 0L)
 }
 
 .cluster_label_forbidden_display_punctuation_pattern <- function() {

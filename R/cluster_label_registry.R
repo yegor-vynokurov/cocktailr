@@ -180,6 +180,8 @@ cluster_label_registry <- function(x) {
     hclust_label_compact = character(),
     display_label = character(),
     canonical_label = character(),
+    category_label = character(),
+    subcategory_labels = character(),
     public_display_label = character(),
     public_canonical_label = character(),
     public_label_source = character(),
@@ -280,6 +282,8 @@ cluster_label_registry <- function(x) {
 
   display_label <- .as_scalar_character(output$display_label)
   canonical_label <- .as_scalar_character(output$canonical_label)
+  category_label <- .as_scalar_character(output$category_label)
+  subcategory_labels <- .cluster_label_subcategory_labels_text(output$subcategory_labels)
   public_label <- .cluster_label_public_fields(output, provenance)
   public_display_label <- .as_scalar_character(public_label$public_display_label)
   public_canonical_label <- .as_scalar_character(public_label$public_canonical_label)
@@ -344,6 +348,8 @@ cluster_label_registry <- function(x) {
     ),
     display_label = .cluster_label_registry_character(display_label),
     canonical_label = .cluster_label_registry_character(canonical_label),
+    category_label = .cluster_label_registry_character(category_label),
+    subcategory_labels = .cluster_label_registry_character(subcategory_labels),
     public_display_label = .cluster_label_registry_character(public_display_label),
     public_canonical_label = .cluster_label_registry_character(public_canonical_label),
     public_label_source = .cluster_label_registry_character(public_label_source),

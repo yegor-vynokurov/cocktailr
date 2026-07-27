@@ -485,6 +485,21 @@
   text <- gsub("\\s+", " ", text, perl = TRUE)
   text <- trimws(text)
 
+  lowered <- tolower(text)
+  meta_reply_patterns <- c(
+    "^(this|that|it)\\b.*\\b(answer|reply|response)\\b",
+    "\\bdoes not follow\\b",
+    "\\bshort label decision contract\\b",
+    "\\btoo long\\b.*\\bcontract\\b"
+  )
+  if (any(vapply(
+    meta_reply_patterns,
+    function(pattern) grepl(pattern, lowered, perl = TRUE),
+    logical(1)
+  ))) {
+    return(NA_character_)
+  }
+
   word_count <- length(strsplit(text, "\\s+", perl = TRUE)[[1L]])
 
   max_chars <- getOption(

@@ -71,6 +71,12 @@
   if (grepl("Task mode: `label_decision_", user_text, fixed = TRUE)) {
     return("selection")
   }
+  if (grepl("Task mode: `category_decision_", user_text, fixed = TRUE)) {
+    return("category")
+  }
+  if (grepl("Task mode: `subcategory_decision_", user_text, fixed = TRUE)) {
+    return("subcategory")
+  }
   if (grepl("Task mode: `draft_analysis_v1`", user_text, fixed = TRUE)) {
     return("draft")
   }
@@ -130,10 +136,9 @@ test_that("selection rung preserves overlong open labels when optional shortenin
     res$output$display_label,
     "Dry base-rich grassland with sedge and thyme core"
   )
-  expect_match(
+  expect_equal(
     res$output$canonical_label,
-    "^dry_base_rich_grassland",
-    perl = TRUE
+    "dry_base_rich_grassland_"
   )
   expect_equal(res$workflow$label$selected_public_variant, "label_primary_v1")
   expect_equal(length(res$workflow$label$attempts), 1L)
@@ -141,6 +146,81 @@ test_that("selection rung preserves overlong open labels when optional shortenin
   expect_null(res$workflow$label$repair_variant)
   expect_true(.is_non_empty_scalar_character(res$output$label_summary))
   expect_equal(res$workflow$label$attempts[[1]]$attempts, 1L)
+})
+
+test_that("decomposed v4 flow retries malformed clean category answers", {
+  ev <- .build_phase3_test_cluster_evidence()
+  state <- new.env(parent = emptyenv())
+  state$category_calls <- 0L
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      draft = paste(
+        "The evidence points toward a dry grassland category.",
+        "A base-rich and open subcategory is plausible from the species signal."
+      ),
+      category = {
+        state$category_calls <- state$category_calls + 1L
+        if (identical(state$category_calls, 1L)) {
+          "CATEGORY_LABEL: dry grassland"
+        } else {
+          "dry grassland"
+        }
+      },
+      subcategory = "base-rich; open",
+      summary = "The fixed dry grassland category is refined by base-rich and open modifiers.",
+      stop("Unexpected stage in decomposed v4 test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v4",
+    use_brainstorm = TRUE,
+    short_label_with_llm = FALSE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$output$status, "labeled")
+  expect_equal(res$output$category_label, "dry grassland")
+  expect_equal(res$output$subcategory_labels, c("base-rich", "open"))
+  expect_equal(res$output$display_label, "dry grassland")
+  expect_equal(state$category_calls, 2L)
+  expect_true(any(state$stages == "draft"))
+  expect_true(any(state$stages == "category"))
+  expect_true(any(state$stages == "subcategory"))
+  expect_true(any(state$stages == "summary"))
+  expect_equal(res$workflow$category$attempts[[1]]$attempts, 2L)
+})
+
+test_that("canonical contract projection keeps three words and a trailing underscore", {
+  expect_equal(
+    cocktailr:::.cluster_label_project_canonical_label_for_contract(
+      "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
+    ),
+    "semi_open_cool_woodland_"
+  )
+
+  expect_equal(
+    cocktailr:::.cluster_label_project_canonical_label_for_contract(
+      "Dry Meadow Edge"
+    ),
+    "dry_meadow_edge"
+  )
 })
 
 test_that("label-decision parser derives canonical_label programmatically from short raw label text", {
@@ -154,6 +234,74 @@ test_that("label-decision parser derives canonical_label programmatically from s
   expect_equal(parsed$label_decision_text, "Dry Meadow Edge")
   expect_equal(parsed$display_label, "Dry Meadow Edge")
   expect_equal(parsed$canonical_label, "dry_meadow_edge")
+})
+
+test_that("label-decision parser preserves category and subcategory fields", {
+  parsed <- cocktailr:::.parse_cluster_label_label_decision_text(
+    content = paste(
+      "LABEL: dry base-rich grassland",
+      "CATEGORY_LABEL: dry grassland",
+      "SUBCATEGORY_LABELS: base-rich; open",
+      sep = "\n"
+    ),
+    cluster_id = "c_1"
+  )
+  parse_info <- attr(parsed, "cluster_label_parse_info")
+
+  expect_equal(parsed$cluster_id, "c_1")
+  expect_equal(parsed$status, "labeled")
+  expect_equal(parsed$display_label, "dry base-rich grassland")
+  expect_equal(parsed$canonical_label, "dry_base_rich_grassland")
+  expect_equal(parsed$category_label, "dry grassland")
+  expect_equal(parsed$subcategory_labels, c("base-rich", "open"))
+  expect_equal(parse_info$parsing_rule, "experimental_category_fields")
+})
+
+test_that("clean category parser rejects technical prefixes and explanations", {
+  expect_error(
+    cocktailr:::.parse_cluster_label_category_decision_text(
+      content = "CATEGORY_LABEL: dry grassland",
+      cluster_id = "c_1"
+    ),
+    "technical prefixes"
+  )
+  expect_error(
+    cocktailr:::.parse_cluster_label_category_decision_text(
+      content = "dry grassland because the plots are open",
+      cluster_id = "c_1"
+    ),
+    "explanatory prose"
+  )
+
+  parsed <- cocktailr:::.parse_cluster_label_category_decision_text(
+    content = "dry grassland",
+    cluster_id = "c_1"
+  )
+  expect_equal(parsed$status, "category_ready")
+  expect_equal(parsed$category_label, "dry grassland")
+})
+
+test_that("clean subcategory parser accepts semicolon names and rejects prefixed lists", {
+  expect_error(
+    cocktailr:::.parse_cluster_label_subcategory_decision_text(
+      content = "SUBCATEGORY_LABELS: base-rich; open",
+      cluster_id = "c_1"
+    ),
+    "technical prefixes"
+  )
+
+  parsed <- cocktailr:::.parse_cluster_label_subcategory_decision_text(
+    content = "base-rich; open",
+    cluster_id = "c_1"
+  )
+  expect_equal(parsed$status, "subcategory_ready")
+  expect_equal(parsed$subcategory_labels, c("base-rich", "open"))
+
+  none <- cocktailr:::.parse_cluster_label_subcategory_decision_text(
+    content = "none",
+    cluster_id = "c_1"
+  )
+  expect_equal(none$subcategory_labels, character(0))
 })
 
 test_that("label-decision parser treats the plain ABSTAIN token as abstain without label fields", {
@@ -327,7 +475,7 @@ test_that("all-abstain path stays abstain and assembles fallback abstain reason 
   expect_true(isTRUE(res$workflow$abstain_reason$fallback_used))
 })
 
-test_that("overlong labels that still fail shortening remain transparent after ladder exhaustion", {
+test_that("overlong labels are normalized into compact canonical labels instead of exhausting the ladder", {
   ev <- .build_phase3_test_cluster_evidence()
   state <- new.env(parent = emptyenv())
   state$selection_calls <- 0L
@@ -358,36 +506,19 @@ test_that("overlong labels that still fail shortening remain transparent after l
     request_fn = fake_request
   )
 
-  expect_equal(state$selection_calls, 6L)
-  expect_equal(res$output$status, "abstain")
-  expect_equal(res$workflow$label$selected_public_variant, "selection_all_abstain")
+  expect_equal(state$selection_calls, 1L)
+  expect_equal(res$output$status, "labeled")
+  expect_equal(
+    res$output$display_label,
+    "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
+  )
+  expect_equal(res$output$canonical_label, "semi_open_cool_woodland_")
+  expect_equal(res$workflow$label$selected_public_variant, "label_primary_v1")
   expect_null(res$workflow$label$repair_source %||% NULL)
-  expect_equal(
-    res$workflow$label$attempts[[1]]$repair_source,
-    "shortening_branch"
-  )
-  expect_equal(res$workflow$label$attempts[[1]]$result, "failed_after_retry")
-  expect_equal(res$workflow$label$attempts[[2]]$result, "failed_after_retry")
-  expect_equal(res$workflow$label$attempts[[3]]$result, "failed_after_retry")
-  expect_length(res$workflow$label$attempts[[1]]$repair_history, 2L)
-  expect_equal(
-    res$workflow$label$attempts[[1]]$repair_history[[1]]$response_content,
-    "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
-  )
-  expect_equal(
-    res$workflow$label$attempts[[1]]$repair_history[[2]]$response_content,
-    "Semi-open cool woodland on base-rich soils with Vincetoxicum Galium understorey"
-  )
-  expect_match(
-    res$workflow$label$failure_messages[[1]],
-    "invalid label-decision output after 2 attempt(s)",
-    fixed = TRUE
-  )
-  expect_match(
-    res$workflow$label$failure_messages[[1]],
-    "Label-decision output failed text validation",
-    fixed = TRUE
-  )
+  expect_null(res$workflow$label$attempts[[1]]$repair_source %||% NULL)
+  expect_equal(res$workflow$label$attempts[[1]]$result, "labeled")
+  expect_equal(res$workflow$label$attempts[[1]]$attempts, 1L)
+  expect_length(res$workflow$label$failure_messages, 0L)
 })
 
 test_that("validator accepts final assembled outputs when evidence contains user_added_data", {

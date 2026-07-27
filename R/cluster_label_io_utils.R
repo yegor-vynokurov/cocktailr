@@ -150,6 +150,8 @@
     label_decision_text = "parse_extracted_label_decision_text",
     canonical_label = "parse_extracted_canonical_label",
     display_label = "parse_extracted_display_label",
+    category_label = "parse_extracted_category_label",
+    subcategory_labels = "parse_extracted_subcategory_labels",
     label_summary = "parse_extracted_label_summary",
     abstain_reason = "parse_extracted_abstain_reason",
     explanation = "parse_extracted_explanation"
@@ -220,6 +222,26 @@
         draft_analysis = if (.is_non_empty_scalar_character(draft_analysis)) draft_analysis else NULL,
         candidate_count = as.integer(parse_info$candidate_count %||% 0L),
         candidate_labels = parse_info$candidate_labels %||% list()
+      )
+    )
+  } else if (identical(stage_name, "category_decision")) {
+    category_label <- .as_scalar_character(parsed_output$category_label)
+    artifact <- c(
+      artifact,
+      list(
+        status = .as_scalar_character(parsed_output$status %||% NULL),
+        category_label = if (.is_non_empty_scalar_character(category_label)) category_label else NULL,
+        extracted_category_label = isTRUE(parse_info$category_label)
+      )
+    )
+  } else if (identical(stage_name, "subcategory_decision")) {
+    subcategory_labels <- parsed_output$subcategory_labels %||% character(0)
+    artifact <- c(
+      artifact,
+      list(
+        status = .as_scalar_character(parsed_output$status %||% NULL),
+        subcategory_labels = .cluster_label_stage_subcategory_text(subcategory_labels),
+        extracted_subcategory_labels = isTRUE(parse_info$subcategory_labels)
       )
     )
   } else if (identical(stage_name, "label_summary")) {
@@ -897,13 +919,21 @@
 
   display_from_legacy <- extract_marker_value("DISPLAY_LABEL:")
   abstain_from_legacy <- extract_marker_value("ABSTAIN_REASON:")
+  label_from_fields <- extract_marker_value("LABEL:")
+  category_label <- extract_marker_value("CATEGORY_LABEL:")
+  subcategory_labels <- .parse_cluster_label_subcategory_labels(
+    extract_marker_value("SUBCATEGORY_LABELS:")
+  )
 
   parse_rule <- "single_short_answer"
   inline_abstain_reason <- FALSE
   decision_text <- paste(lines, collapse = " ")
   decision_text <- gsub("\\s+", " ", trimws(decision_text), perl = TRUE)
 
-  if (.is_non_empty_scalar_character(display_from_legacy)) {
+  if (.is_non_empty_scalar_character(label_from_fields)) {
+    decision_text <- label_from_fields
+    parse_rule <- "experimental_category_fields"
+  } else if (.is_non_empty_scalar_character(display_from_legacy)) {
     decision_text <- display_from_legacy
     parse_rule <- "legacy_display_label_salvage"
   } else if (.is_non_empty_scalar_character(abstain_from_legacy)) {
@@ -920,7 +950,9 @@
       status = "abstain",
       label_decision_text = if (nzchar(decision_text)) decision_text else "ABSTAIN",
       canonical_label = NULL,
-      display_label = NULL
+      display_label = NULL,
+      category_label = NULL,
+      subcategory_labels = character(0)
     )
 
     .attach_cluster_label_parse_info(
@@ -933,6 +965,8 @@
         label_decision_text = TRUE,
         canonical_label = FALSE,
         display_label = FALSE,
+        category_label = FALSE,
+        subcategory_labels = FALSE,
         inline_abstain_reason = inline_abstain_reason || nzchar(remainder)
       )
     )
@@ -963,7 +997,13 @@
       status = "labeled",
       label_decision_text = display_label,
       canonical_label = canonical_label,
-      display_label = display_label
+      display_label = display_label,
+      category_label = if (.is_non_empty_scalar_character(category_label)) {
+        trimws(category_label)
+      } else {
+        NULL
+      },
+      subcategory_labels = subcategory_labels
     )
 
     .attach_cluster_label_parse_info(
@@ -976,10 +1016,226 @@
         label_decision_text = TRUE,
         canonical_label = TRUE,
         display_label = TRUE,
+        category_label = .is_non_empty_scalar_character(category_label),
+        subcategory_labels = length(subcategory_labels) > 0L,
         inline_abstain_reason = FALSE
       )
     )
   }
+}
+
+.cluster_label_stage_subcategory_text <- function(x) {
+  x <- .as_character_vector(x)
+  x <- trimws(x)
+  x <- x[nzchar(x)]
+  if (!length(x)) {
+    return(NULL)
+  }
+  paste(x, collapse = "; ")
+}
+
+.parse_cluster_label_subcategory_labels <- function(text) {
+  text <- .as_scalar_character(text)
+  if (is.na(text) || !nzchar(trimws(text))) {
+    return(character(0))
+  }
+
+  parts <- unlist(strsplit(text, "\\s*[;|]\\s*", perl = TRUE), use.names = FALSE)
+  parts <- trimws(parts)
+  unique(parts[nzchar(parts)])
+}
+
+.parse_cluster_label_category_decision_text <- function(content, cluster_id) {
+  parsed <- .parse_cluster_label_clean_name_text(
+    content = content,
+    cluster_id = cluster_id,
+    stage_name = "category_decision",
+    field_name = "category_label",
+    allow_semicolon = FALSE,
+    allow_none = FALSE,
+    allow_abstain = TRUE
+  )
+
+  status <- if (identical(toupper(parsed$value), "ABSTAIN")) {
+    "abstain"
+  } else {
+    "category_ready"
+  }
+
+  out <- list(
+    schema_version = "0.1.0",
+    cluster_id = cluster_id,
+    status = status,
+    category_label = if (identical(status, "category_ready")) parsed$value else NULL,
+    label_decision_text = if (identical(status, "abstain")) "ABSTAIN" else parsed$value
+  )
+
+  .attach_cluster_label_parse_info(
+    out,
+    c(
+      parsed$parse_info,
+      list(category_label = identical(status, "category_ready"))
+    )
+  )
+}
+
+.parse_cluster_label_subcategory_decision_text <- function(content, cluster_id) {
+  parsed <- .parse_cluster_label_clean_name_text(
+    content = content,
+    cluster_id = cluster_id,
+    stage_name = "subcategory_decision",
+    field_name = "subcategory_labels",
+    allow_semicolon = TRUE,
+    allow_none = TRUE,
+    allow_abstain = FALSE
+  )
+
+  subcategory_labels <- if (identical(tolower(parsed$value), "none")) {
+    character(0)
+  } else {
+    parts <- unlist(strsplit(parsed$value, "\\s*;\\s*", perl = TRUE), use.names = FALSE)
+    parts <- trimws(parts)
+    parts[nzchar(parts)]
+  }
+
+  out <- list(
+    schema_version = "0.1.0",
+    cluster_id = cluster_id,
+    status = "subcategory_ready",
+    subcategory_labels = unique(subcategory_labels)
+  )
+
+  .attach_cluster_label_parse_info(
+    out,
+    c(
+      parsed$parse_info,
+      list(subcategory_labels = length(subcategory_labels) > 0L)
+    )
+  )
+}
+
+.parse_cluster_label_clean_name_text <- function(
+    content,
+    cluster_id,
+    stage_name,
+    field_name,
+    allow_semicolon,
+    allow_none,
+    allow_abstain
+) {
+  content <- .as_scalar_character(content)
+  if (is.na(content) || !nzchar(trimws(content))) {
+    stop("LLM ", stage_name, " output must be a non-empty clean name.")
+  }
+
+  unwrap_info <- .cluster_label_text_code_fence_info(content)
+  if (isTRUE(unwrap_info$code_fence_salvaged)) {
+    stop("LLM ", stage_name, " output must not use code fences.")
+  }
+
+  normalized <- trimws(unwrap_info$text)
+  lines <- strsplit(normalized, "\n", fixed = TRUE)[[1L]]
+  lines <- trimws(lines)
+  lines <- lines[nzchar(lines)]
+
+  if (length(lines) != 1L) {
+    stop("LLM ", stage_name, " output must contain exactly one non-empty line.")
+  }
+
+  value <- gsub("\\s+", " ", lines[[1L]], perl = TRUE)
+  value <- trimws(value)
+
+  .validate_cluster_label_clean_name_value(
+    value = value,
+    stage_name = stage_name,
+    field_name = field_name,
+    allow_semicolon = allow_semicolon,
+    allow_none = allow_none,
+    allow_abstain = allow_abstain
+  )
+
+  list(
+    value = value,
+    parse_info = list(
+      parser_type = paste0(stage_name, "_clean_text_v1"),
+      parsing_rule = "clean_single_answer",
+      code_fence_salvaged = FALSE,
+      nonempty_line_count = length(lines),
+      cluster_id = cluster_id
+    )
+  )
+}
+
+.validate_cluster_label_clean_name_value <- function(
+    value,
+    stage_name,
+    field_name,
+    allow_semicolon,
+    allow_none,
+    allow_abstain
+) {
+  if (!nzchar(value)) {
+    stop("LLM ", stage_name, " output must not be empty.")
+  }
+
+  lower <- tolower(value)
+  if (identical(lower, "none")) {
+    if (isTRUE(allow_none)) {
+      return(invisible(TRUE))
+    }
+    stop("LLM ", stage_name, " output must not use `none` for ", field_name, ".")
+  }
+
+  if (identical(toupper(value), "ABSTAIN")) {
+    if (isTRUE(allow_abstain)) {
+      return(invisible(TRUE))
+    }
+    stop("LLM ", stage_name, " output must not abstain at this stage.")
+  }
+
+  forbidden_prefix_pattern <- "^(LABEL|CATEGORY|CATEGORY_LABEL|SUBCATEGORY|SUBCATEGORY_LABELS)\\s*:"
+  if (grepl(forbidden_prefix_pattern, value, ignore.case = TRUE, perl = TRUE)) {
+    stop("LLM ", stage_name, " output must not include technical prefixes.")
+  }
+
+  if (grepl("^['\"`].*['\"`]$", value, perl = TRUE)) {
+    stop("LLM ", stage_name, " output must not wrap the name in quotes.")
+  }
+
+  if (grepl("^\\s*([-*]|[0-9]+[.)])\\s+", value, perl = TRUE)) {
+    stop("LLM ", stage_name, " output must not use bullets or numbered lists.")
+  }
+
+  if (grepl("\\b(because|due to|based on|indicating|with evidence|the category is|the subcategory is)\\b", value, ignore.case = TRUE, perl = TRUE)) {
+    stop("LLM ", stage_name, " output must not include explanatory prose.")
+  }
+
+  if (grepl("[_:,()\\[\\]{}]", value, perl = TRUE)) {
+    stop("LLM ", stage_name, " output contains forbidden punctuation.")
+  }
+
+  if (grepl("\\.$", value, perl = TRUE)) {
+    stop("LLM ", stage_name, " output must not end with a period.")
+  }
+
+  if (!isTRUE(allow_semicolon) && grepl(";", value, fixed = TRUE)) {
+    stop("LLM ", stage_name, " output must not contain semicolons.")
+  }
+
+  if (grepl("\\b[A-Z]{2,}\\b", value, perl = TRUE)) {
+    stop("LLM ", stage_name, " output must not contain all-caps marker text.")
+  }
+
+  allowed_pattern <- if (isTRUE(allow_semicolon)) {
+    "^[[:alpha:]][[:alpha:][:digit:] /;'-]*[[:alpha:][:digit:]]$"
+  } else {
+    "^[[:alpha:]][[:alpha:][:digit:] /'-]*[[:alpha:][:digit:]]$"
+  }
+  if (!grepl(allowed_pattern, value, perl = TRUE)) {
+    stop("LLM ", stage_name, " output is not a clean ecological name.")
+  }
+
+  invisible(TRUE)
 }
 
 .parse_cluster_label_summary_text <- function(content, cluster_id) {

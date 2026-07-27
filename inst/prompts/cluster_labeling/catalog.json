@@ -156,6 +156,48 @@
       "temperature": 0.12,
       "top_p": 0.95
     },
+    "category_decision_primary_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v4/user_category_decision_primary_v1.md",
+      "description": "Experimental decomposed category-only decision prompt for the strict rung.",
+      "task_type": "category_decision",
+      "temperature": 0.0,
+      "top_p": 0.8
+    },
+    "category_decision_soft_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v4/user_category_decision_soft_v1.md",
+      "description": "Experimental decomposed category-only decision prompt for the soft rung.",
+      "task_type": "category_decision",
+      "temperature": 0.08,
+      "top_p": 0.92
+    },
+    "category_decision_broad_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v4/user_category_decision_broad_v1.md",
+      "description": "Experimental decomposed category-only decision prompt for the broad rung.",
+      "task_type": "category_decision",
+      "temperature": 0.12,
+      "top_p": 0.95
+    },
+    "subcategory_decision_primary_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v4/user_subcategory_decision_primary_v1.md",
+      "description": "Experimental decomposed subcategory-only decision prompt for the strict rung.",
+      "task_type": "subcategory_decision",
+      "temperature": 0.0,
+      "top_p": 0.8
+    },
+    "subcategory_decision_soft_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v4/user_subcategory_decision_soft_v1.md",
+      "description": "Experimental decomposed subcategory-only decision prompt for the soft rung.",
+      "task_type": "subcategory_decision",
+      "temperature": 0.08,
+      "top_p": 0.92
+    },
+    "subcategory_decision_broad_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v4/user_subcategory_decision_broad_v1.md",
+      "description": "Experimental decomposed subcategory-only decision prompt for the broad rung.",
+      "task_type": "subcategory_decision",
+      "temperature": 0.12,
+      "top_p": 0.95
+    },
     "label_decision_shorten_repair_v1": {
       "user_prompt_path": "../internal_cluster_labeling/v2/user_label_decision_shorten_repair_v1.md",
       "description": "Internal shortening-only repair instruction for overlong labeled answers before semantic fallback.",

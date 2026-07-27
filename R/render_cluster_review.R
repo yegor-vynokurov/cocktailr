@@ -986,6 +986,8 @@ print.cluster_review_artifact <- function(x, ...) {
     output$display_label,
     metadata$plot_marker %||% ""
   )
+  category_label <- .as_scalar_character(output$category_label)
+  subcategory_labels <- .cluster_label_subcategory_labels_text(output$subcategory_labels)
   plot_preview_label <- .as_scalar_character(
     metadata$proposed_plot_preview_label %||% NA_character_
   )
@@ -1004,6 +1006,12 @@ print.cluster_review_artifact <- function(x, ...) {
     lines,
     paste0("- Canonical label: ", .md_code(.as_scalar_character(output$canonical_label))),
     paste0("- Display label: ", .md_code(display_label)),
+    if (!is.na(category_label) && nzchar(category_label)) {
+      paste0("- Category label: ", .md_code(category_label))
+    },
+    if (!is.na(subcategory_labels) && nzchar(subcategory_labels)) {
+      paste0("- Subcategory labels: ", .md_code(subcategory_labels))
+    },
     if (!is.na(plot_preview_label) &&
         nzchar(plot_preview_label) &&
         !identical(plot_preview_label, display_label)) {

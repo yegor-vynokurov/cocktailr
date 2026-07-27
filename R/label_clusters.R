@@ -399,6 +399,12 @@ label_clusters <- function(
       validation_status = cluster_run$validation$validation_status %||% NA_character_,
       needs_human_review = isTRUE(cluster_run$validation$needs_human_review),
       used_placeholder = isTRUE(cluster_run$used_placeholder),
+      category_label = .as_scalar_character(
+        cluster_run$llm_result$output$category_label %||% NA_character_
+      ),
+      subcategory_labels = .cluster_label_subcategory_labels_text(
+        cluster_run$llm_result$output$subcategory_labels
+      ),
       label_tier = cluster_run$label_tier %||% NA_character_,
       is_speculative = isTRUE(cluster_run$is_speculative),
       speculative_fallback_used = isTRUE(cluster_run$speculative_fallback_used),

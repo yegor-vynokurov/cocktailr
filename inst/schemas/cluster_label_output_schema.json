@@ -42,6 +42,17 @@
       "minLength": 1,
       "pattern": "^(?!.*[,()\\[\\]])(?!.*\\.\\s*$).+\\S$"
     },
+    "category_label": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "subcategory_labels": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "interpretation_summary": {
       "type": "string",
       "minLength": 1
