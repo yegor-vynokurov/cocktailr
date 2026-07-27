@@ -2878,12 +2878,13 @@ llm_label_cluster <- function(
     ollama_options,
     endpoint,
     timeout_sec,
+    max_retries,
     request_fn,
     stage_log_paths
 ) {
   attempts <- list()
   failure_messages <- character(0)
-  clean_retry_budget <- 3L
+  clean_retry_budget <- .arg_non_negative_integer(max_retries, "max_retries")
 
   for (i in seq_along(variants)) {
     stage_variant <- variants[[i]]
@@ -3977,6 +3978,7 @@ llm_label_cluster <- function(
       ollama_options = ollama_options,
       endpoint = endpoint,
       timeout_sec = timeout_sec,
+      max_retries = max_retries,
       request_fn = request_fn,
       stage_log_paths = workflow_logs$stages$category
     )
@@ -4040,6 +4042,7 @@ llm_label_cluster <- function(
         ollama_options = ollama_options,
         endpoint = endpoint,
         timeout_sec = timeout_sec,
+        max_retries = max_retries,
         request_fn = request_fn,
         stage_log_paths = workflow_logs$stages$subcategory
       )
@@ -4226,6 +4229,12 @@ llm_label_cluster <- function(
         subcategory_attempt_total +
         (terminal_stage$attempts %||% 0L)
     )
+    executed_stages <- as.integer(sum(c(
+      !isTRUE(draft_stage$skipped),
+      TRUE,
+      !isTRUE(subcategory_stage$skipped),
+      TRUE
+    )))
 
     .write_workflow_metadata(
       workflow_logs,
@@ -4255,7 +4264,7 @@ llm_label_cluster <- function(
         final_schema_path = terminal_prompt_bundle$schema_path,
         base_url = endpoint,
         status = "success",
-        executed_stages = if (identical(final_output$status, "labeled")) 4L else 3L,
+        executed_stages = executed_stages,
         attempts = total_attempts,
         final_output_status = final_output$status,
         run_dir = workflow_logs$run_dir

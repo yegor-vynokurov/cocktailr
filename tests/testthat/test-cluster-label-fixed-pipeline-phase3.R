@@ -190,7 +190,7 @@ test_that("decomposed v4 flow retries malformed clean category answers", {
     internal_prompt_version = "v4",
     use_brainstorm = TRUE,
     short_label_with_llm = FALSE,
-    max_retries = 0L,
+    max_retries = 1L,
     timeout_sec = 1,
     request_fn = fake_request
   )
@@ -205,6 +205,149 @@ test_that("decomposed v4 flow retries malformed clean category answers", {
   expect_true(any(state$stages == "subcategory"))
   expect_true(any(state$stages == "summary"))
   expect_equal(res$workflow$category$attempts[[1]]$attempts, 2L)
+})
+
+test_that("decomposed v4 clean category honors max_retries zero", {
+  ev <- .build_phase3_test_cluster_evidence()
+  state <- new.env(parent = emptyenv())
+  state$category_calls <- 0L
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    content <- switch(
+      stage,
+      draft = "The evidence points toward a dry grassland category.",
+      category = {
+        state$category_calls <- state$category_calls + 1L
+        if (identical(state$category_calls, 1L)) {
+          "CATEGORY_LABEL: dry grassland"
+        } else {
+          "dry grassland"
+        }
+      },
+      subcategory = "base-rich; open",
+      summary = "The fixed dry grassland category is refined by base-rich and open modifiers.",
+      stop("Unexpected stage in decomposed v4 max_retries zero test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v4",
+    use_brainstorm = TRUE,
+    short_label_with_llm = FALSE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$output$status, "labeled")
+  expect_equal(state$category_calls, 2L)
+  expect_equal(res$workflow$category$attempts[[1]]$result, "failed_after_retry")
+  expect_equal(res$workflow$category$attempts[[1]]$attempts, 1L)
+  expect_equal(res$workflow$category$attempts[[2]]$result, "category_ready")
+  expect_equal(res$workflow$category$attempts[[2]]$attempts, 1L)
+})
+
+test_that("decomposed v4 metadata counts no-brainstorm labeled stages", {
+  ev <- .build_phase3_test_cluster_evidence()
+  log_dir <- file.path(tempdir(), "cocktailr_v4_no_brainstorm_labeled_metadata")
+  unlink(log_dir, recursive = TRUE, force = TRUE)
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      category = "dry grassland",
+      subcategory = "base-rich; open",
+      summary = "The fixed dry grassland category is refined by base-rich and open modifiers.",
+      stop("Unexpected stage in decomposed v4 no-brainstorm labeled metadata test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v4",
+    use_brainstorm = FALSE,
+    short_label_with_llm = FALSE,
+    max_retries = 0L,
+    debug = TRUE,
+    log_dir = log_dir,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+  metadata <- jsonlite::fromJSON(res$logs$metadata, simplifyVector = TRUE)
+
+  expect_equal(res$output$status, "labeled")
+  expect_false(any(state$stages == "draft"))
+  expect_equal(state$stages, c("category", "subcategory", "summary"))
+  expect_equal(metadata$executed_stages, 3L)
+})
+
+test_that("decomposed v4 metadata counts no-brainstorm abstain stages", {
+  ev <- .build_phase3_test_cluster_evidence()
+  log_dir <- file.path(tempdir(), "cocktailr_v4_no_brainstorm_abstain_metadata")
+  unlink(log_dir, recursive = TRUE, force = TRUE)
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      category = "ABSTAIN",
+      abstain_reason = "The evidence does not support a stable vegetation category.",
+      stop("Unexpected stage in decomposed v4 no-brainstorm abstain metadata test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v4",
+    use_brainstorm = FALSE,
+    short_label_with_llm = FALSE,
+    max_retries = 0L,
+    debug = TRUE,
+    log_dir = log_dir,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+  metadata <- jsonlite::fromJSON(res$logs$metadata, simplifyVector = TRUE)
+
+  expect_equal(res$output$status, "abstain")
+  expect_false(any(state$stages == "draft"))
+  expect_false(any(state$stages == "subcategory"))
+  expect_false(any(state$stages == "summary"))
+  expect_equal(tail(state$stages, 1L), "abstain_reason")
+  expect_equal(metadata$executed_stages, 2L)
 })
 
 test_that("canonical contract projection keeps three words and a trailing underscore", {
