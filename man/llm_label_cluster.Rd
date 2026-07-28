@@ -24,6 +24,7 @@ llm_label_cluster(
   workflow_steps = 3L,
   use_brainstorm = TRUE,
   short_label_with_llm = FALSE,
+  use_subcategorization = FALSE,
   internal_prompt_version = .default_cluster_label_internal_prompt_version(),
   dry_run = FALSE,
   debug = FALSE,
@@ -107,6 +108,11 @@ path avoids extra shortening-only LLM calls and still preserves the full
 stored label in \code{display_label}. The shortening-repair prompt is
 available only when the selected \code{internal_prompt_version} bundle
 includes that asset (for example the packaged \code{"v2"} bundle).}
+
+\item{use_subcategorization}{Logical. If \code{TRUE}, run an experimental
+post-label classifier after the label-summary stage for labeled outputs.
+Default \code{FALSE}; the ordinary staged labeling flow is unchanged when
+disabled.}
 
 \item{internal_prompt_version}{Character scalar naming the subdirectory
 under \code{inst/prompts/internal_cluster_labeling/} that contains the

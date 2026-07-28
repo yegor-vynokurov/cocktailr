@@ -41,6 +41,7 @@ label_clusters(
   workflow_steps = 3L,
   use_brainstorm = TRUE,
   short_label_with_llm = FALSE,
+  use_subcategorization = FALSE,
   internal_prompt_version = .default_cluster_label_internal_prompt_version(),
   debug = FALSE,
   max_iterations = 3L,
@@ -116,6 +117,11 @@ shortening-only recovery while \code{display_label} still preserves the
 full stored human label. The extra shortening-repair prompt is available
 only when the selected \code{internal_prompt_version} bundle includes it
 (for example the packaged \code{"v2"} bundle).}
+
+\item{use_subcategorization}{Logical. Forwarded to
+\code{\link{llm_label_cluster}}. Default \code{FALSE}; when enabled, a
+post-label experimental classifier fills category-compatible output fields
+after the ordinary label and summary are fixed.}
 
 \item{max_iterations}{Integer workflow budget. Currently allowed values are
 \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports

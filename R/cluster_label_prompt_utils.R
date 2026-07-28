@@ -1229,6 +1229,34 @@
   "abstain_reason_pass_v2"
 }
 
+.default_cluster_label_post_label_category_variant <- function() {
+  catalog <- tryCatch(
+    .read_cluster_label_prompt_catalog(),
+    error = function(e) NULL
+  )
+
+  variant <- catalog$parsed$internal_post_label_category_variant %||% NULL
+  if (.is_non_empty_scalar_character(variant)) {
+    return(variant)
+  }
+
+  "post_label_category_v1"
+}
+
+.default_cluster_label_post_label_uniqueness_variant <- function() {
+  catalog <- tryCatch(
+    .read_cluster_label_prompt_catalog(),
+    error = function(e) NULL
+  )
+
+  variant <- catalog$parsed$internal_post_label_uniqueness_variant %||% NULL
+  if (.is_non_empty_scalar_character(variant)) {
+    return(variant)
+  }
+
+  "post_label_uniqueness_v1"
+}
+
 .cluster_label_selection_cascade_variants <- function(variant) {
   catalog <- .read_cluster_label_prompt_catalog()
   catalog_def <- catalog$parsed

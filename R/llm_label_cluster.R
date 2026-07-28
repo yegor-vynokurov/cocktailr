@@ -79,6 +79,10 @@
 #'   stored label in \code{display_label}. The shortening-repair prompt is
 #'   available only when the selected \code{internal_prompt_version} bundle
 #'   includes that asset (for example the packaged \code{"v2"} bundle).
+#' @param use_subcategorization Logical. If \code{TRUE}, run an experimental
+#'   post-label classifier after the label-summary stage for labeled outputs.
+#'   Default \code{FALSE}; the ordinary staged labeling flow is unchanged when
+#'   disabled.
 #' @param internal_prompt_version Character scalar naming the subdirectory
 #'   under \code{inst/prompts/internal_cluster_labeling/} that contains the
 #'   active internal service-prompt bundle. Default \code{"v1"}. Copy that
@@ -172,6 +176,7 @@ llm_label_cluster <- function(
     workflow_steps = 3L,
     use_brainstorm = TRUE,
     short_label_with_llm = FALSE,
+    use_subcategorization = FALSE,
     internal_prompt_version = .default_cluster_label_internal_prompt_version(),
     dry_run = FALSE,
     debug = FALSE,
@@ -200,6 +205,10 @@ llm_label_cluster <- function(
   short_label_with_llm <- .arg_single_flag(
     short_label_with_llm,
     "short_label_with_llm"
+  )
+  use_subcategorization <- .arg_single_flag(
+    use_subcategorization,
+    "use_subcategorization"
   )
   internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
     internal_prompt_version
@@ -236,6 +245,7 @@ llm_label_cluster <- function(
     workflow_steps = workflow_steps,
     use_brainstorm = use_brainstorm,
     short_label_with_llm = short_label_with_llm,
+    use_subcategorization = use_subcategorization,
     internal_prompt_version = internal_prompt_version,
     dry_run = dry_run,
     log_dir = log_dir,
@@ -2529,6 +2539,68 @@ llm_label_cluster <- function(
   )
 }
 
+.build_cluster_label_post_label_category_prompt <- function(
+    evidence,
+    category_variant,
+    selected_label_text,
+    label_summary_text,
+    temperature,
+    top_p,
+    seed,
+    num_predict,
+    prompt_budget_chars,
+    internal_prompt_version
+) {
+  .build_cluster_label_prompt(
+    evidence = evidence,
+    variant = category_variant,
+    schema_path = NULL,
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    prompt_budget_chars = prompt_budget_chars,
+    include_schema = FALSE,
+    internal_prompt_version = internal_prompt_version,
+    extra_template_values = list(
+      "{{SELECTED_LABEL_TEXT}}" = selected_label_text,
+      "{{LABEL_SUMMARY_TEXT}}" = label_summary_text
+    )
+  )
+}
+
+.build_cluster_label_post_label_uniqueness_prompt <- function(
+    evidence,
+    uniqueness_variant,
+    selected_label_text,
+    label_summary_text,
+    category_label_text,
+    temperature,
+    top_p,
+    seed,
+    num_predict,
+    prompt_budget_chars,
+    internal_prompt_version
+) {
+  .build_cluster_label_prompt(
+    evidence = evidence,
+    variant = uniqueness_variant,
+    schema_path = NULL,
+    temperature = temperature,
+    top_p = top_p,
+    seed = seed,
+    num_predict = num_predict,
+    prompt_budget_chars = prompt_budget_chars,
+    include_schema = FALSE,
+    internal_prompt_version = internal_prompt_version,
+    extra_template_values = list(
+      "{{SELECTED_LABEL_TEXT}}" = selected_label_text,
+      "{{LABEL_SUMMARY_TEXT}}" = label_summary_text,
+      "{{CATEGORY_LABEL_TEXT}}" = category_label_text
+    )
+  )
+}
+
 .build_cluster_label_selection_prompt <- function(
     evidence,
     selection_variant,
@@ -3002,6 +3074,42 @@ llm_label_cluster <- function(
       sep = "\n"
     )
   }
+}
+
+.default_post_label_category_stage_repair_instruction <- function() {
+  function(error_message, ...) {
+    paste(
+      "Your previous answer was not a short clean general name.",
+      paste0("Parser error: ", error_message),
+      "Reply again with only a 2-3 word general vegetation name.",
+      "Do not add prefixes, bullets, numbering, explanations, JSON, markdown, or code fences.",
+      sep = "\n"
+    )
+  }
+}
+
+.default_post_label_uniqueness_stage_repair_instruction <- function() {
+  function(error_message, ...) {
+    paste(
+      "Your previous answer was not a short clean difference phrase.",
+      paste0("Parser error: ", error_message),
+      "Reply again with only a 2-3 word difference, or only: none",
+      "Do not add prefixes, bullets, numbering, explanations, JSON, markdown, or code fences.",
+      sep = "\n"
+    )
+  }
+}
+
+.post_label_subcategorization_log_paths <- function(parent_log_paths, substage) {
+  substage <- .arg_scalar_character(substage, "substage")
+  if (is.null(parent_log_paths$run_dir) || !nzchar(parent_log_paths$run_dir)) {
+    return(.null_stage_log_paths())
+  }
+
+  .stage_log_paths(
+    file.path(parent_log_paths$run_dir, substage),
+    started_at = parent_log_paths$started_at
+  )
 }
 
 .run_cluster_label_selection_ladder <- function(
@@ -4215,6 +4323,7 @@ llm_label_cluster <- function(
       }
     )
     explanation_stage$assembled_output <- final_output
+
     .write_workflow_final_output(workflow_logs, final_output)
 
     category_attempt_total <- sum(vapply(category_stage$attempts, function(x) {
@@ -4330,6 +4439,7 @@ llm_label_cluster <- function(
     workflow_steps,
     use_brainstorm,
     short_label_with_llm,
+    use_subcategorization,
     internal_prompt_version,
     dry_run,
     log_dir,
@@ -4378,6 +4488,8 @@ llm_label_cluster <- function(
   draft_variant <- .default_cluster_label_draft_variant()
   summary_variant <- .default_cluster_label_v2_label_summary_variant()
   abstain_reason_variant <- .default_cluster_label_v2_abstain_reason_variant()
+  subcategorization_category_variant <- .default_cluster_label_post_label_category_variant()
+  subcategorization_uniqueness_variant <- .default_cluster_label_post_label_uniqueness_variant()
   cascade <- .cluster_label_decision_cascade_variants(variant)
   workflow_variant_suffix <- .as_scalar_character(workflow_variant_suffix)
   if (is.na(workflow_variant_suffix) || !nzchar(workflow_variant_suffix)) {
@@ -4531,6 +4643,60 @@ llm_label_cluster <- function(
     keep_alive = keep_alive,
     ollama_options = ollama_options
   )
+  subcategorization_category_prompt_bundle <- NULL
+  subcategorization_category_request_payload <- NULL
+  subcategorization_uniqueness_prompt_bundle <- NULL
+  subcategorization_uniqueness_request_payload <- NULL
+  if (isTRUE(use_subcategorization)) {
+    subcategorization_category_prompt_bundle <- .build_cluster_label_post_label_category_prompt(
+      evidence = evidence,
+      category_variant = subcategorization_category_variant,
+      selected_label_text = dry_placeholders$labeled_decision$display_label,
+      label_summary_text = dry_placeholders$explanation,
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
+      internal_prompt_version = internal_prompt_version
+    )
+    .expect_prompt_task_type(
+      subcategorization_category_prompt_bundle,
+      "post_label_category",
+      subcategorization_category_variant
+    )
+    subcategorization_category_request_payload <- .build_ollama_label_request(
+      model = model,
+      prompt_bundle = subcategorization_category_prompt_bundle,
+      keep_alive = keep_alive,
+      ollama_options = ollama_options
+    )
+
+    subcategorization_uniqueness_prompt_bundle <- .build_cluster_label_post_label_uniqueness_prompt(
+      evidence = evidence,
+      uniqueness_variant = subcategorization_uniqueness_variant,
+      selected_label_text = dry_placeholders$labeled_decision$display_label,
+      label_summary_text = dry_placeholders$explanation,
+      category_label_text = "dry grassland",
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
+      internal_prompt_version = internal_prompt_version
+    )
+    .expect_prompt_task_type(
+      subcategorization_uniqueness_prompt_bundle,
+      "post_label_uniqueness",
+      subcategorization_uniqueness_variant
+    )
+    subcategorization_uniqueness_request_payload <- .build_ollama_label_request(
+      model = model,
+      prompt_bundle = subcategorization_uniqueness_prompt_bundle,
+      keep_alive = keep_alive,
+      ollama_options = ollama_options
+    )
+  }
 
   dry_run_out <- list(
     cluster_id = evidence$meta$cluster_id,
@@ -4586,6 +4752,26 @@ llm_label_cluster <- function(
         request = abstain_reason_request_payload,
         schema_path = abstain_reason_prompt_bundle$schema_path
       ),
+      subcategorization_category_variant = subcategorization_category_variant,
+      subcategorization_uniqueness_variant = subcategorization_uniqueness_variant,
+      subcategorization = if (isTRUE(use_subcategorization)) {
+        list(
+          category = list(
+            variant = subcategorization_category_variant,
+            prompt = subcategorization_category_prompt_bundle,
+            request = subcategorization_category_request_payload,
+            schema_path = subcategorization_category_prompt_bundle$schema_path
+          ),
+          uniqueness = list(
+            variant = subcategorization_uniqueness_variant,
+            prompt = subcategorization_uniqueness_prompt_bundle,
+            request = subcategorization_uniqueness_request_payload,
+            schema_path = subcategorization_uniqueness_prompt_bundle$schema_path
+          )
+        )
+      } else {
+        NULL
+      },
       explanation_variant = NULL,
       explanation = list(
         variant = NULL,
@@ -4927,6 +5113,29 @@ llm_label_cluster <- function(
       terminal_prompt_bundle <- abstain_reason_prompt_bundle
     }
 
+    subcategorization_stage <- list(
+      variant = NULL,
+      category_variant = subcategorization_category_variant,
+      uniqueness_variant = subcategorization_uniqueness_variant,
+      prompt = NULL,
+      request = NULL,
+      response = NULL,
+      output = list(
+        cluster_id = evidence$meta$cluster_id,
+        status = "subcategorization_skipped",
+        category_label = NULL,
+        subcategory_labels = character(0)
+      ),
+      attempts = 0L,
+      logs = workflow_logs$stages$subcategorization,
+      skipped = TRUE,
+      skip_reason = if (isTRUE(use_subcategorization)) {
+        "label_not_selected"
+      } else {
+        "subcategorization_disabled"
+      }
+    )
+
     explanation_stage <- list(
       variant = NULL,
       prompt = NULL,
@@ -4948,6 +5157,255 @@ llm_label_cluster <- function(
       }
     )
     explanation_stage$assembled_output <- final_output
+
+    if (isTRUE(use_subcategorization) &&
+        identical(final_output$status, "labeled")) {
+      subcategorization_category_prompt_bundle <- .build_cluster_label_post_label_category_prompt(
+        evidence = evidence,
+        category_variant = subcategorization_category_variant,
+        selected_label_text = final_output$display_label,
+        label_summary_text = final_output$label_summary,
+        temperature = temperature,
+        top_p = top_p,
+        seed = seed,
+        num_predict = num_predict,
+        prompt_budget_chars = prompt_budget_chars,
+        internal_prompt_version = internal_prompt_version
+      )
+      .expect_prompt_task_type(
+        subcategorization_category_prompt_bundle,
+        "post_label_category",
+        subcategorization_category_variant
+      )
+      subcategorization_retry_budget <- .cluster_label_single_retry_budget(max_retries)
+      subcategorization_category_log_paths <- .post_label_subcategorization_log_paths(
+        workflow_logs$stages$subcategorization,
+        "category"
+      )
+      subcategorization_category_stage <- tryCatch(
+        .run_structured_llm_stage(
+          evidence = evidence,
+          provider = provider,
+          model = model,
+          variant = subcategorization_category_variant,
+          prompt_bundle = subcategorization_category_prompt_bundle,
+          keep_alive = keep_alive,
+          ollama_options = ollama_options,
+          endpoint = endpoint,
+          timeout_sec = timeout_sec,
+          max_retries = subcategorization_retry_budget,
+          request_fn = request_fn,
+          log_paths = subcategorization_category_log_paths,
+          parse_output_fn = function(content) {
+            parsed <- .parse_cluster_label_clean_name_text(
+              content = content,
+              cluster_id = evidence$meta$cluster_id,
+              stage_name = "post_label_category",
+              field_name = "category_label",
+              allow_semicolon = FALSE,
+              allow_none = FALSE,
+              allow_abstain = FALSE
+            )
+            out <- list(
+              schema_version = "0.1.0",
+              cluster_id = evidence$meta$cluster_id,
+              status = "category_ready",
+              category_label = parsed$value,
+              subcategory_labels = character(0)
+            )
+            .attach_cluster_label_parse_info(
+              out,
+              c(parsed$parse_info, list(category_label = TRUE))
+            )
+          },
+          stage_name = "post_label_category",
+          repair_instruction = .default_post_label_category_stage_repair_instruction()
+        ),
+        error = function(e) e
+      )
+
+      subcategorization_uniqueness_stage <- NULL
+      if (!inherits(subcategorization_category_stage, "error")) {
+        final_output$category_label <- subcategorization_category_stage$output$category_label
+        subcategorization_uniqueness_prompt_bundle <- .build_cluster_label_post_label_uniqueness_prompt(
+          evidence = evidence,
+          uniqueness_variant = subcategorization_uniqueness_variant,
+          selected_label_text = final_output$display_label,
+          label_summary_text = final_output$label_summary,
+          category_label_text = final_output$category_label,
+          temperature = temperature,
+          top_p = top_p,
+          seed = seed,
+          num_predict = num_predict,
+          prompt_budget_chars = prompt_budget_chars,
+          internal_prompt_version = internal_prompt_version
+        )
+        .expect_prompt_task_type(
+          subcategorization_uniqueness_prompt_bundle,
+          "post_label_uniqueness",
+          subcategorization_uniqueness_variant
+        )
+        subcategorization_uniqueness_log_paths <- .post_label_subcategorization_log_paths(
+          workflow_logs$stages$subcategorization,
+          "uniqueness"
+        )
+        subcategorization_uniqueness_stage <- tryCatch(
+          .run_structured_llm_stage(
+            evidence = evidence,
+            provider = provider,
+            model = model,
+            variant = subcategorization_uniqueness_variant,
+            prompt_bundle = subcategorization_uniqueness_prompt_bundle,
+            keep_alive = keep_alive,
+            ollama_options = ollama_options,
+            endpoint = endpoint,
+            timeout_sec = timeout_sec,
+            max_retries = subcategorization_retry_budget,
+            request_fn = request_fn,
+            log_paths = subcategorization_uniqueness_log_paths,
+            parse_output_fn = function(content) {
+              parsed <- .parse_cluster_label_clean_name_text(
+                content = content,
+                cluster_id = evidence$meta$cluster_id,
+                stage_name = "post_label_uniqueness",
+                field_name = "subcategory_labels",
+                allow_semicolon = FALSE,
+                allow_none = TRUE,
+                allow_abstain = FALSE
+              )
+              details <- if (identical(tolower(parsed$value), "none")) {
+                character(0)
+              } else {
+                parsed$value
+              }
+              out <- list(
+                schema_version = "0.1.0",
+                cluster_id = evidence$meta$cluster_id,
+                status = "uniqueness_ready",
+                category_label = final_output$category_label,
+                subcategory_labels = details
+              )
+              .attach_cluster_label_parse_info(
+                out,
+                c(parsed$parse_info, list(subcategory_labels = length(details) > 0L))
+              )
+            },
+            stage_name = "post_label_uniqueness",
+            repair_instruction = .default_post_label_uniqueness_stage_repair_instruction()
+          ),
+          error = function(e) e
+        )
+      }
+
+      if (inherits(subcategorization_category_stage, "error")) {
+        subcategorization_stage <- list(
+          variant = NULL,
+          category_variant = subcategorization_category_variant,
+          uniqueness_variant = subcategorization_uniqueness_variant,
+          prompt = NULL,
+          request = NULL,
+          response = NULL,
+          output = list(
+            cluster_id = evidence$meta$cluster_id,
+            status = "subcategorization_failed",
+            category_label = NULL,
+            subcategory_labels = character(0)
+          ),
+          attempts = subcategorization_retry_budget + 1L,
+          logs = workflow_logs$stages$subcategorization,
+          category = list(
+            variant = subcategorization_category_variant,
+            prompt = subcategorization_category_prompt_bundle,
+            request = NULL,
+            response = NULL,
+            output = list(
+              cluster_id = evidence$meta$cluster_id,
+              status = "category_failed",
+              category_label = NULL,
+              subcategory_labels = character(0)
+            ),
+            attempts = subcategorization_retry_budget + 1L,
+            logs = subcategorization_category_log_paths,
+            fallback_used = TRUE,
+            fallback_reason = conditionMessage(subcategorization_category_stage),
+            skipped = TRUE,
+            skip_reason = "category_failed"
+          ),
+          uniqueness = NULL,
+          fallback_used = TRUE,
+          fallback_reason = conditionMessage(subcategorization_category_stage),
+          skipped = TRUE,
+          skip_reason = "category_failed"
+        )
+      } else {
+        uniqueness_failed <- inherits(subcategorization_uniqueness_stage, "error")
+        if (isTRUE(uniqueness_failed)) {
+          uniqueness_output <- list(
+            cluster_id = evidence$meta$cluster_id,
+            status = "uniqueness_failed",
+            category_label = final_output$category_label,
+            subcategory_labels = character(0)
+          )
+          uniqueness_attempts <- subcategorization_retry_budget + 1L
+        } else {
+          uniqueness_output <- subcategorization_uniqueness_stage$output
+          uniqueness_attempts <- subcategorization_uniqueness_stage$attempts %||% 0L
+          final_output$subcategory_labels <- uniqueness_output$subcategory_labels
+        }
+
+        subcategorization_stage <- list(
+          variant = NULL,
+          category_variant = subcategorization_category_variant,
+          uniqueness_variant = subcategorization_uniqueness_variant,
+          prompt = NULL,
+          request = NULL,
+          response = NULL,
+          output = list(
+            cluster_id = evidence$meta$cluster_id,
+            status = if (isTRUE(uniqueness_failed)) {
+              "subcategorization_partial"
+            } else {
+              "subcategorization_ready"
+            },
+            category_label = final_output$category_label,
+            subcategory_labels = final_output$subcategory_labels %||% character(0)
+          ),
+          attempts = as.integer(
+            (subcategorization_category_stage$attempts %||% 0L) +
+              uniqueness_attempts
+          ),
+          logs = workflow_logs$stages$subcategorization,
+          category = subcategorization_category_stage,
+          uniqueness = if (isTRUE(uniqueness_failed)) {
+            list(
+              variant = subcategorization_uniqueness_variant,
+              prompt = subcategorization_uniqueness_prompt_bundle,
+              request = NULL,
+              response = NULL,
+              output = uniqueness_output,
+              attempts = uniqueness_attempts,
+              logs = subcategorization_uniqueness_log_paths,
+              fallback_used = TRUE,
+              fallback_reason = conditionMessage(subcategorization_uniqueness_stage),
+              skipped = TRUE,
+              skip_reason = "uniqueness_failed"
+            )
+          } else {
+            subcategorization_uniqueness_stage
+          },
+          fallback_used = isTRUE(uniqueness_failed),
+          fallback_reason = if (isTRUE(uniqueness_failed)) {
+            conditionMessage(subcategorization_uniqueness_stage)
+          } else {
+            NULL
+          },
+          skipped = FALSE,
+          skip_reason = if (isTRUE(uniqueness_failed)) "uniqueness_failed" else NULL
+        )
+        explanation_stage$assembled_output <- final_output
+      }
+    }
+
     .write_workflow_final_output(workflow_logs, final_output)
 
     label_attempt_total <- sum(vapply(label_stage$attempts, function(x) {
@@ -4956,7 +5414,8 @@ llm_label_cluster <- function(
     total_attempts <- as.integer(
       (draft_stage$attempts %||% 0L) +
         label_attempt_total +
-        (terminal_stage$attempts %||% 0L)
+        (terminal_stage$attempts %||% 0L) +
+        (subcategorization_stage$attempts %||% 0L)
     )
 
     .write_workflow_metadata(
@@ -4975,6 +5434,11 @@ llm_label_cluster <- function(
         summary_variant = summary_variant,
         abstain_reason_variant = abstain_reason_variant,
         label_variants = unname(cascade$public_variants),
+        subcategorization_enabled = isTRUE(use_subcategorization),
+        subcategorization_strategy = if (isTRUE(use_subcategorization)) "post_label" else NULL,
+        subcategorization_category_variant = if (isTRUE(use_subcategorization)) subcategorization_category_variant else NULL,
+        subcategorization_uniqueness_variant = if (isTRUE(use_subcategorization)) subcategorization_uniqueness_variant else NULL,
+        subcategorization_status = subcategorization_stage$output$status %||% NULL,
         selected_label_variant = label_stage$selected_public_variant,
         label_stage_exhausted = isTRUE(label_stage$exhausted),
         label_stage_failure_reason = .as_scalar_character(
@@ -4990,7 +5454,13 @@ llm_label_cluster <- function(
         final_schema_path = terminal_prompt_bundle$schema_path,
         base_url = endpoint,
         status = "success",
-        executed_stages = if (isTRUE(use_brainstorm)) 3L else 2L,
+        executed_stages = as.integer(
+          (if (isTRUE(use_brainstorm)) 3L else 2L) +
+            (if (!is.null(subcategorization_stage[["category", exact = TRUE]]) &&
+                 !isTRUE(subcategorization_stage[["category", exact = TRUE]]$skipped)) 1L else 0L) +
+            (if (!is.null(subcategorization_stage[["uniqueness", exact = TRUE]]) &&
+                 !isTRUE(subcategorization_stage[["uniqueness", exact = TRUE]]$skipped)) 1L else 0L)
+        ),
         attempts = total_attempts,
         final_output_status = final_output$status,
         run_dir = workflow_logs$run_dir
@@ -5008,6 +5478,14 @@ llm_label_cluster <- function(
       response = terminal_stage$response,
       output = final_output,
       attempts = total_attempts,
+      metadata = list(
+        subcategorization_enabled = isTRUE(use_subcategorization),
+        subcategorization_strategy = if (isTRUE(use_subcategorization)) "post_label" else NULL,
+        subcategorization_status = subcategorization_stage$output$status %||% NULL,
+        subcategorization_category_variant = if (isTRUE(use_subcategorization)) subcategorization_category_variant else NULL,
+        subcategorization_uniqueness_variant = if (isTRUE(use_subcategorization)) subcategorization_uniqueness_variant else NULL,
+        internal_prompt_version = internal_prompt_version
+      ),
       schema_path = terminal_prompt_bundle$schema_path,
       logs = workflow_logs,
       workflow = list(
@@ -5018,6 +5496,9 @@ llm_label_cluster <- function(
         summary = summary_stage,
         abstain_reason_variant = abstain_reason_variant,
         abstain_reason = abstain_reason_stage,
+        subcategorization_category_variant = subcategorization_category_variant,
+        subcategorization_uniqueness_variant = subcategorization_uniqueness_variant,
+        subcategorization = if (isTRUE(use_subcategorization)) subcategorization_stage else NULL,
         explanation_variant = NULL,
         explanation = explanation_stage
       )

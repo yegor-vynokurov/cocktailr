@@ -244,6 +244,19 @@
         extracted_subcategory_labels = isTRUE(parse_info$subcategory_labels)
       )
     )
+  } else if (identical(stage_name, "post_label_subcategorization")) {
+    category_label <- .as_scalar_character(parsed_output$category_label)
+    subcategory_labels <- parsed_output$subcategory_labels %||% character(0)
+    artifact <- c(
+      artifact,
+      list(
+        status = .as_scalar_character(parsed_output$status %||% NULL),
+        category_label = if (.is_non_empty_scalar_character(category_label)) category_label else NULL,
+        subcategory_labels = .cluster_label_stage_subcategory_text(subcategory_labels),
+        extracted_category_label = isTRUE(parse_info$category_label),
+        extracted_subcategory_labels = isTRUE(parse_info$subcategory_labels)
+      )
+    )
   } else if (identical(stage_name, "label_summary")) {
     label_summary <- .as_scalar_character(parsed_output$label_summary)
     artifact <- c(
@@ -1114,6 +1127,86 @@
   )
 }
 
+.parse_cluster_label_post_label_subcategorization_text <- function(content, cluster_id) {
+  unwrap_info <- .cluster_label_text_code_fence_info(content)
+  text <- unwrap_info$text
+  lines <- unlist(strsplit(text, "\n", fixed = TRUE), use.names = FALSE)
+  lines <- trimws(lines)
+  lines <- lines[nzchar(lines)]
+
+  field_value <- function(prefix_pattern) {
+    hit <- grep(
+      paste0("^\\**\\s*", prefix_pattern, "\\s*\\**\\s*:"),
+      lines,
+      ignore.case = TRUE,
+      perl = TRUE,
+      value = TRUE
+    )
+    if (!length(hit)) {
+      return(NULL)
+    }
+    value <- trimws(sub("^[^:]+:\\s*", "", hit[[1L]], perl = TRUE))
+    trimws(gsub("^\\**|\\**$", "", value, perl = TRUE))
+  }
+
+  group_name <- field_value("GENERAL[ _]+GROUP[ _]+NAME")
+  details_text <- field_value("UNIQUENESS[ _]+DETAILS")
+
+  if (!.is_non_empty_scalar_character(group_name)) {
+    stop("LLM post-label subcategorization output must provide GENERAL_GROUP_NAME.")
+  }
+
+  .validate_cluster_label_clean_name_value(
+    group_name,
+    stage_name = "post_label_subcategorization",
+    field_name = "general_group_name",
+    allow_semicolon = FALSE,
+    allow_none = FALSE,
+    allow_abstain = FALSE
+  )
+
+  details <- if (is.null(details_text) ||
+                 !nzchar(trimws(details_text)) ||
+                 identical(tolower(trimws(details_text)), "none")) {
+    character(0)
+  } else {
+    .parse_cluster_label_subcategory_labels(details_text)
+  }
+
+  if (length(details)) {
+    for (detail in details) {
+      .validate_cluster_label_clean_name_value(
+        detail,
+        stage_name = "post_label_subcategorization",
+        field_name = "uniqueness_details",
+        allow_semicolon = FALSE,
+        allow_none = FALSE,
+        allow_abstain = FALSE
+      )
+    }
+  }
+
+  out <- list(
+    schema_version = "0.1.0",
+    cluster_id = cluster_id,
+    status = "subcategorization_ready",
+    category_label = group_name,
+    subcategory_labels = details
+  )
+
+  .attach_cluster_label_parse_info(
+    out,
+    list(
+      parser_type = "post_label_subcategorization_text_v1",
+      parsing_rule = "general_group_and_uniqueness_fields",
+      code_fence_salvaged = isTRUE(unwrap_info$code_fence_salvaged),
+      nonempty_line_count = length(lines),
+      category_label = TRUE,
+      subcategory_labels = length(details) > 0L
+    )
+  )
+}
+
 .parse_cluster_label_clean_name_text <- function(
     content,
     cluster_id,
@@ -1458,7 +1551,7 @@
   }
 
   if (identical(workflow_steps, 3L)) {
-    return(c("draft", "label", "summary", "abstain_reason"))
+    return(c("draft", "label", "summary", "abstain_reason", "subcategorization"))
   }
 
   "label"

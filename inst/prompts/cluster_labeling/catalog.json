@@ -13,6 +13,8 @@
     "{{DRAFT_ANALYSIS_TEXT}}",
     "{{LABEL_SELECTION_TEXT}}",
     "{{SELECTED_LABEL_TEXT}}",
+    "{{LABEL_SUMMARY_TEXT}}",
+    "{{CATEGORY_LABEL_TEXT}}",
     "{{LABEL_DECISION_TEXT}}"
   ],
   "default_generation": {
@@ -43,7 +45,9 @@
     "label_decision_broad_v2",
     "label_decision_shorten_repair_v1",
     "label_summary_pass_v2",
-    "abstain_reason_pass_v2"
+    "abstain_reason_pass_v2",
+    "post_label_category_v1",
+    "post_label_uniqueness_v1"
   ],
   "internal_draft_variant": "draft_analysis_v1",
   "internal_explanation_variant": "explanation_pass_v1",
@@ -59,6 +63,8 @@
   },
   "internal_v2_label_summary_variant": "label_summary_pass_v2",
   "internal_v2_abstain_reason_variant": "abstain_reason_pass_v2",
+  "internal_post_label_category_variant": "post_label_category_v1",
+  "internal_post_label_uniqueness_variant": "post_label_uniqueness_v1",
   "legacy_variant_aliases": {
     "concise_label_v1": "label_primary_v1",
     "conservative_interpretation_v1": "label_soft_v1",
@@ -216,6 +222,20 @@
       "user_prompt_path": "../internal_cluster_labeling/v1/user_abstain_reason_pass_v2.md",
       "description": "Staged v2 internal abstain-reason prompt. Explain a fixed abstain decision in compact plain text.",
       "task_type": "abstain_reason",
+      "temperature": 0.04,
+      "top_p": 0.9
+    },
+    "post_label_category_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v5/user_post_label_subcategorization_v1.md",
+      "description": "Experimental post-label category prompt. Derives one general group name from a fixed label and summary.",
+      "task_type": "post_label_category",
+      "temperature": 0.04,
+      "top_p": 0.9
+    },
+    "post_label_uniqueness_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v5/user_post_label_uniqueness_v1.md",
+      "description": "Experimental post-label uniqueness prompt. Derives one short difference from a fixed label, summary, and general group name.",
+      "task_type": "post_label_uniqueness",
       "temperature": 0.04,
       "top_p": 0.9
     },

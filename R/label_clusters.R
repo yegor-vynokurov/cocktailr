@@ -84,6 +84,10 @@
 #'   full stored human label. The extra shortening-repair prompt is available
 #'   only when the selected \code{internal_prompt_version} bundle includes it
 #'   (for example the packaged \code{"v2"} bundle).
+#' @param use_subcategorization Logical. Forwarded to
+#'   \code{\link{llm_label_cluster}}. Default \code{FALSE}; when enabled, a
+#'   post-label experimental classifier fills category-compatible output fields
+#'   after the ordinary label and summary are fixed.
 #' @param max_iterations Integer workflow budget. Currently allowed values are
 #'   \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports
 #'   the full EOF retry ladder \code{2400 -> 4800 -> 9600}.
@@ -187,6 +191,7 @@ label_clusters <- function(
     workflow_steps = 3L,
     use_brainstorm = TRUE,
     short_label_with_llm = FALSE,
+    use_subcategorization = FALSE,
     internal_prompt_version = .default_cluster_label_internal_prompt_version(),
     debug = FALSE,
     max_iterations = 3L,
@@ -212,6 +217,10 @@ label_clusters <- function(
   short_label_with_llm <- .arg_single_flag(
     short_label_with_llm,
     "short_label_with_llm"
+  )
+  use_subcategorization <- .arg_single_flag(
+    use_subcategorization,
+    "use_subcategorization"
   )
   internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
     internal_prompt_version
@@ -343,6 +352,7 @@ label_clusters <- function(
       workflow_steps = workflow_steps,
       use_brainstorm = use_brainstorm,
       short_label_with_llm = short_label_with_llm,
+      use_subcategorization = use_subcategorization,
       internal_prompt_version = internal_prompt_version,
       dry_run = TRUE,
       request_fn = request_fn
@@ -370,6 +380,7 @@ label_clusters <- function(
       workflow_steps = workflow_steps,
       use_brainstorm = use_brainstorm,
       short_label_with_llm = short_label_with_llm,
+      use_subcategorization = use_subcategorization,
       internal_prompt_version = internal_prompt_version,
       max_iterations = max_iterations,
       review_dir = review_dir,
@@ -404,6 +415,12 @@ label_clusters <- function(
       ),
       subcategory_labels = .cluster_label_subcategory_labels_text(
         cluster_run$llm_result$output$subcategory_labels
+      ),
+      subcategorization_enabled = isTRUE(
+        cluster_run$llm_result$metadata$subcategorization_enabled %||% FALSE
+      ),
+      subcategorization_strategy = .as_scalar_character(
+        cluster_run$llm_result$metadata$subcategorization_strategy %||% NA_character_
       ),
       label_tier = cluster_run$label_tier %||% NA_character_,
       is_speculative = isTRUE(cluster_run$is_speculative),
@@ -683,6 +700,7 @@ label_clusters <- function(
     workflow_steps,
     use_brainstorm,
     short_label_with_llm,
+    use_subcategorization,
     internal_prompt_version,
     max_iterations,
     review_dir,
@@ -788,6 +806,7 @@ label_clusters <- function(
             workflow_steps = workflow_steps,
             use_brainstorm = use_brainstorm,
             short_label_with_llm = short_label_with_llm,
+            use_subcategorization = use_subcategorization,
             internal_prompt_version = internal_prompt_version,
             label_mode = label_mode,
             ollama_options = ollama_options
@@ -813,6 +832,7 @@ label_clusters <- function(
             workflow_steps = workflow_steps,
             use_brainstorm = use_brainstorm,
             short_label_with_llm = short_label_with_llm,
+            use_subcategorization = use_subcategorization,
             internal_prompt_version = internal_prompt_version,
             dry_run = FALSE,
             log_dir = log_dir,
@@ -1680,6 +1700,7 @@ label_clusters <- function(
     workflow_steps,
     use_brainstorm,
     short_label_with_llm,
+    use_subcategorization,
     internal_prompt_version,
     label_mode,
     ollama_options
@@ -1720,6 +1741,7 @@ label_clusters <- function(
     workflow_steps = workflow_steps,
     use_brainstorm = use_brainstorm,
     short_label_with_llm = short_label_with_llm,
+    use_subcategorization = use_subcategorization,
     internal_prompt_version = internal_prompt_version,
     dry_run = FALSE,
     log_dir = log_dir,

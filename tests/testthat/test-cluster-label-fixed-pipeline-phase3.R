@@ -77,6 +77,12 @@
   if (grepl("Task mode: `subcategory_decision_", user_text, fixed = TRUE)) {
     return("subcategory")
   }
+  if (grepl("Task mode: `post_label_category_v1`", user_text, fixed = TRUE)) {
+    return("post_label_category")
+  }
+  if (grepl("Task mode: `post_label_uniqueness_v1`", user_text, fixed = TRUE)) {
+    return("post_label_uniqueness")
+  }
   if (grepl("Task mode: `draft_analysis_v1`", user_text, fixed = TRUE)) {
     return("draft")
   }
@@ -553,6 +559,212 @@ test_that("summary parser rejects the plain ABSTAIN token for labeled outputs", 
     "label-summary output must not be the plain abstain token",
     fixed = TRUE
   )
+})
+
+test_that("fixed pipeline leaves post-label subcategorization disabled by default", {
+  ev <- .build_phase3_test_cluster_evidence()
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      selection = .phase3_selection_text(display_label = "compact species core"),
+      summary = "The same compact species core recurs across the evidence bundle.",
+      post_label_category = stop("Subcategorization stage should be disabled."),
+      post_label_uniqueness = stop("Subcategorization stage should be disabled."),
+      stop("Unexpected stage in disabled subcategorization test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    use_brainstorm = FALSE,
+    use_subcategorization = FALSE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$stages, c("selection", "summary"))
+  expect_null(res$workflow$subcategorization %||% NULL)
+  expect_false(isTRUE(res$metadata$subcategorization_enabled %||% FALSE))
+  expect_null(res$output$category_label %||% NULL)
+  expect_equal(res$output$subcategory_labels %||% character(0), character(0))
+})
+
+test_that("fixed pipeline can classify completed labels after summary", {
+  ev <- .build_phase3_test_cluster_evidence()
+  log_dir <- file.path(tempdir(), "cocktailr_v5_post_label_subcategorization")
+  unlink(log_dir, recursive = TRUE, force = TRUE)
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      selection = .phase3_selection_text(display_label = "dry base-rich grassland"),
+      summary = "The dry base-rich grassland signal recurs across the evidence bundle.",
+      post_label_category = {
+        expect_match(payload$messages[[2]]$content, "Fixed label:", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "dry base-rich grassland", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "Fixed description:", fixed = TRUE)
+        expect_false(grepl("Cluster:", payload$messages[[2]]$content, fixed = TRUE))
+        expect_false(grepl("Dataset context:", payload$messages[[2]]$content, fixed = TRUE))
+        expect_false(grepl("Draft", payload$messages[[2]]$content, fixed = TRUE))
+        "dry grassland"
+      },
+      post_label_uniqueness = {
+        expect_match(payload$messages[[2]]$content, "General name:", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "dry grassland", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "Fixed label:", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "Fixed description:", fixed = TRUE)
+        expect_false(grepl("Cluster:", payload$messages[[2]]$content, fixed = TRUE))
+        expect_false(grepl("Dataset context:", payload$messages[[2]]$content, fixed = TRUE))
+        expect_false(grepl("Draft", payload$messages[[2]]$content, fixed = TRUE))
+        "base-rich open"
+      },
+      stop("Unexpected stage in enabled subcategorization test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v5",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    max_retries = 0L,
+    debug = TRUE,
+    log_dir = log_dir,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+  metadata <- jsonlite::fromJSON(res$logs$metadata, simplifyVector = TRUE)
+
+  expect_equal(state$stages, c("selection", "summary", "post_label_category", "post_label_uniqueness"))
+  expect_equal(res$output$status, "labeled")
+  expect_equal(res$output$display_label, "dry base-rich grassland")
+  expect_equal(
+    res$output$label_summary,
+    "The dry base-rich grassland signal recurs across the evidence bundle."
+  )
+  expect_equal(res$output$category_label, "dry grassland")
+  expect_equal(res$output$subcategory_labels, "base-rich open")
+  expect_true(isTRUE(res$metadata$subcategorization_enabled))
+  expect_equal(res$metadata$subcategorization_strategy, "post_label")
+  expect_equal(res$workflow$subcategorization$output$status, "subcategorization_ready")
+  expect_equal(res$workflow$subcategorization$category$output$status, "category_ready")
+  expect_equal(res$workflow$subcategorization$uniqueness$output$status, "uniqueness_ready")
+  expect_equal(metadata$subcategorization_enabled, TRUE)
+  expect_equal(metadata$subcategorization_strategy, "post_label")
+  expect_equal(metadata$executed_stages, 4L)
+})
+
+test_that("fixed pipeline preserves labels when post-label subcategorization fails", {
+  ev <- .build_phase3_test_cluster_evidence()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    content <- switch(
+      stage,
+      selection = .phase3_selection_text(display_label = "compact species core"),
+      summary = "The same compact species core recurs across the evidence bundle.",
+      post_label_category = "CATEGORY: broad group",
+      post_label_uniqueness = stop("Uniqueness stage should not run after category failure."),
+      stop("Unexpected stage in failing subcategorization test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v5",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$output$status, "labeled")
+  expect_equal(res$output$display_label, "compact species core")
+  expect_equal(
+    res$output$label_summary,
+    "The same compact species core recurs across the evidence bundle."
+  )
+  expect_null(res$output$category_label %||% NULL)
+  expect_equal(res$output$subcategory_labels, character(0))
+  expect_equal(res$workflow$subcategorization$output$status, "subcategorization_failed")
+  expect_true(isTRUE(res$workflow$subcategorization$fallback_used))
+  expect_true(isTRUE(res$workflow$subcategorization$skipped))
+})
+
+test_that("fixed pipeline preserves category when post-label uniqueness fails", {
+  ev <- .build_phase3_test_cluster_evidence()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    content <- switch(
+      stage,
+      selection = .phase3_selection_text(display_label = "compact species core"),
+      summary = "The same compact species core recurs across the evidence bundle.",
+      post_label_category = "dry grassland",
+      post_label_uniqueness = "SUBCATEGORY: base-rich open",
+      stop("Unexpected stage in partial subcategorization test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v5",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$output$status, "labeled")
+  expect_equal(res$output$category_label, "dry grassland")
+  expect_equal(res$output$subcategory_labels, character(0))
+  expect_equal(res$workflow$subcategorization$output$status, "subcategorization_partial")
+  expect_true(isTRUE(res$workflow$subcategorization$fallback_used))
+  expect_true(isTRUE(res$workflow$subcategorization$uniqueness$skipped))
 })
 
 test_that("all-abstain path stays abstain and assembles fallback abstain reason programmatically", {

@@ -99,6 +99,12 @@
   if (grepl("Task mode: `subcategory_decision_", user_text, fixed = TRUE)) {
     return("subcategory")
   }
+  if (grepl("Task mode: `post_label_category_v1`", user_text, fixed = TRUE)) {
+    return("post_label_category")
+  }
+  if (grepl("Task mode: `post_label_uniqueness_v1`", user_text, fixed = TRUE)) {
+    return("post_label_uniqueness")
+  }
   if (grepl("Task mode: `draft_analysis_v1`", user_text, fixed = TRUE)) {
     return("draft")
   }
@@ -273,6 +279,60 @@ test_that("label_clusters propagates decomposed v4 category fields", {
   expect_equal(res$summary$subcategory_labels[[1]], "base-rich; open")
   expect_equal(res$label_registry$category_label[[1]], "dry grassland")
   expect_equal(res$label_registry$subcategory_labels[[1]], "base-rich; open")
+  expect_match(
+    paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n"),
+    "- Category label: `dry grassland`",
+    fixed = TRUE
+  )
+})
+
+test_that("label_clusters forwards and summarizes post-label subcategorization", {
+  x <- .build_label_clusters_test_cocktail()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+    content <- switch(
+      stage,
+      selection = .label_clusters_test_selection_output(
+        display_label = "dry base-rich grassland"
+      ),
+      summary = "The dry base-rich grassland signal recurs across the evidence bundle.",
+      post_label_category = "dry grassland",
+      post_label_uniqueness = "base-rich open",
+      stop("Unexpected stage in v5 subcategorization label_clusters test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-v5-subcategorization")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    labels_for_imgs = TRUE,
+    internal_prompt_version = "v5",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$summary$category_label[[1]], "dry grassland")
+  expect_equal(res$summary$subcategory_labels[[1]], "base-rich open")
+  expect_equal(res$summary$subcategorization_enabled[[1]], TRUE)
+  expect_equal(res$summary$subcategorization_strategy[[1]], "post_label")
+  expect_equal(res$label_registry$category_label[[1]], "dry grassland")
+  expect_equal(res$label_registry$subcategory_labels[[1]], "base-rich open")
   expect_match(
     paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n"),
     "- Category label: `dry grassland`",
