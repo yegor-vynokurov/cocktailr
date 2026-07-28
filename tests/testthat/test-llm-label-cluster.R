@@ -311,7 +311,6 @@ test_that("post-label subcategorization prompt bundle is isolated in v5", {
     "user_label_decision_primary_v2.md",
     "user_label_decision_soft_v2.md",
     "user_label_decision_broad_v2.md",
-    "user_label_summary_pass_v2.md",
     "user_abstain_reason_pass_v2.md"
   )
   for (ordinary_file in ordinary_files) {
@@ -353,6 +352,102 @@ test_that("post-label subcategorization prompt bundle is isolated in v5", {
   expect_false(grepl("Cluster:", uniqueness_prompt_text, fixed = TRUE))
   expect_false(grepl("Dataset context:", uniqueness_prompt_text, fixed = TRUE))
   expect_false(grepl("Draft", uniqueness_prompt_text, fixed = TRUE))
+})
+
+test_that("staged general-name prompt bundle is isolated in v6", {
+  ev <- .build_test_cluster_evidence()
+  v1_dir <- system.file(
+    "prompts",
+    "internal_cluster_labeling",
+    "v1",
+    package = "cocktailr"
+  )
+  v6_dir <- system.file(
+    "prompts",
+    "internal_cluster_labeling",
+    "v6",
+    package = "cocktailr"
+  )
+
+  ordinary_files <- c(
+    "user_draft_analysis_v1.md",
+    "user_label_decision_primary_v2.md",
+    "user_label_decision_soft_v2.md",
+    "user_label_decision_broad_v2.md",
+    "user_abstain_reason_pass_v2.md"
+  )
+  for (ordinary_file in ordinary_files) {
+    expect_true(file.exists(file.path(v6_dir, ordinary_file)))
+    expect_equal(
+      readLines(file.path(v6_dir, ordinary_file), warn = FALSE),
+      readLines(file.path(v1_dir, ordinary_file), warn = FALSE)
+    )
+  }
+  expect_true(file.exists(file.path(v6_dir, "user_label_summary_pass_v2.md")))
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    internal_prompt_version = "v6",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    dry_run = TRUE
+  )
+
+  expect_equal(req$workflow$category$prompt$task_type, "general_name_decision")
+  expect_equal(req$workflow$subcategory$prompt$task_type, "uniqueness_detail_decision")
+  expect_match(
+    req$workflow$category$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v6/user_general_name_decision_v1.md",
+    fixed = TRUE
+  )
+  expect_match(
+    req$workflow$subcategory$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v6/user_uniqueness_detail_decision_v1.md",
+    fixed = TRUE
+  )
+
+  general_prompt_text <- req$workflow$category$prompt$user
+  uniqueness_prompt_text <- req$workflow$subcategory$prompt$user
+  expect_match(general_prompt_text, "general name", fixed = TRUE)
+  expect_match(general_prompt_text, "vegetation cluster", fixed = TRUE)
+  expect_match(uniqueness_prompt_text, "could differ", fixed = TRUE)
+  expect_match(uniqueness_prompt_text, "General name:", fixed = TRUE)
+  summary_prompt_text <- req$workflow$summary$prompt$user
+  expect_match(summary_prompt_text, "Fixed general name:", fixed = TRUE)
+  expect_match(summary_prompt_text, "Fixed uniqueness detail:", fixed = TRUE)
+  expect_false(grepl("category", general_prompt_text, ignore.case = TRUE))
+  expect_false(grepl("subcategory", general_prompt_text, ignore.case = TRUE))
+  expect_false(grepl("category", uniqueness_prompt_text, ignore.case = TRUE))
+  expect_false(grepl("subcategory", uniqueness_prompt_text, ignore.case = TRUE))
+  expect_false(grepl("Cluster:", general_prompt_text, fixed = TRUE))
+  expect_false(grepl("Dataset context:", general_prompt_text, fixed = TRUE))
+  expect_false(grepl("Draft", general_prompt_text, fixed = TRUE))
+  expect_false(grepl("Cluster:", uniqueness_prompt_text, fixed = TRUE))
+  expect_false(grepl("Dataset context:", uniqueness_prompt_text, fixed = TRUE))
+  expect_false(grepl("Draft", uniqueness_prompt_text, fixed = TRUE))
+})
+
+test_that("v6 prompt version keeps the standard flow when subcategorization is off", {
+  ev <- .build_test_cluster_evidence()
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    internal_prompt_version = "v6",
+    use_brainstorm = FALSE,
+    use_subcategorization = FALSE,
+    dry_run = TRUE
+  )
+
+  expect_equal(req$workflow$label$variants[[1]]$prompt$task_type, "label_decision")
+  expect_null(req$workflow$subcategorization %||% NULL)
+  expect_false("category" %in% names(req$workflow))
+  expect_match(
+    req$workflow$summary$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v6/user_label_summary_pass_v2.md",
+    fixed = TRUE
+  )
 })
 
 test_that("constrained label mode injects the coarse vocabulary into the selection prompt", {

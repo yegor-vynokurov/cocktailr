@@ -79,10 +79,13 @@
 #'   stored label in \code{display_label}. The shortening-repair prompt is
 #'   available only when the selected \code{internal_prompt_version} bundle
 #'   includes that asset (for example the packaged \code{"v2"} bundle).
-#' @param use_subcategorization Logical. If \code{TRUE}, run an experimental
-#'   post-label classifier after the label-summary stage for labeled outputs.
-#'   Default \code{FALSE}; the ordinary staged labeling flow is unchanged when
-#'   disabled.
+#' @param use_subcategorization Logical. If \code{TRUE}, fill the
+#'   category-compatible output fields with an experimental subcategorization
+#'   strategy selected by \code{internal_prompt_version}: the packaged
+#'   \code{"v5"} bundle runs a post-label classifier after label summary, and
+#'   the packaged \code{"v6"} bundle runs a staged general-name /
+#'   uniqueness-detail flow before label summary. Default \code{FALSE}; the
+#'   ordinary staged labeling flow is unchanged when disabled.
 #' @param internal_prompt_version Character scalar naming the subdirectory
 #'   under \code{inst/prompts/internal_cluster_labeling/} that contains the
 #'   active internal service-prompt bundle. Default \code{"v1"}. Copy that
@@ -2402,10 +2405,25 @@ llm_label_cluster <- function(
   )
 }
 
+.default_cluster_label_general_name_variants <- function() {
+  .default_cluster_label_general_name_variant()
+}
+
+.default_cluster_label_uniqueness_detail_variants <- function() {
+  .default_cluster_label_uniqueness_detail_variant()
+}
+
 .is_cluster_label_decomposed_internal_prompt_version <- function(internal_prompt_version) {
   identical(
     .normalize_cluster_label_internal_prompt_version(internal_prompt_version),
     "v4"
+  )
+}
+
+.is_cluster_label_staged_general_name_internal_prompt_version <- function(internal_prompt_version) {
+  identical(
+    .normalize_cluster_label_internal_prompt_version(internal_prompt_version),
+    "v6"
   )
 }
 
@@ -3782,13 +3800,29 @@ llm_label_cluster <- function(
     draft_candidates_override = NULL,
     selection_context_extra_text = NULL,
     explanation_context_extra_text = NULL,
-    workflow_variant_suffix = NULL
+    workflow_variant_suffix = NULL,
+    category_variants = NULL,
+    subcategory_variants = NULL,
+    category_task_type = "category_decision",
+    subcategory_task_type = "subcategory_decision",
+    parse_category_output_fn = .parse_cluster_label_category_decision_text,
+    parse_subcategory_output_fn = .parse_cluster_label_subcategory_decision_text,
+    subcategorization_strategy = NULL
 ) {
   draft_variant <- .default_cluster_label_draft_variant()
-  category_variants <- .default_cluster_label_category_variants()
-  subcategory_variants <- .default_cluster_label_subcategory_variants()
+  if (is.null(category_variants)) {
+    category_variants <- .default_cluster_label_category_variants()
+  }
+  if (is.null(subcategory_variants)) {
+    subcategory_variants <- .default_cluster_label_subcategory_variants()
+  }
   summary_variant <- .default_cluster_label_v2_label_summary_variant()
   abstain_reason_variant <- .default_cluster_label_v2_abstain_reason_variant()
+  category_task_type <- .as_scalar_character(category_task_type)
+  subcategory_task_type <- .as_scalar_character(subcategory_task_type)
+  subcategorization_strategy <- .as_scalar_character(
+    subcategorization_strategy %||% NA_character_
+  )
   workflow_variant_suffix <- .as_scalar_character(workflow_variant_suffix)
   if (is.na(workflow_variant_suffix) || !nzchar(workflow_variant_suffix)) {
     workflow_variant_suffix <- "_decomposed"
@@ -3856,7 +3890,7 @@ llm_label_cluster <- function(
     prompt_budget_chars = prompt_budget_chars,
     internal_prompt_version = internal_prompt_version
   )
-  .expect_prompt_task_type(category_prompt_bundle, "category_decision", category_variants[[1L]])
+  .expect_prompt_task_type(category_prompt_bundle, category_task_type, category_variants[[1L]])
 
   subcategory_prompt_bundle <- .build_cluster_label_subcategory_prompt(
     evidence = evidence,
@@ -3872,7 +3906,7 @@ llm_label_cluster <- function(
     prompt_budget_chars = prompt_budget_chars,
     internal_prompt_version = internal_prompt_version
   )
-  .expect_prompt_task_type(subcategory_prompt_bundle, "subcategory_decision", subcategory_variants[[1L]])
+  .expect_prompt_task_type(subcategory_prompt_bundle, subcategory_task_type, subcategory_variants[[1L]])
 
   dry_selection_output <- .cluster_label_decomposed_selection_output(
     evidence = evidence,
@@ -3963,6 +3997,8 @@ llm_label_cluster <- function(
       workflow_steps = workflow_steps,
       use_brainstorm = isTRUE(use_brainstorm),
       internal_prompt_version = internal_prompt_version,
+      subcategorization_enabled = !is.na(subcategorization_strategy),
+      subcategorization_strategy = if (!is.na(subcategorization_strategy)) subcategorization_strategy else NULL,
       draft_override_used = isTRUE(has_draft_override),
       draft_variant = draft_variant,
       category_variants = unname(category_variants),
@@ -4051,8 +4087,8 @@ llm_label_cluster <- function(
       evidence = evidence,
       provider = provider,
       model = model,
-      stage_name = "category_decision",
-      task_type = "category_decision",
+      stage_name = category_task_type,
+      task_type = category_task_type,
       variants = category_variants,
       build_prompt_fn = function(category_variant) {
         .build_cluster_label_category_prompt(
@@ -4070,7 +4106,7 @@ llm_label_cluster <- function(
         )
       },
       parse_output_fn = function(content) {
-        .parse_cluster_label_category_decision_text(
+        parse_category_output_fn(
           content = content,
           cluster_id = evidence$meta$cluster_id
         )
@@ -4114,8 +4150,8 @@ llm_label_cluster <- function(
         evidence = evidence,
         provider = provider,
         model = model,
-        stage_name = "subcategory_decision",
-        task_type = "subcategory_decision",
+        stage_name = subcategory_task_type,
+        task_type = subcategory_task_type,
         variants = subcategory_variants,
         build_prompt_fn = function(subcategory_variant) {
           .build_cluster_label_subcategory_prompt(
@@ -4134,7 +4170,7 @@ llm_label_cluster <- function(
           )
         },
         parse_output_fn = function(content) {
-          .parse_cluster_label_subcategory_decision_text(
+          parse_subcategory_output_fn(
             content = content,
             cluster_id = evidence$meta$cluster_id
           )
@@ -4163,7 +4199,11 @@ llm_label_cluster <- function(
           subcategory_labels = character(0)
         )
         subcategory_stage$fallback_used <- TRUE
-        subcategory_stage$fallback_reason <- "No clean subcategory answer was selected; keeping category only."
+        subcategory_stage$fallback_reason <- if (identical(subcategory_task_type, "uniqueness_detail_decision")) {
+          "No clean uniqueness detail answer was selected; keeping general name only."
+        } else {
+          "No clean subcategory answer was selected; keeping category only."
+        }
       }
 
       decision_output <- .cluster_label_decomposed_selection_output(
@@ -4356,6 +4396,9 @@ llm_label_cluster <- function(
         variant = workflow_variant,
         workflow_steps = workflow_steps,
         use_brainstorm = isTRUE(use_brainstorm),
+        internal_prompt_version = internal_prompt_version,
+        subcategorization_enabled = !is.na(subcategorization_strategy),
+        subcategorization_strategy = if (!is.na(subcategorization_strategy)) subcategorization_strategy else NULL,
         draft_override_used = isTRUE(has_draft_override),
         draft_variant = draft_variant,
         category_variants = unname(category_variants),
@@ -4391,6 +4434,14 @@ llm_label_cluster <- function(
       response = terminal_stage$response,
       output = final_output,
       attempts = total_attempts,
+      metadata = list(
+        subcategorization_enabled = !is.na(subcategorization_strategy),
+        subcategorization_strategy = if (!is.na(subcategorization_strategy)) subcategorization_strategy else NULL,
+        subcategorization_status = subcategory_stage$output$status %||% NULL,
+        subcategorization_category_variant = if (!is.na(subcategorization_strategy)) category_stage$selected_variant else NULL,
+        subcategorization_uniqueness_variant = if (!is.na(subcategorization_strategy)) subcategory_stage$selected_variant else NULL,
+        internal_prompt_version = internal_prompt_version
+      ),
       schema_path = terminal_prompt_bundle$schema_path,
       logs = workflow_logs,
       workflow = list(
@@ -4483,6 +4534,46 @@ llm_label_cluster <- function(
       selection_context_extra_text = selection_context_extra_text,
       explanation_context_extra_text = explanation_context_extra_text,
       workflow_variant_suffix = workflow_variant_suffix
+    ))
+  }
+  if (isTRUE(use_subcategorization) &&
+      .is_cluster_label_staged_general_name_internal_prompt_version(internal_prompt_version)) {
+    return(.llm_label_cluster_decomposed_pipeline(
+      evidence = evidence,
+      provider = provider,
+      model = model,
+      variant = variant,
+      label_mode = label_mode,
+      base_url = base_url,
+      schema_path = schema_path,
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
+      keep_alive = keep_alive,
+      ollama_options = ollama_options,
+      timeout_sec = timeout_sec,
+      max_retries = max_retries,
+      workflow_steps = workflow_steps,
+      use_brainstorm = use_brainstorm,
+      short_label_with_llm = short_label_with_llm,
+      internal_prompt_version = internal_prompt_version,
+      dry_run = dry_run,
+      log_dir = log_dir,
+      request_fn = request_fn,
+      draft_analysis_text_override = draft_analysis_text_override,
+      draft_candidates_override = draft_candidates_override,
+      selection_context_extra_text = selection_context_extra_text,
+      explanation_context_extra_text = explanation_context_extra_text,
+      workflow_variant_suffix = workflow_variant_suffix %||% "_staged_general_name",
+      category_variants = .default_cluster_label_general_name_variants(),
+      subcategory_variants = .default_cluster_label_uniqueness_detail_variants(),
+      category_task_type = "general_name_decision",
+      subcategory_task_type = "uniqueness_detail_decision",
+      parse_category_output_fn = .parse_cluster_label_general_name_decision_text,
+      parse_subcategory_output_fn = .parse_cluster_label_uniqueness_detail_decision_text,
+      subcategorization_strategy = "staged_general_name"
     ))
   }
   draft_variant <- .default_cluster_label_draft_variant()

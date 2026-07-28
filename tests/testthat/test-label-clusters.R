@@ -99,6 +99,12 @@
   if (grepl("Task mode: `subcategory_decision_", user_text, fixed = TRUE)) {
     return("subcategory")
   }
+  if (grepl("Task mode: `general_name_decision_", user_text, fixed = TRUE)) {
+    return("general_name")
+  }
+  if (grepl("Task mode: `uniqueness_detail_decision_", user_text, fixed = TRUE)) {
+    return("uniqueness_detail")
+  }
   if (grepl("Task mode: `post_label_category_v1`", user_text, fixed = TRUE)) {
     return("post_label_category")
   }
@@ -331,6 +337,57 @@ test_that("label_clusters forwards and summarizes post-label subcategorization",
   expect_equal(res$summary$subcategory_labels[[1]], "base-rich open")
   expect_equal(res$summary$subcategorization_enabled[[1]], TRUE)
   expect_equal(res$summary$subcategorization_strategy[[1]], "post_label")
+  expect_equal(res$label_registry$category_label[[1]], "dry grassland")
+  expect_equal(res$label_registry$subcategory_labels[[1]], "base-rich open")
+  expect_match(
+    paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n"),
+    "- Category label: `dry grassland`",
+    fixed = TRUE
+  )
+})
+
+test_that("label_clusters forwards and summarizes staged general-name subcategorization", {
+  x <- .build_label_clusters_test_cocktail()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+    content <- switch(
+      stage,
+      general_name = "dry grassland",
+      uniqueness_detail = "base-rich open",
+      summary = "The dry grassland general name is refined by base-rich open detail.",
+      stop("Unexpected stage in v6 staged general-name label_clusters test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-v6-staged-general-name")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    labels_for_imgs = TRUE,
+    internal_prompt_version = "v6",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$summary$category_label[[1]], "dry grassland")
+  expect_equal(res$summary$subcategory_labels[[1]], "base-rich open")
+  expect_equal(res$summary$subcategorization_enabled[[1]], TRUE)
+  expect_equal(res$summary$subcategorization_strategy[[1]], "staged_general_name")
   expect_equal(res$label_registry$category_label[[1]], "dry grassland")
   expect_equal(res$label_registry$subcategory_labels[[1]], "base-rich open")
   expect_match(

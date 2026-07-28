@@ -1127,6 +1127,73 @@
   )
 }
 
+.parse_cluster_label_general_name_decision_text <- function(content, cluster_id) {
+  parsed <- .parse_cluster_label_clean_name_text(
+    content = content,
+    cluster_id = cluster_id,
+    stage_name = "general_name_decision",
+    field_name = "category_label",
+    allow_semicolon = FALSE,
+    allow_none = FALSE,
+    allow_abstain = TRUE
+  )
+
+  status <- if (identical(toupper(parsed$value), "ABSTAIN")) {
+    "abstain"
+  } else {
+    "category_ready"
+  }
+
+  out <- list(
+    schema_version = "0.1.0",
+    cluster_id = cluster_id,
+    status = status,
+    category_label = if (identical(status, "category_ready")) parsed$value else NULL,
+    label_decision_text = if (identical(status, "abstain")) "ABSTAIN" else parsed$value
+  )
+
+  .attach_cluster_label_parse_info(
+    out,
+    c(
+      parsed$parse_info,
+      list(category_label = identical(status, "category_ready"))
+    )
+  )
+}
+
+.parse_cluster_label_uniqueness_detail_decision_text <- function(content, cluster_id) {
+  parsed <- .parse_cluster_label_clean_name_text(
+    content = content,
+    cluster_id = cluster_id,
+    stage_name = "uniqueness_detail_decision",
+    field_name = "subcategory_labels",
+    allow_semicolon = FALSE,
+    allow_none = TRUE,
+    allow_abstain = FALSE
+  )
+
+  details <- if (identical(tolower(parsed$value), "none")) {
+    character(0)
+  } else {
+    parsed$value
+  }
+
+  out <- list(
+    schema_version = "0.1.0",
+    cluster_id = cluster_id,
+    status = "subcategory_ready",
+    subcategory_labels = details
+  )
+
+  .attach_cluster_label_parse_info(
+    out,
+    c(
+      parsed$parse_info,
+      list(subcategory_labels = length(details) > 0L)
+    )
+  )
+}
+
 .parse_cluster_label_post_label_subcategorization_text <- function(content, cluster_id) {
   unwrap_info <- .cluster_label_text_code_fence_info(content)
   text <- unwrap_info$text
@@ -1231,7 +1298,7 @@
   lines <- trimws(lines)
   lines <- lines[nzchar(lines)]
 
-  if (identical(stage_name, "post_label_uniqueness")) {
+  if (stage_name %in% c("post_label_uniqueness", "uniqueness_detail_decision")) {
     if (length(lines) < 1L) {
       stop("LLM ", stage_name, " output must contain at least one non-empty line.")
     }
@@ -1245,7 +1312,7 @@
   value <- gsub("\\s+", " ", value, perl = TRUE)
   value <- trimws(value)
 
-  if (identical(stage_name, "post_label_uniqueness")) {
+  if (stage_name %in% c("post_label_uniqueness", "uniqueness_detail_decision")) {
     forbidden_prefix_pattern <- "^(LABEL|CATEGORY|CATEGORY_LABEL|SUBCATEGORY|SUBCATEGORY_LABELS)\\s*:"
     if (grepl(forbidden_prefix_pattern, value, ignore.case = TRUE, perl = TRUE)) {
       stop("LLM ", stage_name, " output must not include technical prefixes.")
@@ -1291,7 +1358,7 @@
     stop("LLM ", stage_name, " output must not include technical prefixes.")
   }
 
-  if (identical(stage_name, "post_label_uniqueness")) {
+  if (stage_name %in% c("post_label_uniqueness", "uniqueness_detail_decision")) {
     value <- .normalize_cluster_label_post_label_uniqueness_value(value)
     if (!nzchar(value)) {
       stop("LLM ", stage_name, " output must not be empty after normalization.")

@@ -77,6 +77,12 @@
   if (grepl("Task mode: `subcategory_decision_", user_text, fixed = TRUE)) {
     return("subcategory")
   }
+  if (grepl("Task mode: `general_name_decision_", user_text, fixed = TRUE)) {
+    return("general_name")
+  }
+  if (grepl("Task mode: `uniqueness_detail_decision_", user_text, fixed = TRUE)) {
+    return("uniqueness_detail")
+  }
   if (grepl("Task mode: `post_label_category_v1`", user_text, fixed = TRUE)) {
     return("post_label_category")
   }
@@ -603,6 +609,51 @@ test_that("fixed pipeline leaves post-label subcategorization disabled by defaul
   expect_equal(res$output$subcategory_labels %||% character(0), character(0))
 })
 
+test_that("v6 keeps subcategorization disabled unless explicitly enabled", {
+  ev <- .build_phase3_test_cluster_evidence()
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      selection = .phase3_selection_text(display_label = "compact species core"),
+      summary = "The same compact species core recurs across the evidence bundle.",
+      general_name = stop("v6 staged general-name flow should be disabled."),
+      uniqueness_detail = stop("v6 staged uniqueness-detail flow should be disabled."),
+      post_label_category = stop("v5 post-label flow should be disabled."),
+      post_label_uniqueness = stop("v5 post-label flow should be disabled."),
+      stop("Unexpected stage in v6 disabled subcategorization test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v6",
+    use_brainstorm = FALSE,
+    use_subcategorization = FALSE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+
+  expect_equal(state$stages, c("selection", "summary"))
+  expect_null(res$workflow$subcategorization %||% NULL)
+  expect_false(isTRUE(res$metadata$subcategorization_enabled %||% FALSE))
+  expect_null(res$output$category_label %||% NULL)
+  expect_equal(res$output$subcategory_labels %||% character(0), character(0))
+})
+
 test_that("fixed pipeline can classify completed labels after summary", {
   ev <- .build_phase3_test_cluster_evidence()
   log_dir <- file.path(tempdir(), "cocktailr_v5_post_label_subcategorization")
@@ -678,6 +729,183 @@ test_that("fixed pipeline can classify completed labels after summary", {
   expect_equal(metadata$subcategorization_enabled, TRUE)
   expect_equal(metadata$subcategorization_strategy, "post_label")
   expect_equal(metadata$executed_stages, 4L)
+})
+
+test_that("v6 staged flow derives general name before summary and uniqueness details", {
+  ev <- .build_phase3_test_cluster_evidence()
+  log_dir <- file.path(tempdir(), "cocktailr_v6_staged_general_name")
+  unlink(log_dir, recursive = TRUE, force = TRUE)
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      general_name = {
+        expect_match(payload$messages[[2]]$content, "vegetation cluster", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "2-3 words", fixed = TRUE)
+        expect_false(grepl("Category", payload$messages[[2]]$content, fixed = TRUE))
+        "dry grassland"
+      },
+      uniqueness_detail = {
+        expect_match(payload$messages[[2]]$content, "dry grassland", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "could differ", fixed = TRUE)
+        expect_false(grepl("Subcategory", payload$messages[[2]]$content, fixed = TRUE))
+        "base-rich open"
+      },
+      summary = {
+        expect_match(payload$messages[[2]]$content, "dry grassland", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "base-rich open", fixed = TRUE)
+        "The dry grassland general name is refined by base-rich open detail."
+      },
+      stop("Unexpected stage in v6 staged general-name test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v6",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    max_retries = 0L,
+    debug = TRUE,
+    log_dir = log_dir,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+  metadata <- jsonlite::fromJSON(res$logs$metadata, simplifyVector = TRUE)
+
+  expect_equal(state$stages, c("general_name", "uniqueness_detail", "summary"))
+  expect_equal(res$output$status, "labeled")
+  expect_equal(res$output$display_label, "dry grassland")
+  expect_equal(res$output$category_label, "dry grassland")
+  expect_equal(res$output$subcategory_labels, "base-rich open")
+  expect_true(isTRUE(res$metadata$subcategorization_enabled))
+  expect_equal(res$metadata$subcategorization_strategy, "staged_general_name")
+  expect_equal(res$workflow$category$selected_variant, "general_name_decision_v1")
+  expect_equal(res$workflow$subcategory$selected_variant, "uniqueness_detail_decision_v1")
+  expect_equal(metadata$subcategorization_strategy, "staged_general_name")
+  expect_equal(metadata$executed_stages, 3L)
+})
+
+test_that("v6 staged flow preserves general name when uniqueness details fail or return none", {
+  ev <- .build_phase3_test_cluster_evidence()
+
+  fake_request_none <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    content <- switch(
+      stage,
+      general_name = "dry grassland",
+      uniqueness_detail = "none",
+      summary = "The dry grassland general name has no safe uniqueness detail.",
+      stop("Unexpected stage in v6 none uniqueness test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  none_res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v6",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request_none
+  )
+
+  expect_equal(none_res$output$category_label, "dry grassland")
+  expect_equal(none_res$output$subcategory_labels, character(0))
+  expect_equal(none_res$workflow$subcategory$output$status, "subcategory_ready")
+  expect_false(isTRUE(none_res$workflow$subcategory$fallback_used %||% FALSE))
+
+  fake_request_bad_detail <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    content <- switch(
+      stage,
+      general_name = "dry grassland",
+      uniqueness_detail = "SUBCATEGORY: base-rich open",
+      summary = "The dry grassland general name is kept without uniqueness detail.",
+      stop("Unexpected stage in v6 bad uniqueness test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  partial_res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v6",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request_bad_detail
+  )
+
+  expect_equal(partial_res$output$category_label, "dry grassland")
+  expect_equal(partial_res$output$subcategory_labels, character(0))
+  expect_true(isTRUE(partial_res$workflow$subcategory$fallback_used))
+  expect_equal(partial_res$workflow$subcategory$fallback_reason, "No clean uniqueness detail answer was selected; keeping general name only.")
+})
+
+test_that("v6 staged flow abstains when general name is malformed", {
+  ev <- .build_phase3_test_cluster_evidence()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    content <- switch(
+      stage,
+      general_name = "CATEGORY: dry grassland",
+      uniqueness_detail = stop("Uniqueness detail should not run after malformed general name."),
+      abstain_reason = "The general-name stage did not produce a clean accepted answer.",
+      stop("Unexpected stage in v6 malformed general-name test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v6",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$output$status, "abstain")
+  expect_true(isTRUE(res$workflow$category$exhausted))
+  expect_true(isTRUE(res$workflow$subcategory$skipped))
+  expect_equal(res$workflow$subcategory$skip_reason, "category_abstained")
 })
 
 test_that("post-label uniqueness normalizes weak model punctuation and line breaks", {

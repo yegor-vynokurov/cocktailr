@@ -85,9 +85,11 @@
 #'   only when the selected \code{internal_prompt_version} bundle includes it
 #'   (for example the packaged \code{"v2"} bundle).
 #' @param use_subcategorization Logical. Forwarded to
-#'   \code{\link{llm_label_cluster}}. Default \code{FALSE}; when enabled, a
-#'   post-label experimental classifier fills category-compatible output fields
-#'   after the ordinary label and summary are fixed.
+#'   \code{\link{llm_label_cluster}}. Default \code{FALSE}; when enabled, an
+#'   experimental subcategorization strategy fills category-compatible output
+#'   fields. The selected \code{internal_prompt_version} chooses the strategy;
+#'   packaged \code{"v5"} is post-label and packaged \code{"v6"} is staged
+#'   general-name / uniqueness-detail.
 #' @param max_iterations Integer workflow budget. Currently allowed values are
 #'   \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports
 #'   the full EOF retry ladder \code{2400 -> 4800 -> 9600}.

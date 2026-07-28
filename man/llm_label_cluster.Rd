@@ -109,10 +109,13 @@ stored label in \code{display_label}. The shortening-repair prompt is
 available only when the selected \code{internal_prompt_version} bundle
 includes that asset (for example the packaged \code{"v2"} bundle).}
 
-\item{use_subcategorization}{Logical. If \code{TRUE}, run an experimental
-post-label classifier after the label-summary stage for labeled outputs.
-Default \code{FALSE}; the ordinary staged labeling flow is unchanged when
-disabled.}
+\item{use_subcategorization}{Logical. If \code{TRUE}, fill the
+category-compatible output fields with an experimental subcategorization
+strategy selected by \code{internal_prompt_version}: the packaged
+\code{"v5"} bundle runs a post-label classifier after label summary, and
+the packaged \code{"v6"} bundle runs a staged general-name /
+uniqueness-detail flow before label summary. Default \code{FALSE}; the
+ordinary staged labeling flow is unchanged when disabled.}
 
 \item{internal_prompt_version}{Character scalar naming the subdirectory
 under \code{inst/prompts/internal_cluster_labeling/} that contains the
