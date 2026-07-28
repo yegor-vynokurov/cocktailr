@@ -634,7 +634,7 @@ test_that("fixed pipeline can classify completed labels after summary", {
         expect_false(grepl("Cluster:", payload$messages[[2]]$content, fixed = TRUE))
         expect_false(grepl("Dataset context:", payload$messages[[2]]$content, fixed = TRUE))
         expect_false(grepl("Draft", payload$messages[[2]]$content, fixed = TRUE))
-        "base-rich open"
+        "base-rich; open\nmoisture: low"
       },
       stop("Unexpected stage in enabled subcategorization test request.")
     )
@@ -669,7 +669,7 @@ test_that("fixed pipeline can classify completed labels after summary", {
     "The dry base-rich grassland signal recurs across the evidence bundle."
   )
   expect_equal(res$output$category_label, "dry grassland")
-  expect_equal(res$output$subcategory_labels, "base-rich open")
+  expect_equal(res$output$subcategory_labels, "base-rich open moisture low")
   expect_true(isTRUE(res$metadata$subcategorization_enabled))
   expect_equal(res$metadata$subcategorization_strategy, "post_label")
   expect_equal(res$workflow$subcategorization$output$status, "subcategorization_ready")
@@ -678,6 +678,48 @@ test_that("fixed pipeline can classify completed labels after summary", {
   expect_equal(metadata$subcategorization_enabled, TRUE)
   expect_equal(metadata$subcategorization_strategy, "post_label")
   expect_equal(metadata$executed_stages, 4L)
+})
+
+test_that("post-label uniqueness normalizes weak model punctuation and line breaks", {
+  parsed <- cocktailr:::.parse_cluster_label_clean_name_text(
+    content = "dry; base-rich\ncool: shaded (edge), meadow & scrub.",
+    cluster_id = "c_1",
+    stage_name = "post_label_uniqueness",
+    field_name = "subcategory_labels",
+    allow_semicolon = FALSE,
+    allow_none = TRUE,
+    allow_abstain = FALSE
+  )
+
+  expect_equal(parsed$value, "dry base-rich cool shaded edge meadow scrub")
+  expect_equal(parsed$parse_info$nonempty_line_count, 2L)
+
+  long <- cocktailr:::.parse_cluster_label_clean_name_text(
+    content = "open sunny moderately dry base-rich cool meadow transition edge",
+    cluster_id = "c_1",
+    stage_name = "post_label_uniqueness",
+    field_name = "subcategory_labels",
+    allow_semicolon = FALSE,
+    allow_none = TRUE,
+    allow_abstain = FALSE
+  )
+
+  expect_equal(
+    long$value,
+    "open sunny moderately dry base-rich cool meadow transition edge"
+  )
+
+  none <- cocktailr:::.parse_cluster_label_clean_name_text(
+    content = "none.",
+    cluster_id = "c_1",
+    stage_name = "post_label_uniqueness",
+    field_name = "subcategory_labels",
+    allow_semicolon = FALSE,
+    allow_none = TRUE,
+    allow_abstain = FALSE
+  )
+
+  expect_equal(tolower(none$value), "none")
 })
 
 test_that("fixed pipeline preserves labels when post-label subcategorization fails", {

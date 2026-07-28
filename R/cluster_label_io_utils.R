@@ -1231,12 +1231,27 @@
   lines <- trimws(lines)
   lines <- lines[nzchar(lines)]
 
-  if (length(lines) != 1L) {
+  if (identical(stage_name, "post_label_uniqueness")) {
+    if (length(lines) < 1L) {
+      stop("LLM ", stage_name, " output must contain at least one non-empty line.")
+    }
+    value <- paste(lines, collapse = " ")
+  } else if (length(lines) != 1L) {
     stop("LLM ", stage_name, " output must contain exactly one non-empty line.")
+  } else {
+    value <- lines[[1L]]
   }
 
-  value <- gsub("\\s+", " ", lines[[1L]], perl = TRUE)
+  value <- gsub("\\s+", " ", value, perl = TRUE)
   value <- trimws(value)
+
+  if (identical(stage_name, "post_label_uniqueness")) {
+    forbidden_prefix_pattern <- "^(LABEL|CATEGORY|CATEGORY_LABEL|SUBCATEGORY|SUBCATEGORY_LABELS)\\s*:"
+    if (grepl(forbidden_prefix_pattern, value, ignore.case = TRUE, perl = TRUE)) {
+      stop("LLM ", stage_name, " output must not include technical prefixes.")
+    }
+    value <- .normalize_cluster_label_post_label_uniqueness_value(value)
+  }
 
   .validate_cluster_label_clean_name_value(
     value = value,
@@ -1271,6 +1286,18 @@
     stop("LLM ", stage_name, " output must not be empty.")
   }
 
+  forbidden_prefix_pattern <- "^(LABEL|CATEGORY|CATEGORY_LABEL|SUBCATEGORY|SUBCATEGORY_LABELS)\\s*:"
+  if (grepl(forbidden_prefix_pattern, value, ignore.case = TRUE, perl = TRUE)) {
+    stop("LLM ", stage_name, " output must not include technical prefixes.")
+  }
+
+  if (identical(stage_name, "post_label_uniqueness")) {
+    value <- .normalize_cluster_label_post_label_uniqueness_value(value)
+    if (!nzchar(value)) {
+      stop("LLM ", stage_name, " output must not be empty after normalization.")
+    }
+  }
+
   lower <- tolower(value)
   if (identical(lower, "none")) {
     if (isTRUE(allow_none)) {
@@ -1284,11 +1311,6 @@
       return(invisible(TRUE))
     }
     stop("LLM ", stage_name, " output must not abstain at this stage.")
-  }
-
-  forbidden_prefix_pattern <- "^(LABEL|CATEGORY|CATEGORY_LABEL|SUBCATEGORY|SUBCATEGORY_LABELS)\\s*:"
-  if (grepl(forbidden_prefix_pattern, value, ignore.case = TRUE, perl = TRUE)) {
-    stop("LLM ", stage_name, " output must not include technical prefixes.")
   }
 
   if (grepl("^['\"`].*['\"`]$", value, perl = TRUE)) {
@@ -1329,6 +1351,13 @@
   }
 
   invisible(TRUE)
+}
+
+.normalize_cluster_label_post_label_uniqueness_value <- function(value) {
+  value <- gsub("[;_:,()\\[\\]{}\\.]+", " ", value, perl = TRUE)
+  value <- gsub("[^[:alpha:][:digit:] /'-]+", " ", value, perl = TRUE)
+  value <- gsub("\\s+", " ", value, perl = TRUE)
+  trimws(value)
 }
 
 .parse_cluster_label_summary_text <- function(content, cluster_id) {
