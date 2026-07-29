@@ -34,6 +34,9 @@ LLM: \code{display_label} stores the full human label, while
 \item{model, variant, workflow_steps}{Prompt / model provenance.}
 \item{selected_label_variant, label_stage_exhausted}{Resolved stage-B rung
 and whether the public selection cascade was fully exhausted.}
+\item{use_double_brainstorm, double_brainstorm_enabled, draft_status,
+draft_evidence_status}{Experimental double-brainstorm strategy metadata
+when present.}
 \item{dataset_type, dataset_label, dataset_path}{Dataset provenance carried through evidence extraction.}
 }
 }

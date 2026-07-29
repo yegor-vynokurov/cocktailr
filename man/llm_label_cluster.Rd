@@ -25,6 +25,7 @@ llm_label_cluster(
   use_brainstorm = TRUE,
   short_label_with_llm = FALSE,
   use_subcategorization = FALSE,
+  use_double_brainstorm = FALSE,
   internal_prompt_version = .default_cluster_label_internal_prompt_version(),
   dry_run = FALSE,
   debug = FALSE,
@@ -113,9 +114,20 @@ includes that asset (for example the packaged \code{"v2"} bundle).}
 category-compatible output fields with an experimental subcategorization
 strategy selected by \code{internal_prompt_version}: the packaged
 \code{"v5"} bundle runs a post-label classifier after label summary, and
-the packaged \code{"v6"} bundle runs a staged general-name /
-uniqueness-detail flow before label summary. Default \code{FALSE}; the
-ordinary staged labeling flow is unchanged when disabled.}
+the packaged \code{"v6"}, \code{"v7"}, \code{"v8a"}, \code{"v8b"}, and
+\code{"v8c"}, and \code{"v9"} bundles run staged general-name /
+uniqueness-detail flows.
+The \code{"v7"} bundle is an anti-repetition prompt experiment; the
+\code{"v8a"}-\code{"v8c"} bundles are A001 subcategory wording probes.
+The \code{"v9"} bundle supports the opt-in double-brainstorm experiment.
+Default \code{FALSE}; the ordinary staged labeling flow is unchanged when
+disabled.}
+
+\item{use_double_brainstorm}{Logical. Experimental opt-in for staged
+subcategorization runs. If \code{TRUE}, the workflow runs two draft
+analysis prompts, exploratory and evidence-focused, then passes both
+runtime-marked drafts to downstream staged decisions. Default
+\code{FALSE}.}
 
 \item{internal_prompt_version}{Character scalar naming the subdirectory
 under \code{inst/prompts/internal_cluster_labeling/} that contains the

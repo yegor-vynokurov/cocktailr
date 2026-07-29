@@ -42,6 +42,7 @@ label_clusters(
   use_brainstorm = TRUE,
   short_label_with_llm = FALSE,
   use_subcategorization = FALSE,
+  use_double_brainstorm = FALSE,
   internal_prompt_version = .default_cluster_label_internal_prompt_version(),
   debug = FALSE,
   max_iterations = 3L,
@@ -122,8 +123,15 @@ only when the selected \code{internal_prompt_version} bundle includes it
 \code{\link{llm_label_cluster}}. Default \code{FALSE}; when enabled, an
 experimental subcategorization strategy fills category-compatible output
 fields. The selected \code{internal_prompt_version} chooses the strategy;
-packaged \code{"v5"} is post-label and packaged \code{"v6"} is staged
-general-name / uniqueness-detail.}
+packaged \code{"v5"} is post-label, while packaged \code{"v6"},
+\code{"v7"}, \code{"v8a"}, \code{"v8b"}, and \code{"v8c"} are staged
+general-name / uniqueness-detail variants. The \code{"v7"} bundle is an
+anti-repetition prompt experiment; the \code{"v8a"}-\code{"v8c"} bundles
+are A001 subcategory wording probes.}
+
+\item{use_double_brainstorm}{Logical. Forwarded to
+\code{\link{llm_label_cluster}}. Default \code{FALSE}; when enabled with
+staged subcategorization, runs the experimental two-draft brainstorm flow.}
 
 \item{max_iterations}{Integer workflow budget. Currently allowed values are
 \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports

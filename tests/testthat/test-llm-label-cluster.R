@@ -428,6 +428,78 @@ test_that("staged general-name prompt bundle is isolated in v6", {
   expect_false(grepl("Draft", uniqueness_prompt_text, fixed = TRUE))
 })
 
+test_that("staged general-name prompt bundle is isolated in v7", {
+  ev <- .build_test_cluster_evidence()
+  v6_dir <- system.file(
+    "prompts",
+    "internal_cluster_labeling",
+    "v6",
+    package = "cocktailr"
+  )
+  v7_dir <- system.file(
+    "prompts",
+    "internal_cluster_labeling",
+    "v7",
+    package = "cocktailr"
+  )
+
+  copied_files <- c(
+    "user_abstain_reason_pass_v2.md",
+    "user_draft_analysis_v1.md",
+    "user_general_name_decision_v1.md",
+    "user_label_decision_broad_v2.md",
+    "user_label_decision_primary_v2.md",
+    "user_label_decision_soft_v2.md",
+    "user_label_summary_pass_v2.md"
+  )
+  for (copied_file in copied_files) {
+    expect_true(file.exists(file.path(v7_dir, copied_file)))
+    expect_equal(
+      readLines(file.path(v7_dir, copied_file), warn = FALSE),
+      readLines(file.path(v6_dir, copied_file), warn = FALSE)
+    )
+  }
+  expect_true(file.exists(file.path(v7_dir, "user_uniqueness_detail_decision_v1.md")))
+  expect_false(identical(
+    readLines(file.path(v7_dir, "user_uniqueness_detail_decision_v1.md"), warn = FALSE),
+    readLines(file.path(v6_dir, "user_uniqueness_detail_decision_v1.md"), warn = FALSE)
+  ))
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    internal_prompt_version = "v7",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    dry_run = TRUE
+  )
+
+  expect_equal(req$workflow$category$prompt$task_type, "general_name_decision")
+  expect_equal(req$workflow$subcategory$prompt$task_type, "uniqueness_detail_decision")
+  expect_match(
+    req$workflow$category$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v7/user_general_name_decision_v1.md",
+    fixed = TRUE
+  )
+  expect_match(
+    req$workflow$subcategory$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v7/user_uniqueness_detail_decision_v1.md",
+    fixed = TRUE
+  )
+
+  uniqueness_prompt_text <- req$workflow$subcategory$prompt$user
+  expect_match(uniqueness_prompt_text, "DRY means do not repeat yourself", fixed = TRUE)
+  expect_match(uniqueness_prompt_text, "fixed display label", fixed = TRUE)
+  expect_match(uniqueness_prompt_text, "fixed general name", fixed = TRUE)
+  expect_match(uniqueness_prompt_text, "bakery", ignore.case = TRUE)
+  expect_match(uniqueness_prompt_text, "car", ignore.case = TRUE)
+  expect_match(uniqueness_prompt_text, "could differ", fixed = TRUE)
+  expect_match(uniqueness_prompt_text, "General name:", fixed = TRUE)
+  expect_false(grepl("Cluster:", uniqueness_prompt_text, fixed = TRUE))
+  expect_false(grepl("Dataset context:", uniqueness_prompt_text, fixed = TRUE))
+  expect_false(grepl("Draft", uniqueness_prompt_text, fixed = TRUE))
+})
+
 test_that("v6 prompt version keeps the standard flow when subcategorization is off", {
   ev <- .build_test_cluster_evidence()
 
@@ -448,6 +520,195 @@ test_that("v6 prompt version keeps the standard flow when subcategorization is o
     "inst/prompts/internal_cluster_labeling/v6/user_label_summary_pass_v2.md",
     fixed = TRUE
   )
+})
+
+test_that("llm_label_cluster keeps double brainstorm off by default and guards opt-in scope", {
+  ev <- .build_test_cluster_evidence()
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "gemma4:12b",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v8a",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    dry_run = TRUE
+  )
+
+  expect_null(req$workflow$draft_evidence %||% NULL)
+  expect_false(grepl("Draft A: exploratory", req$workflow$subcategory$prompt$user, fixed = TRUE))
+
+  expect_error(
+    llm_label_cluster(
+      evidence = ev,
+      model = "gemma4:12b",
+      variant = "label_primary_v1",
+      internal_prompt_version = "v9",
+      use_brainstorm = FALSE,
+      use_subcategorization = TRUE,
+      use_double_brainstorm = TRUE,
+      dry_run = TRUE
+    ),
+    "`use_double_brainstorm = TRUE` requires `use_brainstorm = TRUE`.",
+    fixed = TRUE
+  )
+  expect_error(
+    llm_label_cluster(
+      evidence = ev,
+      model = "gemma4:12b",
+      variant = "label_primary_v1",
+      internal_prompt_version = "v8a",
+      use_brainstorm = TRUE,
+      use_subcategorization = TRUE,
+      use_double_brainstorm = TRUE,
+      dry_run = TRUE
+    ),
+    "`use_double_brainstorm = TRUE` currently requires `internal_prompt_version = \"v9\"`.",
+    fixed = TRUE
+  )
+})
+
+test_that("v9 prompt bundle isolates double brainstorm assets and renders both draft sections", {
+  ev <- .build_test_cluster_evidence()
+  v8a_uniqueness <- readLines(
+    test_path("../../inst/prompts/internal_cluster_labeling/v8a/user_uniqueness_detail_decision_v1.md"),
+    warn = FALSE
+  )
+  v9_uniqueness <- readLines(
+    test_path("../../inst/prompts/internal_cluster_labeling/v9/user_uniqueness_detail_decision_v1.md"),
+    warn = FALSE
+  )
+
+  expect_false(identical(v8a_uniqueness, v9_uniqueness))
+  expect_true(any(grepl("Two brainstorm drafts:", v9_uniqueness, fixed = TRUE)))
+  expect_false(any(grepl("Two brainstorm drafts:", v8a_uniqueness, fixed = TRUE)))
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "gemma4:12b",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v9",
+    use_brainstorm = TRUE,
+    use_subcategorization = TRUE,
+    use_double_brainstorm = TRUE,
+    dry_run = TRUE
+  )
+
+  expect_equal(req$workflow$draft$prompt$variant, "draft_analysis_exploratory_v1")
+  expect_equal(req$workflow$draft_evidence$variant, "draft_analysis_evidence_focused_v1")
+  expect_match(
+    req$workflow$draft$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v9/user_draft_analysis_exploratory_v1.md",
+    fixed = TRUE
+  )
+  expect_match(
+    req$workflow$draft_evidence$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v9/user_draft_analysis_evidence_focused_v1.md",
+    fixed = TRUE
+  )
+
+  downstream_prompts <- c(
+    req$workflow$category$prompt$user,
+    req$workflow$pre_subcategory_summary$prompt$user,
+    req$workflow$subcategory$prompt$user,
+    req$workflow$summary$prompt$user
+  )
+  expect_true(all(grepl("Draft A: exploratory", downstream_prompts, fixed = TRUE)))
+  expect_true(all(grepl("Draft B: evidence-focused", downstream_prompts, fixed = TRUE)))
+  expect_match(req$workflow$subcategory$prompt$user, "Two brainstorm drafts:", fixed = TRUE)
+})
+
+test_that("A001 subgroup-name prompt bundle is isolated with reduced uniqueness inputs", {
+  ev <- .build_test_cluster_evidence()
+  v8a_dir <- system.file(
+    "prompts",
+    "internal_cluster_labeling",
+    "v8a",
+    package = "cocktailr"
+  )
+
+  expect_true(dir.exists(v8a_dir))
+  expect_true(file.exists(file.path(v8a_dir, "user_uniqueness_detail_decision_v1.md")))
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    internal_prompt_version = "v8a",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    dry_run = TRUE
+  )
+
+  expect_equal(req$workflow$category$prompt$task_type, "general_name_decision")
+  expect_equal(req$workflow$subcategory$prompt$task_type, "uniqueness_detail_decision")
+  expect_match(
+    req$workflow$subcategory$prompt$user_path,
+    "inst/prompts/internal_cluster_labeling/v8a/user_uniqueness_detail_decision_v1.md",
+    fixed = TRUE
+  )
+
+  uniqueness_prompt_text <- req$workflow$subcategory$prompt$user
+  expect_match(uniqueness_prompt_text, "short subgroup name", fixed = TRUE)
+  expect_match(uniqueness_prompt_text, "Fixed display label:", fixed = TRUE)
+  expect_match(uniqueness_prompt_text, "General name:", fixed = TRUE)
+  expect_match(uniqueness_prompt_text, "Label description:", fixed = TRUE)
+  expect_false(grepl("another similar", uniqueness_prompt_text, fixed = TRUE))
+  expect_false(grepl("Text:", uniqueness_prompt_text, fixed = TRUE))
+  expect_false(grepl("Draft", uniqueness_prompt_text, fixed = TRUE))
+  expect_false(grepl("Cluster:", uniqueness_prompt_text, fixed = TRUE))
+  expect_false(grepl("Dataset context:", uniqueness_prompt_text, fixed = TRUE))
+})
+
+test_that("A001 qualifier and subsection prompt bundles are isolated with reduced uniqueness inputs", {
+  ev <- .build_test_cluster_evidence()
+  cases <- list(
+    list(version = "v8b", phrase = "main short qualifier"),
+    list(version = "v8c", phrase = "short subsection heading")
+  )
+
+  for (case in cases) {
+    candidate_dir <- system.file(
+      "prompts",
+      "internal_cluster_labeling",
+      case$version,
+      package = "cocktailr"
+    )
+
+    expect_true(dir.exists(candidate_dir))
+    expect_true(file.exists(file.path(
+      candidate_dir,
+      "user_uniqueness_detail_decision_v1.md"
+    )))
+
+    req <- llm_label_cluster(
+      evidence = ev,
+      model = "fake-model",
+      internal_prompt_version = case$version,
+      use_brainstorm = FALSE,
+      use_subcategorization = TRUE,
+      dry_run = TRUE
+    )
+
+    uniqueness_prompt_text <- req$workflow$subcategory$prompt$user
+    expect_match(
+      req$workflow$subcategory$prompt$user_path,
+      paste0(
+        "inst/prompts/internal_cluster_labeling/",
+        case$version,
+        "/user_uniqueness_detail_decision_v1.md"
+      ),
+      fixed = TRUE
+    )
+    expect_match(uniqueness_prompt_text, case$phrase, fixed = TRUE)
+    expect_match(uniqueness_prompt_text, "Fixed display label:", fixed = TRUE)
+    expect_match(uniqueness_prompt_text, "General name:", fixed = TRUE)
+    expect_match(uniqueness_prompt_text, "Label description:", fixed = TRUE)
+    expect_false(grepl("another similar", uniqueness_prompt_text, fixed = TRUE))
+    expect_false(grepl("Text:", uniqueness_prompt_text, fixed = TRUE))
+    expect_false(grepl("Draft", uniqueness_prompt_text, fixed = TRUE))
+    expect_false(grepl("Cluster:", uniqueness_prompt_text, fixed = TRUE))
+    expect_false(grepl("Dataset context:", uniqueness_prompt_text, fixed = TRUE))
+  }
 })
 
 test_that("constrained label mode injects the coarse vocabulary into the selection prompt", {

@@ -89,6 +89,12 @@
   if (grepl("Task mode: `post_label_uniqueness_v1`", user_text, fixed = TRUE)) {
     return("post_label_uniqueness")
   }
+  if (grepl("Task mode: `draft_analysis_exploratory_v1`", user_text, fixed = TRUE)) {
+    return("draft_exploratory")
+  }
+  if (grepl("Task mode: `draft_analysis_evidence_focused_v1`", user_text, fixed = TRUE)) {
+    return("draft_evidence")
+  }
   if (grepl("Task mode: `draft_analysis_v1`", user_text, fixed = TRUE)) {
     return("draft")
   }
@@ -796,6 +802,306 @@ test_that("v6 staged flow derives general name before summary and uniqueness det
   expect_equal(res$workflow$subcategory$selected_variant, "uniqueness_detail_decision_v1")
   expect_equal(metadata$subcategorization_strategy, "staged_general_name")
   expect_equal(metadata$executed_stages, 3L)
+})
+
+test_that("v7 staged flow derives general name before summary and uniqueness details", {
+  ev <- .build_phase3_test_cluster_evidence()
+  log_dir <- file.path(tempdir(), "cocktailr_v7_staged_general_name")
+  unlink(log_dir, recursive = TRUE, force = TRUE)
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      general_name = {
+        expect_match(payload$messages[[2]]$content, "vegetation cluster", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "2-3 words", fixed = TRUE)
+        expect_false(grepl("Category", payload$messages[[2]]$content, fixed = TRUE))
+        "dry grassland"
+      },
+      uniqueness_detail = {
+        expect_match(payload$messages[[2]]$content, "dry grassland", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "DRY means do not repeat yourself", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "fixed display label", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "fixed general name", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "bakery", ignore.case = TRUE)
+        expect_match(payload$messages[[2]]$content, "car", ignore.case = TRUE)
+        "base-rich open"
+      },
+      summary = {
+        expect_match(payload$messages[[2]]$content, "dry grassland", fixed = TRUE)
+        expect_match(payload$messages[[2]]$content, "base-rich open", fixed = TRUE)
+        "The dry grassland general name is refined by base-rich open detail."
+      },
+      stop("Unexpected stage in v7 staged general-name test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v7",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    max_retries = 0L,
+    debug = TRUE,
+    log_dir = log_dir,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+  metadata <- jsonlite::fromJSON(res$logs$metadata, simplifyVector = TRUE)
+
+  expect_equal(state$stages, c("general_name", "uniqueness_detail", "summary"))
+  expect_equal(res$output$status, "labeled")
+  expect_equal(res$output$display_label, "dry grassland")
+  expect_equal(res$output$category_label, "dry grassland")
+  expect_equal(res$output$subcategory_labels, "base-rich open")
+  expect_true(isTRUE(res$metadata$subcategorization_enabled))
+  expect_equal(res$metadata$subcategorization_strategy, "staged_general_name")
+  expect_equal(res$metadata$internal_prompt_version, "v7")
+  expect_equal(res$workflow$category$selected_variant, "general_name_decision_v1")
+  expect_equal(res$workflow$subcategory$selected_variant, "uniqueness_detail_decision_v1")
+  expect_equal(metadata$subcategorization_strategy, "staged_general_name")
+  expect_equal(metadata$internal_prompt_version, "v7")
+  expect_equal(metadata$executed_stages, 3L)
+})
+
+test_that("A001 v8a staged flow summarizes before uniqueness detail with reduced inputs", {
+  ev <- .build_phase3_test_cluster_evidence()
+  log_dir <- file.path(tempdir(), "cocktailr_v8a_subgroup_name")
+  unlink(log_dir, recursive = TRUE, force = TRUE)
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      general_name = "dry grassland",
+      uniqueness_detail = {
+        prompt_text <- payload$messages[[2]]$content
+        expect_match(prompt_text, "dry grassland", fixed = TRUE)
+        expect_match(prompt_text, "Short dry grassland summary.", fixed = TRUE)
+        expect_match(prompt_text, "Fixed display label:", fixed = TRUE)
+        expect_match(prompt_text, "Label description:", fixed = TRUE)
+        expect_match(prompt_text, "short subgroup name", fixed = TRUE)
+        expect_false(grepl("another similar", prompt_text, fixed = TRUE))
+        expect_false(grepl("Draft", prompt_text, fixed = TRUE))
+        expect_false(grepl("Cluster:", prompt_text, fixed = TRUE))
+        "base-rich open"
+      },
+      summary = {
+        if (length(state$stages) == 2L) {
+          expect_match(payload$messages[[2]]$content, "dry grassland", fixed = TRUE)
+          expect_false(grepl("base-rich open", payload$messages[[2]]$content, fixed = TRUE))
+          "Short dry grassland summary."
+        } else {
+          expect_match(payload$messages[[2]]$content, "dry grassland", fixed = TRUE)
+          expect_match(payload$messages[[2]]$content, "base-rich open", fixed = TRUE)
+          "The dry grassland general name is refined by base-rich open detail."
+        }
+      },
+      stop("Unexpected stage in v8a staged general-name test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v8a",
+    use_brainstorm = FALSE,
+    use_subcategorization = TRUE,
+    max_retries = 0L,
+    debug = TRUE,
+    log_dir = log_dir,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+  metadata <- jsonlite::fromJSON(res$logs$metadata, simplifyVector = TRUE)
+
+  expect_equal(state$stages, c("general_name", "summary", "uniqueness_detail", "summary"))
+  expect_equal(res$output$status, "labeled")
+  expect_equal(res$output$display_label, "dry grassland")
+  expect_equal(res$output$category_label, "dry grassland")
+  expect_equal(res$output$subcategory_labels, "base-rich open")
+  expect_true(isTRUE(res$metadata$subcategorization_enabled))
+  expect_equal(res$metadata$subcategorization_strategy, "staged_general_name")
+  expect_equal(res$metadata$internal_prompt_version, "v8a")
+  expect_equal(metadata$subcategorization_strategy, "staged_general_name")
+  expect_equal(metadata$internal_prompt_version, "v8a")
+  expect_equal(metadata$executed_stages, 4L)
+})
+
+test_that("v9 staged double brainstorm passes both drafts through downstream prompts", {
+  ev <- .build_phase3_test_cluster_evidence()
+  log_dir <- file.path(tempdir(), "cocktailr_v9_double_brainstorm")
+  unlink(log_dir, recursive = TRUE, force = TRUE)
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    prompt_text <- payload$messages[[2]]$content
+    content <- switch(
+      stage,
+      draft_exploratory = paste(
+        "Possible interpretations:",
+        "- dry grassland",
+        "- base-rich open vegetation",
+        "",
+        "Candidate labels:",
+        "- dry grassland",
+        "- base-rich open grassland",
+        sep = "\n"
+      ),
+      draft_evidence = paste(
+        "Directly supported signals:",
+        "- dry open vegetation",
+        "- base-rich indicators",
+        "",
+        "Specific differentiators:",
+        "- base-rich open",
+        sep = "\n"
+      ),
+      general_name = {
+        expect_match(prompt_text, "Draft A: exploratory", fixed = TRUE)
+        expect_match(prompt_text, "Draft B: evidence-focused", fixed = TRUE)
+        "dry grassland"
+      },
+      uniqueness_detail = {
+        expect_match(prompt_text, "Two brainstorm drafts:", fixed = TRUE)
+        expect_match(prompt_text, "Draft A: exploratory", fixed = TRUE)
+        expect_match(prompt_text, "Draft B: evidence-focused", fixed = TRUE)
+        expect_match(prompt_text, "Short dry grassland summary.", fixed = TRUE)
+        expect_match(prompt_text, "short subgroup name", fixed = TRUE)
+        "base-rich open"
+      },
+      summary = {
+        expect_match(prompt_text, "Draft A: exploratory", fixed = TRUE)
+        expect_match(prompt_text, "Draft B: evidence-focused", fixed = TRUE)
+        if (length(state$stages) == 4L) {
+          expect_false(grepl("Chosen subcategory detail:", prompt_text, fixed = TRUE))
+          "Short dry grassland summary."
+        } else {
+          expect_match(prompt_text, "base-rich open", fixed = TRUE)
+          "The dry grassland general name is refined by base-rich open detail."
+        }
+      },
+      stop("Unexpected stage in v9 double-brainstorm test request: ", stage)
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v9",
+    use_brainstorm = TRUE,
+    use_subcategorization = TRUE,
+    use_double_brainstorm = TRUE,
+    max_retries = 0L,
+    debug = TRUE,
+    log_dir = log_dir,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+  metadata <- jsonlite::fromJSON(res$logs$metadata, simplifyVector = TRUE)
+
+  expect_equal(
+    state$stages,
+    c("draft_exploratory", "draft_evidence", "general_name", "summary", "uniqueness_detail", "summary")
+  )
+  expect_equal(res$output$status, "labeled")
+  expect_equal(res$output$display_label, "dry grassland")
+  expect_equal(res$output$category_label, "dry grassland")
+  expect_equal(res$output$subcategory_labels, "base-rich open")
+  expect_equal(res$metadata$subcategorization_strategy, "staged_double_brainstorm")
+  expect_true(isTRUE(res$metadata$double_brainstorm_enabled))
+  expect_equal(res$metadata$draft_status, "draft_ready")
+  expect_equal(res$metadata$draft_evidence_status, "draft_ready")
+  expect_equal(res$workflow$draft$variant, "draft_analysis_exploratory_v1")
+  expect_equal(res$workflow$draft_evidence$variant, "draft_analysis_evidence_focused_v1")
+  expect_equal(metadata$subcategorization_strategy, "staged_double_brainstorm")
+  expect_true(isTRUE(metadata$double_brainstorm_enabled))
+  expect_equal(metadata$executed_stages, 6L)
+})
+
+test_that("v9 staged double brainstorm records one failed draft and continues", {
+  ev <- .build_phase3_test_cluster_evidence()
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .phase3_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    if (identical(stage, "draft_evidence")) {
+      stop("simulated evidence draft failure")
+    }
+    content <- switch(
+      stage,
+      draft_exploratory = "Candidate labels:\n- dry grassland",
+      general_name = {
+        expect_match(payload$messages[[2]]$content, "Draft B was unavailable", fixed = TRUE)
+        "dry grassland"
+      },
+      uniqueness_detail = {
+        expect_match(payload$messages[[2]]$content, "Draft B was unavailable", fixed = TRUE)
+        "base-rich open"
+      },
+      summary = "The dry grassland general name is refined by base-rich open detail.",
+      stop("Unexpected stage in partial-failure test request: ", stage)
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .phase3_llm_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  res <- llm_label_cluster(
+    evidence = ev,
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v9",
+    use_brainstorm = TRUE,
+    use_subcategorization = TRUE,
+    use_double_brainstorm = TRUE,
+    max_retries = 0L,
+    timeout_sec = 1,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$output$status, "labeled")
+  expect_equal(res$metadata$draft_status, "draft_ready")
+  expect_equal(res$metadata$draft_evidence_status, "draft_failed")
+  expect_match(res$metadata$draft_evidence_failure_reason, "simulated evidence draft failure")
+  expect_equal(res$workflow$draft_evidence$skip_reason, "draft_failed")
 })
 
 test_that("v6 staged flow preserves general name when uniqueness details fail or return none", {

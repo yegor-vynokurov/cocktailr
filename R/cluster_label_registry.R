@@ -42,6 +42,9 @@
 #'     \item{model, variant, workflow_steps}{Prompt / model provenance.}
 #'     \item{selected_label_variant, label_stage_exhausted}{Resolved stage-B rung
 #'       and whether the public selection cascade was fully exhausted.}
+#'     \item{use_double_brainstorm, double_brainstorm_enabled, draft_status,
+#'       draft_evidence_status}{Experimental double-brainstorm strategy
+#'       metadata when present.}
 #'     \item{dataset_type, dataset_label, dataset_path}{Dataset provenance carried through evidence extraction.}
 #'   }
 #'
@@ -224,6 +227,10 @@ cluster_label_registry <- function(x) {
     selected_label_variant = character(),
     label_stage_exhausted = logical(),
     label_stage_failure_reason = character(),
+    use_double_brainstorm = logical(),
+    double_brainstorm_enabled = logical(),
+    draft_status = character(),
+    draft_evidence_status = character(),
     gate_variant = character(),
     gate_decision = character(),
     prompt_catalog_path = character(),
@@ -278,6 +285,7 @@ cluster_label_registry <- function(x) {
     n_citation_targets = NA_integer_
   )
   provenance <- .cluster_review_provenance(llm_result)
+  llm_metadata <- llm_result$metadata %||% list()
   dataset <- .cluster_review_dataset_info(evidence)
 
   display_label <- .as_scalar_character(output$display_label)
@@ -405,6 +413,10 @@ cluster_label_registry <- function(x) {
     label_stage_failure_reason = .cluster_label_registry_character(
       provenance$label_stage_failure_reason
     ),
+    use_double_brainstorm = isTRUE(llm_metadata$use_double_brainstorm),
+    double_brainstorm_enabled = isTRUE(llm_metadata$double_brainstorm_enabled),
+    draft_status = .cluster_label_registry_character(llm_metadata$draft_status),
+    draft_evidence_status = .cluster_label_registry_character(llm_metadata$draft_evidence_status),
     gate_variant = .cluster_label_registry_character(provenance$gate_variant),
     gate_decision = .cluster_label_registry_character(provenance$gate_decision),
     prompt_catalog_path = .cluster_label_registry_character(provenance$prompt_catalog_path),

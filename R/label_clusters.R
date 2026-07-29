@@ -88,8 +88,14 @@
 #'   \code{\link{llm_label_cluster}}. Default \code{FALSE}; when enabled, an
 #'   experimental subcategorization strategy fills category-compatible output
 #'   fields. The selected \code{internal_prompt_version} chooses the strategy;
-#'   packaged \code{"v5"} is post-label and packaged \code{"v6"} is staged
-#'   general-name / uniqueness-detail.
+#'   packaged \code{"v5"} is post-label, while packaged \code{"v6"},
+#'   \code{"v7"}, \code{"v8a"}, \code{"v8b"}, and \code{"v8c"} are staged
+#'   general-name / uniqueness-detail variants. The \code{"v7"} bundle is an
+#'   anti-repetition prompt experiment; the \code{"v8a"}-\code{"v8c"} bundles
+#'   are A001 subcategory wording probes.
+#' @param use_double_brainstorm Logical. Forwarded to
+#'   \code{\link{llm_label_cluster}}. Default \code{FALSE}; when enabled with
+#'   staged subcategorization, runs the experimental two-draft brainstorm flow.
 #' @param max_iterations Integer workflow budget. Currently allowed values are
 #'   \code{1}, \code{2}, and \code{3}. Default \code{3}. The default supports
 #'   the full EOF retry ladder \code{2400 -> 4800 -> 9600}.
@@ -194,6 +200,7 @@ label_clusters <- function(
     use_brainstorm = TRUE,
     short_label_with_llm = FALSE,
     use_subcategorization = FALSE,
+    use_double_brainstorm = FALSE,
     internal_prompt_version = .default_cluster_label_internal_prompt_version(),
     debug = FALSE,
     max_iterations = 3L,
@@ -224,9 +231,23 @@ label_clusters <- function(
     use_subcategorization,
     "use_subcategorization"
   )
+  use_double_brainstorm <- .arg_single_flag(
+    use_double_brainstorm,
+    "use_double_brainstorm"
+  )
   internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
     internal_prompt_version
   )
+  if (isTRUE(use_double_brainstorm) && !isTRUE(use_brainstorm)) {
+    stop("`use_double_brainstorm = TRUE` requires `use_brainstorm = TRUE`.")
+  }
+  if (isTRUE(use_double_brainstorm) && !isTRUE(use_subcategorization)) {
+    stop("`use_double_brainstorm = TRUE` requires `use_subcategorization = TRUE`.")
+  }
+  if (isTRUE(use_double_brainstorm) &&
+      !.is_cluster_label_double_brainstorm_prompt_version(internal_prompt_version)) {
+    stop("`use_double_brainstorm = TRUE` currently requires `internal_prompt_version = \"v9\"`.")
+  }
   debug <- .arg_single_flag(debug, "debug")
   max_retries <- .arg_non_negative_integer(max_retries, "max_retries")
   prompt_budget_chars <- .arg_nullable_positive_integer(
@@ -355,6 +376,7 @@ label_clusters <- function(
       use_brainstorm = use_brainstorm,
       short_label_with_llm = short_label_with_llm,
       use_subcategorization = use_subcategorization,
+      use_double_brainstorm = use_double_brainstorm,
       internal_prompt_version = internal_prompt_version,
       dry_run = TRUE,
       request_fn = request_fn
@@ -383,6 +405,7 @@ label_clusters <- function(
       use_brainstorm = use_brainstorm,
       short_label_with_llm = short_label_with_llm,
       use_subcategorization = use_subcategorization,
+      use_double_brainstorm = use_double_brainstorm,
       internal_prompt_version = internal_prompt_version,
       max_iterations = max_iterations,
       review_dir = review_dir,
@@ -423,6 +446,15 @@ label_clusters <- function(
       ),
       subcategorization_strategy = .as_scalar_character(
         cluster_run$llm_result$metadata$subcategorization_strategy %||% NA_character_
+      ),
+      double_brainstorm_enabled = isTRUE(
+        cluster_run$llm_result$metadata$double_brainstorm_enabled %||% FALSE
+      ),
+      draft_status = .as_scalar_character(
+        cluster_run$llm_result$metadata$draft_status %||% NA_character_
+      ),
+      draft_evidence_status = .as_scalar_character(
+        cluster_run$llm_result$metadata$draft_evidence_status %||% NA_character_
       ),
       label_tier = cluster_run$label_tier %||% NA_character_,
       is_speculative = isTRUE(cluster_run$is_speculative),
@@ -703,6 +735,7 @@ label_clusters <- function(
     use_brainstorm,
     short_label_with_llm,
     use_subcategorization,
+    use_double_brainstorm,
     internal_prompt_version,
     max_iterations,
     review_dir,
@@ -809,6 +842,7 @@ label_clusters <- function(
             use_brainstorm = use_brainstorm,
             short_label_with_llm = short_label_with_llm,
             use_subcategorization = use_subcategorization,
+            use_double_brainstorm = use_double_brainstorm,
             internal_prompt_version = internal_prompt_version,
             label_mode = label_mode,
             ollama_options = ollama_options
@@ -835,6 +869,7 @@ label_clusters <- function(
             use_brainstorm = use_brainstorm,
             short_label_with_llm = short_label_with_llm,
             use_subcategorization = use_subcategorization,
+            use_double_brainstorm = use_double_brainstorm,
             internal_prompt_version = internal_prompt_version,
             dry_run = FALSE,
             log_dir = log_dir,
@@ -1703,6 +1738,7 @@ label_clusters <- function(
     use_brainstorm,
     short_label_with_llm,
     use_subcategorization,
+    use_double_brainstorm,
     internal_prompt_version,
     label_mode,
     ollama_options
@@ -1717,6 +1753,20 @@ label_clusters <- function(
     stage_name = "draft",
     field_name = "draft_analysis"
   )
+  previous_evidence_draft_text <- .cluster_label_previous_stage_text(
+    previous_result = previous_result,
+    stage_name = "draft_evidence",
+    field_name = "draft_analysis"
+  )
+  if (isTRUE(use_double_brainstorm) &&
+      .is_non_empty_scalar_character(previous_evidence_draft_text)) {
+    previous_draft_text <- .cluster_label_double_brainstorm_text(
+      exploratory_text = previous_draft_text,
+      evidence_text = previous_evidence_draft_text,
+      exploratory_failure = previous_result$workflow$draft$failure_reason %||% NULL,
+      evidence_failure = previous_result$workflow$draft_evidence$failure_reason %||% NULL
+    )
+  }
   previous_candidates <- if (.is_non_empty_scalar_character(previous_draft_text)) {
     .extract_cluster_label_candidates_from_draft(previous_draft_text)
   } else {
@@ -1744,6 +1794,7 @@ label_clusters <- function(
     use_brainstorm = use_brainstorm,
     short_label_with_llm = short_label_with_llm,
     use_subcategorization = use_subcategorization,
+    use_double_brainstorm = use_double_brainstorm,
     internal_prompt_version = internal_prompt_version,
     dry_run = FALSE,
     log_dir = log_dir,

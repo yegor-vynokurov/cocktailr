@@ -83,9 +83,19 @@
 #'   category-compatible output fields with an experimental subcategorization
 #'   strategy selected by \code{internal_prompt_version}: the packaged
 #'   \code{"v5"} bundle runs a post-label classifier after label summary, and
-#'   the packaged \code{"v6"} bundle runs a staged general-name /
-#'   uniqueness-detail flow before label summary. Default \code{FALSE}; the
-#'   ordinary staged labeling flow is unchanged when disabled.
+#'   the packaged \code{"v6"}, \code{"v7"}, \code{"v8a"}, \code{"v8b"},
+#'   \code{"v8c"}, and \code{"v9"} bundles run staged general-name /
+#'   uniqueness-detail flows. The \code{"v7"} bundle is an anti-repetition
+#'   prompt experiment; the \code{"v8a"}-\code{"v8c"} bundles are A001
+#'   subcategory wording probes; and \code{"v9"} supports the opt-in
+#'   double-brainstorm experiment.
+#'   Default \code{FALSE}; the ordinary staged labeling flow is unchanged when
+#'   disabled.
+#' @param use_double_brainstorm Logical. Experimental opt-in for staged
+#'   subcategorization runs. If \code{TRUE}, the workflow runs two draft
+#'   analysis prompts, exploratory and evidence-focused, then passes both
+#'   runtime-marked drafts to downstream staged decisions. Default
+#'   \code{FALSE}.
 #' @param internal_prompt_version Character scalar naming the subdirectory
 #'   under \code{inst/prompts/internal_cluster_labeling/} that contains the
 #'   active internal service-prompt bundle. Default \code{"v1"}. Copy that
@@ -180,6 +190,7 @@ llm_label_cluster <- function(
     use_brainstorm = TRUE,
     short_label_with_llm = FALSE,
     use_subcategorization = FALSE,
+    use_double_brainstorm = FALSE,
     internal_prompt_version = .default_cluster_label_internal_prompt_version(),
     dry_run = FALSE,
     debug = FALSE,
@@ -213,9 +224,23 @@ llm_label_cluster <- function(
     use_subcategorization,
     "use_subcategorization"
   )
+  use_double_brainstorm <- .arg_single_flag(
+    use_double_brainstorm,
+    "use_double_brainstorm"
+  )
+  if (isTRUE(use_double_brainstorm) && !isTRUE(use_brainstorm)) {
+    stop("`use_double_brainstorm = TRUE` requires `use_brainstorm = TRUE`.")
+  }
   internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
     internal_prompt_version
   )
+  if (isTRUE(use_double_brainstorm) && !isTRUE(use_subcategorization)) {
+    stop("`use_double_brainstorm = TRUE` requires `use_subcategorization = TRUE`.")
+  }
+  if (isTRUE(use_double_brainstorm) &&
+      !.is_cluster_label_double_brainstorm_prompt_version(internal_prompt_version)) {
+    stop("`use_double_brainstorm = TRUE` currently requires `internal_prompt_version = \"v9\"`.")
+  }
   debug <- .arg_single_flag(debug, "debug")
   prompt_budget_chars <- .arg_nullable_positive_integer(
     prompt_budget_chars,
@@ -249,6 +274,7 @@ llm_label_cluster <- function(
     use_brainstorm = use_brainstorm,
     short_label_with_llm = short_label_with_llm,
     use_subcategorization = use_subcategorization,
+    use_double_brainstorm = use_double_brainstorm,
     internal_prompt_version = internal_prompt_version,
     dry_run = dry_run,
     log_dir = log_dir,
@@ -2413,6 +2439,18 @@ llm_label_cluster <- function(
   .default_cluster_label_uniqueness_detail_variant()
 }
 
+.default_cluster_label_pre_subcategory_summary_variant <- function() {
+  .read_cluster_label_prompt_catalog()$parsed$internal_pre_subcategory_summary_variant
+}
+
+.default_cluster_label_double_brainstorm_exploratory_variant <- function() {
+  .read_cluster_label_prompt_catalog()$parsed$internal_double_brainstorm_exploratory_variant
+}
+
+.default_cluster_label_double_brainstorm_evidence_variant <- function() {
+  .read_cluster_label_prompt_catalog()$parsed$internal_double_brainstorm_evidence_variant
+}
+
 .is_cluster_label_decomposed_internal_prompt_version <- function(internal_prompt_version) {
   identical(
     .normalize_cluster_label_internal_prompt_version(internal_prompt_version),
@@ -2421,9 +2459,20 @@ llm_label_cluster <- function(
 }
 
 .is_cluster_label_staged_general_name_internal_prompt_version <- function(internal_prompt_version) {
-  identical(
-    .normalize_cluster_label_internal_prompt_version(internal_prompt_version),
-    "v6"
+  .normalize_cluster_label_internal_prompt_version(internal_prompt_version) %in% c(
+    "v6", "v7", "v8a", "v8b", "v8c", "v9"
+  )
+}
+
+.is_cluster_label_a001_prompt_version <- function(internal_prompt_version) {
+  .normalize_cluster_label_internal_prompt_version(internal_prompt_version) %in% c(
+    "v8a", "v8b", "v8c", "v9"
+  )
+}
+
+.is_cluster_label_double_brainstorm_prompt_version <- function(internal_prompt_version) {
+  .normalize_cluster_label_internal_prompt_version(internal_prompt_version) %in% c(
+    "v9"
   )
 }
 
@@ -2471,7 +2520,9 @@ llm_label_cluster <- function(
     seed,
     num_predict,
     prompt_budget_chars,
-    internal_prompt_version
+    internal_prompt_version,
+    selected_label_text = NULL,
+    label_summary_text = NULL
 ) {
   .build_cluster_label_prompt(
     evidence = evidence,
@@ -2488,7 +2539,9 @@ llm_label_cluster <- function(
     internal_prompt_version = internal_prompt_version,
     extra_template_values = list(
       "{{DRAFT_ANALYSIS_TEXT}}" = draft_analysis_text,
-      "{{CATEGORY_LABEL_TEXT}}" = category_label_text
+      "{{CATEGORY_LABEL_TEXT}}" = category_label_text,
+      "{{SELECTED_LABEL_TEXT}}" = selected_label_text %||% "",
+      "{{LABEL_SUMMARY_TEXT}}" = label_summary_text %||% ""
     )
   )
 }
@@ -3705,22 +3758,108 @@ llm_label_cluster <- function(
   )
 }
 
+.cluster_label_failed_draft_stage <- function(
+    cluster_id,
+    draft_variant,
+    workflow_stage_logs,
+    failure_reason
+) {
+  failure_reason <- .as_scalar_character(failure_reason)
+  if (is.na(failure_reason) || !nzchar(trimws(failure_reason))) {
+    failure_reason <- "Draft analysis stage failed."
+  }
+
+  list(
+    variant = draft_variant,
+    prompt = NULL,
+    request = NULL,
+    response = NULL,
+    output = list(
+      cluster_id = cluster_id,
+      status = "draft_failed",
+      draft_analysis = ""
+    ),
+    attempts = 0L,
+    logs = workflow_stage_logs,
+    skipped = TRUE,
+    skip_reason = "draft_failed",
+    failure_reason = failure_reason
+  )
+}
+
+.cluster_label_double_brainstorm_text <- function(
+    exploratory_text,
+    evidence_text,
+    exploratory_failure = NULL,
+    evidence_failure = NULL
+) {
+  exploratory_text <- .as_scalar_character(exploratory_text)
+  evidence_text <- .as_scalar_character(evidence_text)
+  exploratory_failure <- .as_scalar_character(exploratory_failure)
+  evidence_failure <- .as_scalar_character(evidence_failure)
+
+  if (is.na(exploratory_text) || !nzchar(trimws(exploratory_text))) {
+    exploratory_text <- paste(
+      "Draft A was unavailable.",
+      if (!is.na(exploratory_failure) && nzchar(trimws(exploratory_failure))) {
+        paste("Failure:", exploratory_failure)
+      } else {
+        "Proceed from Draft B and the cluster evidence."
+      }
+    )
+  }
+  if (is.na(evidence_text) || !nzchar(trimws(evidence_text))) {
+    evidence_text <- paste(
+      "Draft B was unavailable.",
+      if (!is.na(evidence_failure) && nzchar(trimws(evidence_failure))) {
+        paste("Failure:", evidence_failure)
+      } else {
+        "Proceed from Draft A and the cluster evidence."
+      }
+    )
+  }
+
+  paste(
+    "Use both drafts. Treat Draft A as a source of possible interpretations.",
+    "Treat Draft B as a check on what is directly supported.",
+    "Prefer labels supported by Draft B, but do not ignore useful distinctions noticed in Draft A.",
+    "",
+    "Draft A: exploratory",
+    trimws(exploratory_text),
+    "",
+    "Draft B: evidence-focused",
+    trimws(evidence_text),
+    sep = "\n"
+  )
+}
+
 .cluster_label_decomposed_workflow_logs <- function(workflow_logs) {
   if (is.null(workflow_logs$run_dir) || !nzchar(workflow_logs$run_dir)) {
     workflow_logs$stages <- stats::setNames(
       lapply(
-        c("draft", "category", "subcategory", "summary", "abstain_reason"),
+        c(
+          "draft", "draft_evidence", "category", "pre_subcategory_summary",
+          "subcategory", "summary", "abstain_reason"
+        ),
         function(...) .null_stage_log_paths()
       ),
-      c("draft", "category", "subcategory", "summary", "abstain_reason")
+      c(
+        "draft", "draft_evidence", "category", "pre_subcategory_summary",
+        "subcategory", "summary", "abstain_reason"
+      )
     )
     return(workflow_logs)
   }
 
-  stage_names <- c("draft", "category", "subcategory", "summary", "abstain_reason")
+  stage_names <- c(
+    "draft", "draft_evidence", "category", "pre_subcategory_summary",
+    "subcategory", "summary", "abstain_reason"
+  )
   stage_dirs <- c(
     "stage1_draft",
+    "stage1b_draft_evidence",
     "stage2_category",
+    "stage3a_pre_subcategory_summary",
     "stage3_subcategory",
     "stage4_label_summary",
     "stage5_abstain_reason"
@@ -3792,6 +3931,7 @@ llm_label_cluster <- function(
     workflow_steps,
     use_brainstorm,
     short_label_with_llm,
+    use_double_brainstorm = FALSE,
     internal_prompt_version,
     dry_run,
     log_dir,
@@ -3810,6 +3950,14 @@ llm_label_cluster <- function(
     subcategorization_strategy = NULL
 ) {
   draft_variant <- .default_cluster_label_draft_variant()
+  use_double_brainstorm <- .arg_single_flag(
+    use_double_brainstorm,
+    "use_double_brainstorm"
+  )
+  if (isTRUE(use_double_brainstorm)) {
+    draft_variant <- .default_cluster_label_double_brainstorm_exploratory_variant()
+  }
+  evidence_draft_variant <- .default_cluster_label_double_brainstorm_evidence_variant()
   if (is.null(category_variants)) {
     category_variants <- .default_cluster_label_category_variants()
   }
@@ -3832,6 +3980,7 @@ llm_label_cluster <- function(
     nzchar(trimws(.as_scalar_character(draft_analysis_text_override)))
 
   draft_prompt_bundle <- NULL
+  evidence_draft_prompt_bundle <- NULL
   if (isTRUE(use_brainstorm) && !isTRUE(has_draft_override)) {
     draft_prompt_bundle <- .build_cluster_label_prompt(
       evidence = evidence,
@@ -3846,6 +3995,21 @@ llm_label_cluster <- function(
       internal_prompt_version = internal_prompt_version
     )
     .expect_prompt_task_type(draft_prompt_bundle, "draft", draft_variant)
+    if (isTRUE(use_double_brainstorm)) {
+      evidence_draft_prompt_bundle <- .build_cluster_label_prompt(
+        evidence = evidence,
+        variant = evidence_draft_variant,
+        schema_path = NULL,
+        temperature = temperature,
+        top_p = top_p,
+        seed = seed,
+        num_predict = num_predict,
+        prompt_budget_chars = prompt_budget_chars,
+        include_schema = FALSE,
+        internal_prompt_version = internal_prompt_version
+      )
+      .expect_prompt_task_type(evidence_draft_prompt_bundle, "draft", evidence_draft_variant)
+    }
   }
 
   dry_placeholders <- .cluster_label_v2_placeholders(
@@ -3853,6 +4017,15 @@ llm_label_cluster <- function(
   )
   dry_draft_analysis_text <- if (isTRUE(has_draft_override)) {
     .as_scalar_character(draft_analysis_text_override)
+  } else if (isTRUE(use_double_brainstorm) && isTRUE(use_brainstorm)) {
+    .cluster_label_double_brainstorm_text(
+      exploratory_text = dry_placeholders$draft_analysis,
+      evidence_text = paste(
+        "Directly supported signals: dry open vegetation signal.",
+        "Supported broad interpretation: open dry vegetation.",
+        "Specific differentiators: light, dryness, nutrient variation."
+      )
+    )
   } else if (isTRUE(use_brainstorm)) {
     dry_placeholders$draft_analysis
   } else {
@@ -3876,6 +4049,12 @@ llm_label_cluster <- function(
     use_brainstorm = use_brainstorm,
     extra_guidance_text = explanation_context_extra_text
   )
+  uses_a001_prompt_version <- .is_cluster_label_a001_prompt_version(
+    internal_prompt_version
+  )
+  uses_double_brainstorm_prompt_version <- .is_cluster_label_double_brainstorm_prompt_version(
+    internal_prompt_version
+  )
 
   category_prompt_bundle <- .build_cluster_label_category_prompt(
     evidence = evidence,
@@ -3892,10 +4071,40 @@ llm_label_cluster <- function(
   )
   .expect_prompt_task_type(category_prompt_bundle, category_task_type, category_variants[[1L]])
 
+  pre_subcategory_summary_prompt_bundle <- NULL
+  dry_pre_subcategory_summary_text <- NULL
+  if (isTRUE(uses_a001_prompt_version)) {
+    pre_subcategory_summary_prompt_bundle <- .build_cluster_label_summary_prompt(
+      evidence = evidence,
+      summary_variant = .default_cluster_label_pre_subcategory_summary_variant(),
+      draft_analysis_text = dry_explanation_context_text,
+      selected_label_text = dry_placeholders$labeled_decision$display_label,
+      category_label_text = dry_placeholders$labeled_decision$category_label,
+      subcategory_labels_text = "",
+      temperature = temperature,
+      top_p = top_p,
+      seed = seed,
+      num_predict = num_predict,
+      prompt_budget_chars = prompt_budget_chars,
+      internal_prompt_version = internal_prompt_version
+    )
+    .expect_prompt_task_type(
+      pre_subcategory_summary_prompt_bundle,
+      "label_summary",
+      .default_cluster_label_pre_subcategory_summary_variant()
+    )
+    dry_pre_subcategory_summary_text <- dry_placeholders$explanation
+  }
+
   subcategory_prompt_bundle <- .build_cluster_label_subcategory_prompt(
     evidence = evidence,
     subcategory_variant = subcategory_variants[[1L]],
-    draft_analysis_text = dry_selection_context_text,
+    draft_analysis_text = if (isTRUE(uses_a001_prompt_version) &&
+        !isTRUE(uses_double_brainstorm_prompt_version)) {
+      ""
+    } else {
+      dry_selection_context_text
+    },
     category_label_text = dry_placeholders$labeled_decision$category_label,
     label_mode = label_mode,
     dynamic_candidates = dry_candidates,
@@ -3904,7 +4113,9 @@ llm_label_cluster <- function(
     seed = seed,
     num_predict = num_predict,
     prompt_budget_chars = prompt_budget_chars,
-    internal_prompt_version = internal_prompt_version
+    internal_prompt_version = internal_prompt_version,
+    selected_label_text = dry_placeholders$labeled_decision$display_label,
+    label_summary_text = dry_pre_subcategory_summary_text
   )
   .expect_prompt_task_type(subcategory_prompt_bundle, subcategory_task_type, subcategory_variants[[1L]])
 
@@ -3962,7 +4173,20 @@ llm_label_cluster <- function(
     workflow = list(
       draft_variant = draft_variant,
       draft = list(prompt = draft_prompt_bundle),
+      draft_evidence = if (isTRUE(use_double_brainstorm)) {
+        list(variant = evidence_draft_variant, prompt = evidence_draft_prompt_bundle)
+      } else {
+        NULL
+      },
       category = list(variants = category_variants, prompt = category_prompt_bundle),
+      pre_subcategory_summary = if (isTRUE(uses_a001_prompt_version)) {
+        list(
+          variant = .default_cluster_label_pre_subcategory_summary_variant(),
+          prompt = pre_subcategory_summary_prompt_bundle
+        )
+      } else {
+        NULL
+      },
       subcategory = list(variants = subcategory_variants, prompt = subcategory_prompt_bundle),
       summary_variant = summary_variant,
       summary = list(prompt = summary_prompt_bundle),
@@ -4000,7 +4224,20 @@ llm_label_cluster <- function(
       subcategorization_enabled = !is.na(subcategorization_strategy),
       subcategorization_strategy = if (!is.na(subcategorization_strategy)) subcategorization_strategy else NULL,
       draft_override_used = isTRUE(has_draft_override),
+      use_double_brainstorm = isTRUE(use_double_brainstorm),
+      double_brainstorm_enabled = isTRUE(use_double_brainstorm) &&
+        isTRUE(use_brainstorm) &&
+        !isTRUE(has_draft_override),
       draft_variant = draft_variant,
+      evidence_draft_variant = if (isTRUE(use_double_brainstorm)) evidence_draft_variant else NULL,
+      double_brainstorm_variants = if (isTRUE(use_double_brainstorm)) {
+        list(
+          exploratory = draft_variant,
+          evidence_focused = evidence_draft_variant
+        )
+      } else {
+        NULL
+      },
       category_variants = unname(category_variants),
       subcategory_variants = unname(subcategory_variants),
       summary_variant = summary_variant,
@@ -4022,28 +4259,63 @@ llm_label_cluster <- function(
         use_brainstorm = use_brainstorm
       )
     } else if (isTRUE(use_brainstorm)) {
-      .run_structured_llm_stage(
-        evidence = evidence,
-        provider = provider,
-        model = model,
-        variant = draft_variant,
-        prompt_bundle = draft_prompt_bundle,
-        keep_alive = keep_alive,
-        ollama_options = ollama_options,
-        endpoint = endpoint,
-        timeout_sec = timeout_sec,
-        max_retries = max_retries,
-        request_fn = request_fn,
-        log_paths = workflow_logs$stages$draft,
-        parse_output_fn = function(content) {
-          .parse_cluster_label_draft_text(
-            content = content,
-            cluster_id = evidence$meta$cluster_id
-          )
-        },
-        stage_name = "draft_analysis",
-        repair_instruction = .default_draft_stage_repair_instruction()
-      )
+      if (isTRUE(use_double_brainstorm)) {
+        tryCatch(
+          .run_structured_llm_stage(
+            evidence = evidence,
+            provider = provider,
+            model = model,
+            variant = draft_variant,
+            prompt_bundle = draft_prompt_bundle,
+            keep_alive = keep_alive,
+            ollama_options = ollama_options,
+            endpoint = endpoint,
+            timeout_sec = timeout_sec,
+            max_retries = max_retries,
+            request_fn = request_fn,
+            log_paths = workflow_logs$stages$draft,
+            parse_output_fn = function(content) {
+              .parse_cluster_label_draft_text(
+                content = content,
+                cluster_id = evidence$meta$cluster_id
+              )
+            },
+            stage_name = "draft_analysis",
+            repair_instruction = .default_draft_stage_repair_instruction()
+          ),
+          error = function(e) {
+            .cluster_label_failed_draft_stage(
+              cluster_id = evidence$meta$cluster_id,
+              draft_variant = draft_variant,
+              workflow_stage_logs = workflow_logs$stages$draft,
+              failure_reason = conditionMessage(e)
+            )
+          }
+        )
+      } else {
+        .run_structured_llm_stage(
+          evidence = evidence,
+          provider = provider,
+          model = model,
+          variant = draft_variant,
+          prompt_bundle = draft_prompt_bundle,
+          keep_alive = keep_alive,
+          ollama_options = ollama_options,
+          endpoint = endpoint,
+          timeout_sec = timeout_sec,
+          max_retries = max_retries,
+          request_fn = request_fn,
+          log_paths = workflow_logs$stages$draft,
+          parse_output_fn = function(content) {
+            .parse_cluster_label_draft_text(
+              content = content,
+              cluster_id = evidence$meta$cluster_id
+            )
+          },
+          stage_name = "draft_analysis",
+          repair_instruction = .default_draft_stage_repair_instruction()
+        )
+      }
     } else {
       list(
         variant = draft_variant,
@@ -4062,8 +4334,78 @@ llm_label_cluster <- function(
       )
     }
 
-    draft_analysis_text <- draft_stage$output$draft_analysis %||%
-      .cluster_label_brainstorm_disabled_text()
+    evidence_draft_stage <- if (isTRUE(use_double_brainstorm) && isTRUE(use_brainstorm) &&
+        !isTRUE(has_draft_override)) {
+      tryCatch(
+        .run_structured_llm_stage(
+          evidence = evidence,
+          provider = provider,
+          model = model,
+          variant = evidence_draft_variant,
+          prompt_bundle = evidence_draft_prompt_bundle,
+          keep_alive = keep_alive,
+          ollama_options = ollama_options,
+          endpoint = endpoint,
+          timeout_sec = timeout_sec,
+          max_retries = max_retries,
+          request_fn = request_fn,
+          log_paths = workflow_logs$stages$draft_evidence,
+          parse_output_fn = function(content) {
+            .parse_cluster_label_draft_text(
+              content = content,
+              cluster_id = evidence$meta$cluster_id
+            )
+          },
+          stage_name = "draft_analysis",
+          repair_instruction = .default_draft_stage_repair_instruction()
+        ),
+        error = function(e) {
+          .cluster_label_failed_draft_stage(
+            cluster_id = evidence$meta$cluster_id,
+            draft_variant = evidence_draft_variant,
+            workflow_stage_logs = workflow_logs$stages$draft_evidence,
+            failure_reason = conditionMessage(e)
+          )
+        }
+      )
+    } else {
+      list(
+        variant = evidence_draft_variant,
+        prompt = NULL,
+        request = NULL,
+        response = NULL,
+        output = list(
+          cluster_id = evidence$meta$cluster_id,
+          status = "draft_skipped",
+          draft_analysis = NULL
+        ),
+        attempts = 0L,
+        logs = workflow_logs$stages$draft_evidence,
+        skipped = TRUE,
+        skip_reason = if (isTRUE(use_double_brainstorm)) {
+          "draft_analysis_reused"
+        } else {
+          "double_brainstorm_disabled"
+        }
+      )
+    }
+
+    if (isTRUE(use_double_brainstorm) &&
+        !nzchar(trimws(.as_scalar_character(draft_stage$output$draft_analysis %||% ""))) &&
+        !nzchar(trimws(.as_scalar_character(evidence_draft_stage$output$draft_analysis %||% "")))) {
+      stop("Both double-brainstorm draft stages failed or returned empty draft text.")
+    }
+
+    draft_analysis_text <- if (isTRUE(use_double_brainstorm)) {
+      .cluster_label_double_brainstorm_text(
+        exploratory_text = draft_stage$output$draft_analysis,
+        evidence_text = evidence_draft_stage$output$draft_analysis,
+        exploratory_failure = draft_stage$failure_reason %||% NULL,
+        evidence_failure = evidence_draft_stage$failure_reason %||% NULL
+      )
+    } else {
+      draft_stage$output$draft_analysis %||% .cluster_label_brainstorm_disabled_text()
+    }
     draft_candidates <- if (is.list(draft_candidates_override)) {
       draft_candidates_override
     } else if (isTRUE(use_brainstorm)) {
@@ -4081,6 +4423,12 @@ llm_label_cluster <- function(
       draft_analysis_text = draft_analysis_text,
       use_brainstorm = use_brainstorm,
       extra_guidance_text = explanation_context_extra_text
+    )
+    uses_a001_prompt_version <- .is_cluster_label_a001_prompt_version(
+      internal_prompt_version
+    )
+    uses_double_brainstorm_prompt_version <- .is_cluster_label_double_brainstorm_prompt_version(
+      internal_prompt_version
     )
 
     category_stage <- .run_cluster_label_clean_ladder(
@@ -4144,8 +4492,56 @@ llm_label_cluster <- function(
       failure_messages = character(0),
       logs = workflow_logs$stages$subcategory
     )
+    pre_subcategory_summary_stage <- NULL
+    pre_subcategory_summary_text <- NULL
 
     if (!identical(decision_output$status, "abstain")) {
+      if (isTRUE(uses_a001_prompt_version)) {
+        pre_subcategory_summary_prompt_bundle <- .build_cluster_label_summary_prompt(
+          evidence = evidence,
+          summary_variant = .default_cluster_label_pre_subcategory_summary_variant(),
+          draft_analysis_text = explanation_context_text,
+          selected_label_text = decision_output$display_label,
+          category_label_text = decision_output$category_label,
+          subcategory_labels_text = "",
+          temperature = temperature,
+          top_p = top_p,
+          seed = seed,
+          num_predict = num_predict,
+          prompt_budget_chars = prompt_budget_chars,
+          internal_prompt_version = internal_prompt_version
+        )
+        .expect_prompt_task_type(
+          pre_subcategory_summary_prompt_bundle,
+          "label_summary",
+          .default_cluster_label_pre_subcategory_summary_variant()
+        )
+
+        pre_subcategory_summary_stage <- .run_structured_llm_stage(
+          evidence = evidence,
+          provider = provider,
+          model = model,
+          variant = .default_cluster_label_pre_subcategory_summary_variant(),
+          prompt_bundle = pre_subcategory_summary_prompt_bundle,
+          keep_alive = keep_alive,
+          ollama_options = ollama_options,
+          endpoint = endpoint,
+          timeout_sec = timeout_sec,
+          max_retries = .cluster_label_single_retry_budget(max_retries),
+          request_fn = request_fn,
+          log_paths = workflow_logs$stages$pre_subcategory_summary,
+          parse_output_fn = function(content) {
+            .parse_cluster_label_summary_text(
+              content = content,
+              cluster_id = evidence$meta$cluster_id
+            )
+          },
+          stage_name = "label_summary",
+          repair_instruction = .default_label_summary_stage_repair_instruction()
+        )
+        pre_subcategory_summary_text <- pre_subcategory_summary_stage$output$label_summary
+      }
+
       subcategory_stage <- .run_cluster_label_clean_ladder(
         evidence = evidence,
         provider = provider,
@@ -4157,7 +4553,12 @@ llm_label_cluster <- function(
           .build_cluster_label_subcategory_prompt(
             evidence = evidence,
             subcategory_variant = subcategory_variant,
-            draft_analysis_text = selection_context_text,
+            draft_analysis_text = if (isTRUE(uses_a001_prompt_version) &&
+                !isTRUE(uses_double_brainstorm_prompt_version)) {
+              ""
+            } else {
+              selection_context_text
+            },
             category_label_text = decision_output$category_label,
             label_mode = label_mode,
             dynamic_candidates = draft_candidates,
@@ -4166,7 +4567,9 @@ llm_label_cluster <- function(
             seed = seed,
             num_predict = num_predict,
             prompt_budget_chars = prompt_budget_chars,
-            internal_prompt_version = internal_prompt_version
+            internal_prompt_version = internal_prompt_version,
+            selected_label_text = decision_output$display_label,
+            label_summary_text = pre_subcategory_summary_text
           )
         },
         parse_output_fn = function(content) {
@@ -4374,13 +4777,17 @@ llm_label_cluster <- function(
     }, integer(1)))
     total_attempts <- as.integer(
       (draft_stage$attempts %||% 0L) +
+        (evidence_draft_stage$attempts %||% 0L) +
         category_attempt_total +
         subcategory_attempt_total +
+        (pre_subcategory_summary_stage$attempts %||% 0L) +
         (terminal_stage$attempts %||% 0L)
     )
     executed_stages <- as.integer(sum(c(
       !isTRUE(draft_stage$skipped),
+      !isTRUE(evidence_draft_stage$skipped),
       TRUE,
+      !is.null(pre_subcategory_summary_stage),
       !isTRUE(subcategory_stage$skipped),
       TRUE
     )))
@@ -4400,7 +4807,24 @@ llm_label_cluster <- function(
         subcategorization_enabled = !is.na(subcategorization_strategy),
         subcategorization_strategy = if (!is.na(subcategorization_strategy)) subcategorization_strategy else NULL,
         draft_override_used = isTRUE(has_draft_override),
+        use_double_brainstorm = isTRUE(use_double_brainstorm),
+        double_brainstorm_enabled = isTRUE(use_double_brainstorm) &&
+          isTRUE(use_brainstorm) &&
+          !isTRUE(has_draft_override),
         draft_variant = draft_variant,
+        evidence_draft_variant = if (isTRUE(use_double_brainstorm)) evidence_draft_variant else NULL,
+        double_brainstorm_variants = if (isTRUE(use_double_brainstorm)) {
+          list(
+            exploratory = draft_variant,
+            evidence_focused = evidence_draft_variant
+          )
+        } else {
+          NULL
+        },
+        draft_status = draft_stage$output$status %||% NULL,
+        draft_failure_reason = draft_stage$failure_reason %||% NULL,
+        draft_evidence_status = evidence_draft_stage$output$status %||% NULL,
+        draft_evidence_failure_reason = evidence_draft_stage$failure_reason %||% NULL,
         category_variants = unname(category_variants),
         subcategory_variants = unname(subcategory_variants),
         selected_label_variant = category_stage$selected_variant,
@@ -4440,6 +4864,22 @@ llm_label_cluster <- function(
         subcategorization_status = subcategory_stage$output$status %||% NULL,
         subcategorization_category_variant = if (!is.na(subcategorization_strategy)) category_stage$selected_variant else NULL,
         subcategorization_uniqueness_variant = if (!is.na(subcategorization_strategy)) subcategory_stage$selected_variant else NULL,
+        use_double_brainstorm = isTRUE(use_double_brainstorm),
+        double_brainstorm_enabled = isTRUE(use_double_brainstorm) &&
+          isTRUE(use_brainstorm) &&
+          !isTRUE(has_draft_override),
+        double_brainstorm_variants = if (isTRUE(use_double_brainstorm)) {
+          list(
+            exploratory = draft_variant,
+            evidence_focused = evidence_draft_variant
+          )
+        } else {
+          NULL
+        },
+        draft_status = draft_stage$output$status %||% NULL,
+        draft_failure_reason = draft_stage$failure_reason %||% NULL,
+        draft_evidence_status = evidence_draft_stage$output$status %||% NULL,
+        draft_evidence_failure_reason = evidence_draft_stage$failure_reason %||% NULL,
         internal_prompt_version = internal_prompt_version
       ),
       schema_path = terminal_prompt_bundle$schema_path,
@@ -4447,8 +4887,10 @@ llm_label_cluster <- function(
       workflow = list(
         draft_variant = draft_variant,
         draft = draft_stage,
+        draft_evidence = evidence_draft_stage,
         label = category_stage,
         category = category_stage,
+        pre_subcategory_summary = pre_subcategory_summary_stage,
         subcategory = subcategory_stage,
         summary_variant = summary_variant,
         summary = summary_stage,
@@ -4491,6 +4933,7 @@ llm_label_cluster <- function(
     use_brainstorm,
     short_label_with_llm,
     use_subcategorization,
+    use_double_brainstorm = FALSE,
     internal_prompt_version,
     dry_run,
     log_dir,
@@ -4504,6 +4947,20 @@ llm_label_cluster <- function(
   internal_prompt_version <- .normalize_cluster_label_internal_prompt_version(
     internal_prompt_version
   )
+  use_double_brainstorm <- .arg_single_flag(
+    use_double_brainstorm,
+    "use_double_brainstorm"
+  )
+  if (isTRUE(use_double_brainstorm) && !isTRUE(use_brainstorm)) {
+    stop("`use_double_brainstorm = TRUE` requires `use_brainstorm = TRUE`.")
+  }
+  if (isTRUE(use_double_brainstorm) && !isTRUE(use_subcategorization)) {
+    stop("`use_double_brainstorm = TRUE` requires `use_subcategorization = TRUE`.")
+  }
+  if (isTRUE(use_double_brainstorm) &&
+      !.is_cluster_label_double_brainstorm_prompt_version(internal_prompt_version)) {
+    stop("`use_double_brainstorm = TRUE` currently requires `internal_prompt_version = \"v9\"`.")
+  }
   if (.is_cluster_label_decomposed_internal_prompt_version(internal_prompt_version)) {
     return(.llm_label_cluster_decomposed_pipeline(
       evidence = evidence,
@@ -4525,6 +4982,7 @@ llm_label_cluster <- function(
       workflow_steps = workflow_steps,
       use_brainstorm = use_brainstorm,
       short_label_with_llm = short_label_with_llm,
+      use_double_brainstorm = use_double_brainstorm,
       internal_prompt_version = internal_prompt_version,
       dry_run = dry_run,
       log_dir = log_dir,
@@ -4558,6 +5016,7 @@ llm_label_cluster <- function(
       workflow_steps = workflow_steps,
       use_brainstorm = use_brainstorm,
       short_label_with_llm = short_label_with_llm,
+      use_double_brainstorm = use_double_brainstorm,
       internal_prompt_version = internal_prompt_version,
       dry_run = dry_run,
       log_dir = log_dir,
@@ -4566,14 +5025,22 @@ llm_label_cluster <- function(
       draft_candidates_override = draft_candidates_override,
       selection_context_extra_text = selection_context_extra_text,
       explanation_context_extra_text = explanation_context_extra_text,
-      workflow_variant_suffix = workflow_variant_suffix %||% "_staged_general_name",
+      workflow_variant_suffix = workflow_variant_suffix %||% if (isTRUE(use_double_brainstorm)) {
+        "_staged_double_brainstorm"
+      } else {
+        "_staged_general_name"
+      },
       category_variants = .default_cluster_label_general_name_variants(),
       subcategory_variants = .default_cluster_label_uniqueness_detail_variants(),
       category_task_type = "general_name_decision",
       subcategory_task_type = "uniqueness_detail_decision",
       parse_category_output_fn = .parse_cluster_label_general_name_decision_text,
       parse_subcategory_output_fn = .parse_cluster_label_uniqueness_detail_decision_text,
-      subcategorization_strategy = "staged_general_name"
+      subcategorization_strategy = if (isTRUE(use_double_brainstorm)) {
+        "staged_double_brainstorm"
+      } else {
+        "staged_general_name"
+      }
     ))
   }
   draft_variant <- .default_cluster_label_draft_variant()

@@ -111,6 +111,12 @@
   if (grepl("Task mode: `post_label_uniqueness_v1`", user_text, fixed = TRUE)) {
     return("post_label_uniqueness")
   }
+  if (grepl("Task mode: `draft_analysis_exploratory_v1`", user_text, fixed = TRUE)) {
+    return("draft_exploratory")
+  }
+  if (grepl("Task mode: `draft_analysis_evidence_focused_v1`", user_text, fixed = TRUE)) {
+    return("draft_evidence")
+  }
   if (grepl("Task mode: `draft_analysis_v1`", user_text, fixed = TRUE)) {
     return("draft")
   }
@@ -941,6 +947,71 @@ test_that("label_clusters warns and continues when the user_added_data directory
 
   expect_equal(res$summary$run_status[[1]], "success")
   expect_false(isTRUE(res$results$c_1$evidence$meta$user_added_data_present))
+})
+
+test_that("label_clusters propagates v9 double brainstorm metadata into batch summary", {
+  x <- .build_label_clusters_test_cocktail()
+  state <- new.env(parent = emptyenv())
+  state$stages <- character(0)
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+    state$stages <- c(state$stages, stage)
+    content <- switch(
+      stage,
+      draft_exploratory = "Candidate labels:\n- dry grassland\n- base-rich open grassland",
+      draft_evidence = "Directly supported signals:\n- dry open vegetation\nSpecific differentiators:\n- base-rich open",
+      general_name = "dry grassland",
+      uniqueness_detail = "base-rich open",
+      summary = {
+        if (length(state$stages) == 4L) {
+          "Short dry grassland summary."
+        } else {
+          "The dry grassland general name is refined by base-rich open detail."
+        }
+      },
+      stop("Unexpected stage in v9 label_clusters test request: ", stage)
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-v9-double-brainstorm")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    internal_prompt_version = "v9",
+    use_brainstorm = TRUE,
+    use_subcategorization = TRUE,
+    use_double_brainstorm = TRUE,
+    timeout_sec = 1,
+    max_retries = 0L,
+    review_dir = review_dir,
+    verbose = FALSE,
+    labels_for_imgs = TRUE,
+    request_fn = fake_request
+  )
+
+  expect_equal(
+    state$stages,
+    c("draft_exploratory", "draft_evidence", "general_name", "summary", "uniqueness_detail", "summary")
+  )
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_equal(res$summary$subcategorization_strategy[[1]], "staged_double_brainstorm")
+  expect_true(isTRUE(res$summary$double_brainstorm_enabled[[1]]))
+  expect_equal(res$summary$draft_status[[1]], "draft_ready")
+  expect_equal(res$summary$draft_evidence_status[[1]], "draft_ready")
+  expect_true(isTRUE(res$label_registry$double_brainstorm_enabled[[1]]))
+  expect_equal(res$label_registry$draft_evidence_status[[1]], "draft_ready")
+  expect_true(isTRUE(res$results$c_1$llm_result$metadata$double_brainstorm_enabled))
 })
 
 test_that("cluster_evidence warns and continues when a directory has no supported files", {

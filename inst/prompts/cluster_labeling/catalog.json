@@ -36,6 +36,8 @@
   "internal_variants": [
     "gate_abstain_examples_v1",
     "draft_analysis_v1",
+    "draft_analysis_exploratory_v1",
+    "draft_analysis_evidence_focused_v1",
     "label_selection_primary_v1",
     "label_selection_soft_v1",
     "label_selection_broad_v1",
@@ -49,9 +51,12 @@
     "post_label_category_v1",
     "post_label_uniqueness_v1",
     "general_name_decision_v1",
-    "uniqueness_detail_decision_v1"
+    "uniqueness_detail_decision_v1",
+    "label_summary_pre_subcategory_v1"
   ],
   "internal_draft_variant": "draft_analysis_v1",
+  "internal_double_brainstorm_exploratory_variant": "draft_analysis_exploratory_v1",
+  "internal_double_brainstorm_evidence_variant": "draft_analysis_evidence_focused_v1",
   "internal_explanation_variant": "explanation_pass_v1",
   "internal_v2_label_decision_variants": {
     "label_primary_v1": "label_decision_primary_v2",
@@ -69,6 +74,7 @@
   "internal_post_label_uniqueness_variant": "post_label_uniqueness_v1",
   "internal_general_name_variant": "general_name_decision_v1",
   "internal_uniqueness_detail_variant": "uniqueness_detail_decision_v1",
+  "internal_pre_subcategory_summary_variant": "label_summary_pre_subcategory_v1",
   "legacy_variant_aliases": {
     "concise_label_v1": "label_primary_v1",
     "conservative_interpretation_v1": "label_soft_v1",
@@ -123,6 +129,20 @@
       "task_type": "draft",
       "temperature": 0.12,
       "top_p": 0.95
+    },
+    "draft_analysis_exploratory_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v9/user_draft_analysis_exploratory_v1.md",
+      "description": "Experimental double-brainstorm exploratory draft pass. Notices plausible broad interpretations before stricter review.",
+      "task_type": "draft",
+      "temperature": 0.12,
+      "top_p": 0.95
+    },
+    "draft_analysis_evidence_focused_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v9/user_draft_analysis_evidence_focused_v1.md",
+      "description": "Experimental double-brainstorm evidence-focused draft pass. Identifies directly supported signals and conservative labels.",
+      "task_type": "draft",
+      "temperature": 0.04,
+      "top_p": 0.9
     },
     "label_selection_primary_v1": {
       "user_prompt_path": "../internal_cluster_labeling/v1/user_label_selection_primary_v1.md",
@@ -254,6 +274,13 @@
       "user_prompt_path": "../internal_cluster_labeling/v6/user_uniqueness_detail_decision_v1.md",
       "description": "Experimental staged uniqueness-detail prompt. Derives one short differentiating detail after the general name.",
       "task_type": "uniqueness_detail_decision",
+      "temperature": 0.04,
+      "top_p": 0.9
+    },
+    "label_summary_pre_subcategory_v1": {
+      "user_prompt_path": "../internal_cluster_labeling/v8a/user_label_summary_pre_subcategory_v1.md",
+      "description": "Experimental A001 pre-subcategory summary prompt. Describes a fixed general name before the uniqueness-detail stage.",
+      "task_type": "label_summary",
       "temperature": 0.04,
       "top_p": 0.9
     },
