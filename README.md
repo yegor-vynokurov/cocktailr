@@ -737,6 +737,51 @@ An optional semantic enrichment layer is also available. When the external
 indicator tables are present, `semantic_layer = TRUE` adds extra ecological
 context to the evidence bundle before labeling.
 
+For datasets where you want a broader vegetation category plus a shorter
+within-category distinction, enable the experimental subcategorization flow.
+This keeps the ordinary brainstorm -> label -> label-summary workflow, then
+adds staged category and subcategory prompts:
+
+``` r
+run_sub <- label_clusters(
+  x = res,
+  clusters = strong_labels,
+  model = "phi4-mini-4k:latest",
+  semantic_layer = TRUE,
+  short_label_with_llm = FALSE,
+  use_subcategorization = TRUE,
+  internal_prompt_version = "v8a",
+  timeout_sec = 600,
+  num_predict = 2400,
+  labels_for_imgs = TRUE
+)
+
+run_sub$summary[, c("cluster", "display_label", "category_label",
+                    "subcategory_labels")]
+```
+
+There is also a larger opt-in experiment that asks for two brainstorm drafts
+before the downstream label, category, subcategory, and summary stages. It is
+callable, but should be treated as experimental: in the current pilot it was
+technically stable, while the `v8a` subcategorization prompt remained the
+better prompt-only result.
+
+``` r
+run_double <- label_clusters(
+  x = res,
+  clusters = strong_labels,
+  model = "phi4-mini-4k:latest",
+  semantic_layer = TRUE,
+  short_label_with_llm = FALSE,
+  use_subcategorization = TRUE,
+  use_double_brainstorm = TRUE,
+  internal_prompt_version = "v9",
+  timeout_sec = 600,
+  num_predict = 2400,
+  labels_for_imgs = TRUE
+)
+```
+
 In practical tests, the labeling layer also showed a useful pattern. When the
 number of selected clusters is too high, labels often become repetitive and
 fall back to broad names such as `grassland` for many different clusters. When

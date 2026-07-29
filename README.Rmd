@@ -704,6 +704,49 @@ The registry is saved automatically as `cluster_label_registry.csv` next to the
 review cards. If you prefer not to use auto-discovery, you can still pass
 `run_plot$label_registry` explicitly.
 
+For datasets where you want a broader vegetation category plus a shorter
+within-category distinction, enable the experimental subcategorization flow.
+This keeps the ordinary brainstorm -> label -> label-summary workflow, then
+adds staged category and subcategory prompts:
+
+```{r}
+run_sub <- label_clusters(
+  x = res,
+  clusters = plot_clusters,
+  model = "phi4-mini-4k:latest",
+  semantic_layer = TRUE,
+  short_label_with_llm = FALSE,
+  use_subcategorization = TRUE,
+  internal_prompt_version = "v8a",
+  timeout_sec = 600,
+  num_predict = 2400
+)
+
+run_sub$summary[, c("cluster", "display_label", "category_label",
+                    "subcategory_labels")]
+```
+
+There is also a larger opt-in experiment that asks for two brainstorm drafts
+before the downstream label, category, subcategory, and summary stages. It is
+callable, but should be treated as experimental: in the current pilot it was
+technically stable, while the `v8a` subcategorization prompt remained the
+better prompt-only result.
+
+```{r}
+run_double <- label_clusters(
+  x = res,
+  clusters = plot_clusters,
+  model = "phi4-mini-4k:latest",
+  semantic_layer = TRUE,
+  short_label_with_llm = FALSE,
+  use_subcategorization = TRUE,
+  use_double_brainstorm = TRUE,
+  internal_prompt_version = "v9",
+  timeout_sec = 600,
+  num_predict = 2400
+)
+```
+
 If you want a cautious exploratory fallback after a non-accepted strict
 result, you can
 also enable:
@@ -755,6 +798,11 @@ Notes:
 - The internal soft ladder is still benchmarked most around `phi4-mini:latest` with `num_ctx = 8192` and `num_predict = 2400`.
 - For ordinary local labeling, `gemma4:12b` remains the recommended baseline.
 - Smaller models such as `phi4-mini` are still experimental for this task: they may lack enough ecological/background knowledge for stable cluster labeling and can fall back to generic labels or abstentions more often.
+- For category/subcategory experiments on smaller local models, use
+  `semantic_layer = TRUE`, `short_label_with_llm = FALSE`,
+  `use_subcategorization = TRUE`, and `internal_prompt_version = "v8a"`.
+- The two-brainstorm experiment additionally requires
+  `use_double_brainstorm = TRUE` and `internal_prompt_version = "v9"`.
 - `semantic_layer = TRUE` optionally enriches the evidence bundle with indicator-derived ecological axes from the external EIVE/Tichy tables under `data-raw/external/`.
 - That semantic step uses an auxiliary Excel reader (`readxl` if available, otherwise the packaged `xml2` fallback path). If enrichment cannot be built, `label_clusters()` records the outcome in `summary$semantic_layer_status` and continues with the plain evidence bundle.
 - The default saved artifact is a compact markdown review card under `temp/reports/cluster_reviews/`.

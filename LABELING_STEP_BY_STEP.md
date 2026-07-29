@@ -48,7 +48,7 @@ For a first run, do not change these:
 - `variant = "label_primary_v1"`
 - `label_mode = "open"`
 - `use_brainstorm = TRUE`
-- `semantic_layer`
+- `semantic_layer = TRUE`
 - `workflow_steps`
 - `internal_prompt_version`
 - `speculative_fallback_mode`
@@ -61,9 +61,9 @@ Leave `short_label_with_llm = FALSE` for normal runs. If you turn it on,
 the extra shortening-repair prompt is available only in internal prompt
 bundles that include it, such as the packaged `v2` bundle.
 
-This guide intentionally leaves `semantic_layer = FALSE`. Turn it on
-only if you already know that the optional semantic resources are
-prepared and you want that extra enrichment layer.
+This guide uses `semantic_layer = TRUE` by default. The run still
+continues without semantic enrichment if the optional resources cannot be
+built; check `summary$semantic_layer_status` after the run.
 
 ## What Gets Written Automatically vs What This Guide Saves Explicitly
 
@@ -544,6 +544,9 @@ Dry run is optional, but it is often the fastest way to confirm that:
 - the prompt is assembled successfully
 
 Dry run does not write review cards and does not contact Ollama.
+The `semantic_layer` switch belongs to `label_clusters()`, which builds and
+optionally enriches evidence before calling the model. In this direct
+`llm_label_cluster()` dry run, you are passing the evidence object yourself.
 
 ## 8. Step 7: Smoke Test On One Cluster (optional)
 
@@ -564,6 +567,7 @@ smoke_run <- label_clusters(
   variant = "label_primary_v1",
   label_mode = "open",
   use_brainstorm = TRUE,
+  semantic_layer = TRUE,
   timeout_sec = TIMEOUT_SEC,
   num_predict = NUM_PREDICT,
   prompt_budget_chars = PROMPT_BUDGET_CHARS,
@@ -642,7 +646,7 @@ run <- label_clusters(
   log_dir = file.path(full_root, "llm_logs"),
   debug = TRUE,
   labels_for_imgs = TRUE,
-  verbose = TRUE, 
+  verbose = TRUE,
   semantic_layer = TRUE
 )
 
@@ -696,7 +700,102 @@ Also note:
   subfolder derived from `dataset_label`; in this guide that slug is
   `real_eval_long_numeric_v1`
 
-## 10. Step 9: Inspect The Results
+## 10. Optional: Category/Subcategory Labeling
+
+If you want each cluster to receive both a broad vegetation category and a
+shorter within-category subcategory, keep the same evidence-first workflow and
+turn on subcategorization. The best prompt-only setting from the current
+experiments is `internal_prompt_version = "v8a"`.
+
+```r
+subcat_root <- file.path(model_root, "full_subcategorization_v8a")
+dir.create(subcat_root, recursive = TRUE, showWarnings = FALSE)
+
+run_subcat <- label_clusters(
+  x = res,
+  clusters = selected_clusters,
+  model = MODEL_NAME,
+  variant = "label_primary_v1",
+  label_mode = "open",
+  use_brainstorm = TRUE,
+  semantic_layer = TRUE,
+  short_label_with_llm = FALSE,
+  use_subcategorization = TRUE,
+  internal_prompt_version = "v8a",
+  timeout_sec = TIMEOUT_SEC,
+  num_predict = NUM_PREDICT,
+  prompt_budget_chars = PROMPT_BUDGET_CHARS,
+  ollama_options = OLLAMA_OPTIONS,
+  review_dir = file.path(subcat_root, "cluster_reviews"),
+  log_dir = file.path(subcat_root, "llm_logs"),
+  debug = TRUE,
+  labels_for_imgs = TRUE,
+  verbose = TRUE
+)
+
+run_subcat$summary[, intersect(
+  c("cluster", "display_label", "category_label", "subcategory_labels"),
+  names(run_subcat$summary)
+)]
+```
+
+Interpret these extra fields this way:
+
+- `category_label` is the broad vegetation group name
+- `subcategory_labels` is the shorter distinction inside that broad group
+- `display_label` remains the main human-readable cluster label
+
+## 11. Optional Experiment: Two Brainstorm Drafts
+
+There is also a larger experimental flow that asks the model for two separate
+brainstorm drafts before the downstream label, category, subcategory, and
+summary prompts. It is callable and useful for comparison runs, but it did not
+beat `v8a` in the current pilot.
+
+Use it only together with subcategorization and the isolated `v9` prompt
+bundle:
+
+```r
+double_root <- file.path(model_root, "full_double_brainstorm_v9")
+dir.create(double_root, recursive = TRUE, showWarnings = FALSE)
+
+run_double <- label_clusters(
+  x = res,
+  clusters = selected_clusters,
+  model = MODEL_NAME,
+  variant = "label_primary_v1",
+  label_mode = "open",
+  use_brainstorm = TRUE,
+  semantic_layer = TRUE,
+  short_label_with_llm = FALSE,
+  use_subcategorization = TRUE,
+  use_double_brainstorm = TRUE,
+  internal_prompt_version = "v9",
+  timeout_sec = TIMEOUT_SEC,
+  num_predict = NUM_PREDICT,
+  prompt_budget_chars = PROMPT_BUDGET_CHARS,
+  ollama_options = OLLAMA_OPTIONS,
+  review_dir = file.path(double_root, "cluster_reviews"),
+  log_dir = file.path(double_root, "llm_logs"),
+  debug = TRUE,
+  labels_for_imgs = TRUE,
+  verbose = TRUE
+)
+
+run_double$summary[, intersect(
+  c(
+    "cluster",
+    "display_label",
+    "category_label",
+    "subcategory_labels",
+    "subcategorization_strategy",
+    "double_brainstorm_enabled"
+  ),
+  names(run_double$summary)
+)]
+```
+
+## 12. Step 9: Inspect The Results
 
 Read the saved summary table:
 
@@ -774,7 +873,7 @@ log_files <- list.files(
 log_files
 ```
 
-## 11. Step 10: Render The Labeled Plots
+## 13. Step 10: Render The Labeled Plots
 
 If your R session has restarted, reload the saved objects first:
 
@@ -852,7 +951,7 @@ registry_tbl <- utils::read.csv(
 registry_tbl
 ```
 
-## 12. What To Check First When Something Looks Wrong
+## 14. What To Check First When Something Looks Wrong
 
 ### Package load step fails
 
@@ -933,7 +1032,7 @@ Do not rely on `label_registry = "auto"` in this guide, because the
 review artifacts live inside the run folder, not under the default
 auto-discovery root.
 
-## 13. Minimal Process Map
+## 15. Minimal Process Map
 
 ```text
 PowerShell step
@@ -973,7 +1072,7 @@ Plotting step
   -> labeled cocktail plot PNG pages
 ```
 
-## 14. The Main Files Most Users Actually Need
+## 16. The Main Files Most Users Actually Need
 
 If you only want the final practical outputs, start here:
 
