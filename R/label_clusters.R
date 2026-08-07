@@ -57,6 +57,12 @@
 #'   semantic layer built from files under \code{data-raw/external/}. Failures
 #'   in this auxiliary step are recorded in the batch summary and the workflow
 #'   continues with the plain evidence bundle. Default \code{FALSE}.
+#' @param life_form_layer Logical. If \code{TRUE}, try to enrich each cluster's
+#'   evidence bundle with structural plant life-form context from the optional
+#'   life-form layer built from files under \code{data-raw/external/}. Failures
+#'   in this auxiliary step are recorded in the batch summary and the workflow
+#'   continues with the otherwise available evidence bundle. Default
+#'   \code{FALSE}.
 #' @param semantic_min_phi Optional numeric scalar forwarded to
 #'   \code{score_cluster_semantics()}.
 #' @param semantic_bootstrap Integer bootstrap count for semantic axis
@@ -176,6 +182,7 @@ label_clusters <- function(
     include_cover = TRUE,
     user_added_data = NULL,
     semantic_layer = FALSE,
+    life_form_layer = FALSE,
     semantic_min_phi = NULL,
     semantic_bootstrap = 200L,
     semantic_root = NULL,
@@ -259,6 +266,7 @@ label_clusters <- function(
   verbose <- .arg_single_flag(verbose, "verbose")
   labels_for_imgs <- .arg_single_flag(labels_for_imgs, "labels_for_imgs")
   semantic_layer <- .arg_single_flag(semantic_layer, "semantic_layer")
+  life_form_layer <- .arg_single_flag(life_form_layer, "life_form_layer")
   semantic_bootstrap <- .arg_positive_integer(
     semantic_bootstrap,
     "semantic_bootstrap"
@@ -355,6 +363,15 @@ label_clusters <- function(
     )
     evidence <- semantic_step$evidence
 
+    life_form_step <- .label_clusters_apply_life_form_layer(
+      evidence = evidence,
+      x = x,
+      life_form_layer = life_form_layer,
+      verbose = verbose,
+      cluster_tag = cluster_tag
+    )
+    evidence <- life_form_step$evidence
+
     template <- llm_label_cluster(
       evidence = evidence,
       provider = provider,
@@ -422,6 +439,9 @@ label_clusters <- function(
     cluster_run$semantic_layer_used <- isTRUE(semantic_step$used)
     cluster_run$semantic_layer_status <- semantic_step$status %||% "off"
     cluster_run$semantic_layer_error <- semantic_step$error %||% NA_character_
+    cluster_run$life_form_layer_used <- isTRUE(life_form_step$used)
+    cluster_run$life_form_layer_status <- life_form_step$status %||% "off"
+    cluster_run$life_form_layer_error <- life_form_step$error %||% NA_character_
 
     results[[i]] <- cluster_run
     summary_rows[[i]] <- data.frame(
@@ -464,6 +484,9 @@ label_clusters <- function(
       semantic_layer_used = isTRUE(cluster_run$semantic_layer_used),
       semantic_layer_status = cluster_run$semantic_layer_status %||% NA_character_,
       semantic_layer_error = cluster_run$semantic_layer_error %||% NA_character_,
+      life_form_layer_used = isTRUE(cluster_run$life_form_layer_used),
+      life_form_layer_status = cluster_run$life_form_layer_status %||% NA_character_,
+      life_form_layer_error = cluster_run$life_form_layer_error %||% NA_character_,
       label_origin = cluster_run$label_origin %||% NA_character_,
       species_entropy_band = cluster_run$species_entropy_band %||% NA_character_,
       species_entropy_text = cluster_run$species_entropy_text %||% NA_character_,
@@ -574,6 +597,11 @@ label_clusters <- function(
     cluster_tag
 ) {
   if (!isTRUE(semantic_layer)) {
+    evidence$meta$enrichment_layers$semantic_layer <- list(
+      enabled = FALSE,
+      status = "off",
+      error = NA_character_
+    )
     return(list(
       evidence = evidence,
       used = FALSE,
@@ -605,6 +633,11 @@ label_clusters <- function(
         evidence = evidence,
         semantic_result = semantic_result
       )
+      enriched$meta$enrichment_layers$semantic_layer <- list(
+        enabled = TRUE,
+        status = "enriched",
+        error = NA_character_
+      )
 
       list(
         evidence = enriched,
@@ -614,6 +647,11 @@ label_clusters <- function(
       )
     },
     error = function(e) {
+      evidence$meta$enrichment_layers$semantic_layer <- list(
+        enabled = TRUE,
+        status = "failed",
+        error = conditionMessage(e)
+      )
       list(
         evidence = evidence,
         used = FALSE,
@@ -630,6 +668,85 @@ label_clusters <- function(
       verbose,
       cluster_tag,
       ": semantic enrichment failed; continuing without it. ",
+      attempt$error
+    )
+  }
+
+  attempt
+}
+
+.label_clusters_apply_life_form_layer <- function(
+    evidence,
+    x,
+    life_form_layer,
+    verbose,
+    cluster_tag
+) {
+  if (!isTRUE(life_form_layer)) {
+    evidence$meta$enrichment_layers$life_form_layer <- list(
+      enabled = FALSE,
+      status = "off",
+      error = NA_character_
+    )
+    return(list(
+      evidence = evidence,
+      used = FALSE,
+      status = "off",
+      error = NA_character_
+    ))
+  }
+
+  .label_clusters_log(verbose, cluster_tag, ": life-form enrichment started.")
+
+  attempt <- tryCatch(
+    {
+      root <- cocktailr_project_root()
+
+      life_form_result <- score_cluster_life_forms(
+        x = x,
+        clusters = evidence$meta$cluster_id,
+        root = root
+      )
+
+      enriched <- .augment_cluster_evidence_with_life_form_layer(
+        evidence = evidence,
+        life_form_result = life_form_result
+      )
+      enriched$meta$enrichment_layers$life_form_layer <- list(
+        enabled = TRUE,
+        status = "enriched",
+        error = NA_character_
+      )
+
+      list(
+        evidence = enriched,
+        used = TRUE,
+        status = "enriched",
+        error = NA_character_
+      )
+    },
+    error = function(e) {
+      evidence$meta$enrichment_layers$life_form_layer <- list(
+        enabled = TRUE,
+        status = "failed",
+        error = conditionMessage(e)
+      )
+      list(
+        evidence = evidence,
+        used = FALSE,
+        status = "failed",
+        error = conditionMessage(e)
+      )
+    }
+  )
+
+  if (identical(attempt$status, "enriched")) {
+    .label_clusters_log(verbose, cluster_tag, ": life-form enrichment completed.")
+  } else if (identical(attempt$status, "failed")) {
+    .label_clusters_log(
+      verbose,
+      cluster_tag,
+      ": life-form enrichment failed; continuing without it. ",
       attempt$error
     )
   }

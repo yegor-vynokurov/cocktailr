@@ -167,6 +167,18 @@ test_that("render_cluster_review shows full display label and separate plot prev
 
 test_that("render_cluster_review full=TRUE builds an expanded markdown artifact", {
   ev <- .build_review_test_cluster_evidence()
+  ev$summaries$life_form_summary <- data.frame(
+    raw_flag = "tree",
+    label = "Tree",
+    phrase = "tree-form species are present among the matched cluster plants",
+    priority = 10L,
+    matched_species_count = 1L,
+    matched_species = "Abies alba",
+    evidence_id = "E10",
+    stringsAsFactors = FALSE
+  )
+  ev$summaries$life_form_unmatched_species <- "Unknown plant"
+  ev$meta$source$has_life_form_layer <- TRUE
   output <- .build_review_label_output(ev)
 
   art <- render_cluster_review(output, ev, full = TRUE)
@@ -174,6 +186,9 @@ test_that("render_cluster_review full=TRUE builds an expanded markdown artifact"
   expect_match(art$markdown, "^---", perl = TRUE)
   expect_match(art$markdown, "cluster_id: \"c_1\"", fixed = TRUE)
   expect_match(art$markdown, "## Review summary", fixed = TRUE)
+  expect_match(art$markdown, "## Life-form context", fixed = TRUE)
+  expect_match(art$markdown, "Tree: tree-form species are present among the matched cluster plants; matched species: Abies alba", fixed = TRUE)
+  expect_match(art$markdown, "Unmatched life-form species: Unknown plant", fixed = TRUE)
   expect_match(art$markdown, "- Label summary: ", fixed = TRUE)
   expect_match(art$markdown, "## External knowledge used", fixed = TRUE)
   expect_match(art$markdown, "## Validation warnings", fixed = TRUE)

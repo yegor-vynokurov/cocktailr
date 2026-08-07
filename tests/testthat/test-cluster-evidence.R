@@ -629,6 +629,74 @@ test_that("cluster_evidence uses plain ecological headings in the LLM prompt", {
   expect_false(grepl("confidence=", llm_text, fixed = TRUE))
 })
 
+test_that("cluster_evidence renders literal life-form headings separately from semantic evidence", {
+  vm <- matrix(
+    c(
+      55, 40,  0,  0,
+      50, 35,  0,  0,
+      25, 10, 30,  0,
+       0,  0, 60, 45,
+       0,  0, 50, 35,
+       0,  0, 40, 25
+    ),
+    nrow = 6,
+    byrow = TRUE,
+    dimnames = list(
+      paste0("plot", 1:6),
+      paste0("sp", 1:4)
+    )
+  )
+
+  x <- suppressWarnings(cocktail_cluster(
+    vm,
+    progress = FALSE,
+    plot_values = "rel_cover",
+    species_cluster_phi = TRUE,
+    save_vegmatrix = TRUE
+  ))
+
+  ev <- cluster_evidence(
+    x,
+    cluster = "c_1",
+    top_n_phi = 3,
+    n_prototype_plots = 2,
+    n_borderline_plots = 2
+  )
+
+  ev$summaries$life_form_summary <- data.frame(
+    raw_flag = c("tree", "shrub"),
+    label = c("Tree", "Shrub"),
+    phrase = c(
+      "tree-form species are present among the matched cluster plants",
+      "shrub-form species are present among the matched cluster plants"
+    ),
+    priority = c(10L, 20L),
+    matched_species_count = c(1L, 2L),
+    matched_species = c("Abies alba", "Acacia cultriformis, Ligustrum vulgare"),
+    evidence_id = c("E10", "E11"),
+    stringsAsFactors = FALSE
+  )
+  ev$summaries$life_form_unmatched_species <- c("sp9")
+
+  review_text <- cocktailr:::.format_cluster_evidence_review_prompt(ev)
+  llm_text <- cocktailr:::.format_cluster_evidence_llm_prompt(ev)
+
+  expect_match(review_text, "Life-form evidence:", fixed = TRUE)
+  expect_match(review_text, "Life-form unmatched species: sp9", fixed = TRUE)
+  expect_match(llm_text, "Plant life-form context for the cluster:", fixed = TRUE)
+  expect_match(
+    llm_text,
+    "- Tree: tree-form species are present among the matched cluster plants. Matched cluster species: Abies alba.",
+    fixed = TRUE
+  )
+  expect_match(
+    llm_text,
+    "- Shrub: shrub-form species are present among the matched cluster plants. Matched cluster species: Acacia cultriformis, Ligustrum vulgare.",
+    fixed = TRUE
+  )
+  expect_false(grepl("Life-form unmatched species:", llm_text, fixed = TRUE))
+})
+
 test_that("cluster_evidence uses normalized cover context for non-percentage scales", {
   vm <- matrix(
     c(

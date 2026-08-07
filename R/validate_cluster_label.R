@@ -628,6 +628,7 @@ validate_cluster_label <- function(x, evidence) {
   result
 }
 
+#' @method print cluster_label_validation
 #' @export
 print.cluster_label_validation <- function(x, ...) {
   cat("<cluster_label_validation>\n")

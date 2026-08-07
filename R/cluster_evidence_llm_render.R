@@ -279,6 +279,62 @@
   items[!is.na(items) & nzchar(items)]
 }
 
+.cluster_evidence_llm_life_form_items <- function(x) {
+  life_form_summary <- x$summaries$life_form_summary %||% NULL
+
+  if (!is.data.frame(life_form_summary) || !nrow(life_form_summary)) {
+    return(character(0))
+  }
+
+  required <- c("label", "phrase", "matched_species")
+  missing <- setdiff(required, names(life_form_summary))
+  if (length(missing)) {
+    stop(
+      "`x$summaries$life_form_summary` must contain columns: ",
+      paste(required, collapse = ", "),
+      ". Missing: ",
+      paste(missing, collapse = ", "),
+      ".",
+      call. = FALSE
+    )
+  }
+
+  life_form_summary <- as.data.frame(
+    life_form_summary,
+    stringsAsFactors = FALSE
+  )
+  if (!"priority" %in% names(life_form_summary)) {
+    life_form_summary$priority <- seq_len(nrow(life_form_summary))
+  }
+  life_form_summary$priority <- suppressWarnings(
+    as.integer(life_form_summary$priority)
+  )
+  life_form_summary$order_row <- seq_len(nrow(life_form_summary))
+  life_form_summary <- life_form_summary[order(
+    life_form_summary$priority,
+    life_form_summary$order_row
+  ), , drop = FALSE]
+
+  vapply(seq_len(nrow(life_form_summary)), function(i) {
+    label <- trimws(as.character(life_form_summary$label[[i]]))
+    phrase <- trimws(as.character(life_form_summary$phrase[[i]]))
+    matched_species <- trimws(as.character(life_form_summary$matched_species[[i]]))
+
+    parts <- c(
+      paste0(label, ": ", phrase, ".")
+    )
+
+    if (nzchar(matched_species)) {
+      parts <- c(
+        parts,
+        paste0("Matched cluster species: ", matched_species, ".")
+      )
+    }
+
+    paste(parts, collapse = " ")
+  }, character(1))
+}
+
 .cluster_evidence_llm_axis_sentence <- function(axis, value, dictionary) {
   value <- suppressWarnings(as.numeric(value))
   if (!is.finite(value)) {
@@ -471,6 +527,7 @@
     x,
     dictionary = axis_dictionary
   )
+  life_form_items <- .cluster_evidence_llm_life_form_items(x)
 
   semantic_unmatched_items <- as.character(
     x$summaries$semantic_unmatched_species %||% character(0)
@@ -547,6 +604,14 @@
       display_order = 85L,
       retain_rank = 65L,
       lines = user_added_lines
+    ),
+    .new_cluster_evidence_prompt_bulleted_block(
+      id = "life_form_summary",
+      label = "Plant life-form context for the cluster",
+      display_order = 88L,
+      retain_rank = 68L,
+      header = "Plant life-form context for the cluster:",
+      items = life_form_items
     ),
     .new_cluster_evidence_prompt_bulleted_block(
       id = "semantic_axes",

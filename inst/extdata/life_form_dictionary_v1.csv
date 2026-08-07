@@ -1,0 +1,14 @@
+raw_flag,label,phrase,priority
+tree,Tree,tree-form species are present among the matched cluster plants,10
+shrub,Shrub,shrub-form species are present among the matched cluster plants,20
+woody_liana,Woody liana,woody liana species are present among the matched cluster plants,30
+dwarf_shrub,Dwarf shrub,dwarf-shrub species are present among the matched cluster plants,40
+semi_shrub,Semi-shrub,semi-shrub species are present among the matched cluster plants,50
+chamaephyte,Chamaephyte,chamaephyte species are present among the matched cluster plants,60
+hemicryptophyte,Hemicryptophyte,hemicryptophyte species are present among the matched cluster plants,70
+geophyte,Geophyte,geophyte species are present among the matched cluster plants,80
+hydrophyte,Hydrophyte,hydrophyte species are present among the matched cluster plants,90
+therophyte,Therophyte,therophyte species are present among the matched cluster plants,100
+epiphyte,Epiphyte,epiphyte species are present among the matched cluster plants,110
+herbaceous_liana,Herbaceous liana,herbaceous liana species are present among the matched cluster plants,120
+phanerophyte,Phanerophyte,phanerophyte species are present among the matched cluster plants,130

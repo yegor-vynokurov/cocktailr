@@ -730,6 +730,26 @@ cluster_evidence <- function(
   semantic_unmatched_items <- as.character(
     x$summaries$semantic_unmatched_species %||% character(0)
   )
+  life_form_items <- if (!is.null(x$summaries$life_form_summary) &&
+    nrow(x$summaries$life_form_summary)) {
+    paste0(
+      x$summaries$life_form_summary$label,
+      " (priority=",
+      x$summaries$life_form_summary$priority,
+      ", matched_species=",
+      x$summaries$life_form_summary$matched_species_count,
+      ", species=",
+      x$summaries$life_form_summary$matched_species,
+      ") [",
+      x$summaries$life_form_summary$evidence_id,
+      "]"
+    )
+  } else {
+    character(0)
+  }
+  life_form_unmatched_items <- as.character(
+    x$summaries$life_form_unmatched_species %||% character(0)
+  )
 
   limitation_items <- as.character(c(
     x$limitations$warnings %||% character(0),
@@ -821,6 +841,23 @@ cluster_evidence <- function(
       display_order = 85L,
       retain_rank = 65L,
       lines = user_added_lines
+    ),
+    .new_cluster_evidence_prompt_inline_block(
+      id = "life_form_summary",
+      label = "Life-form evidence",
+      display_order = 88L,
+      retain_rank = 68L,
+      header = "Life-form evidence: ",
+      items = life_form_items,
+      intro_lines = "Structural plant life-form profile: use as a growth-form hint, not as direct habitat proof."
+    ),
+    .new_cluster_evidence_prompt_inline_block(
+      id = "life_form_unmatched_species",
+      label = "Life-form unmatched species",
+      display_order = 89L,
+      retain_rank = 108L,
+      header = "Life-form unmatched species: ",
+      items = life_form_unmatched_items
     ),
     .new_cluster_evidence_prompt_inline_block(
       id = "semantic_axes",
@@ -1101,6 +1138,36 @@ cluster_evidence <- function(
     }
   }
 
+  if (!is.null(x$summaries$life_form_summary) && nrow(x$summaries$life_form_summary)) {
+    lines <- c(
+      lines,
+      paste0(
+        "  life-form evidence (",
+        nrow(x$summaries$life_form_summary),
+        "): ",
+        paste(
+          paste0(
+            x$summaries$life_form_summary$label,
+            " [priority=",
+            x$summaries$life_form_summary$priority,
+            ", matched_species=",
+            x$summaries$life_form_summary$matched_species_count,
+            "]"
+          ),
+          collapse = ", "
+        )
+      )
+    )
+
+    unmatched <- x$summaries$life_form_unmatched_species %||% character(0)
+    if (length(unmatched)) {
+      lines <- c(
+        lines,
+        paste0("  life-form unmatched species: ", paste(unmatched, collapse = ", "))
+      )
+    }
+  }
+
   lines <- c(
     lines,
     paste0("  member plots = ", x$summaries$plots_membership$n_member_plots),
@@ -1120,6 +1187,7 @@ cluster_evidence <- function(
   paste(lines, collapse = "\n")
 }
 
+#' @method print cluster_evidence
 #' @export
 print.cluster_evidence <- function(x, ...) {
   cat(.format_cluster_evidence_debug(x), "\n")

@@ -36,6 +36,38 @@
   )
 }
 
+.build_label_clusters_life_form_test_cocktail <- function() {
+  vm <- matrix(
+    c(
+      60, 35, 25,  0,
+      55, 30, 20,  0,
+      30, 10, 20,  5,
+       0,  0,  5, 55,
+       0,  0,  0, 50,
+       0,  0,  0, 45
+    ),
+    nrow = 6,
+    byrow = TRUE,
+    dimnames = list(
+      paste0("plot", 1:6),
+      c(
+        "Abies alba",
+        "Acacia cultriformis",
+        "Acanthus mollis",
+        "Abelmoschus esculentus"
+      )
+    )
+  )
+
+  suppressWarnings(cocktail_cluster(
+    vm,
+    progress = FALSE,
+    plot_values = "rel_cover",
+    species_cluster_phi = TRUE,
+    save_vegmatrix = TRUE
+  ))
+}
+
 .label_clusters_test_selection_output <- function(
     display_label = "compact species core",
     abstain = FALSE,
@@ -184,6 +216,309 @@ test_that("label_clusters runs the fixed pipeline, writes a review card, and sav
     paste(readLines(res$summary$review_file[[1]], warn = FALSE), collapse = "\n"),
     fixed = TRUE
   ))
+})
+
+test_that("label_clusters keeps life_form_layer disabled by default and records the off state", {
+  x <- .build_label_clusters_test_cocktail()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = .label_clusters_test_selection_output(),
+      summary = "The same compact species core recurs across the evidence bundle.",
+      stop("Unexpected stage in default-off life_form_layer test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-life-form-default-off")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_false(isTRUE(res$summary$life_form_layer_used[[1]]))
+  expect_equal(res$summary$life_form_layer_status[[1]], "off")
+  expect_true(is.na(res$summary$life_form_layer_error[[1]]))
+  expect_null(res$results$c_1$evidence$summaries$life_form_summary)
+})
+
+test_that("label_clusters distinguishes plain, semantic-only, life-form-only, and combined enrichment modes", {
+  x <- .build_label_clusters_test_cocktail()
+
+  original_semantic <- get(".label_clusters_apply_semantic_layer", envir = asNamespace("cocktailr"))
+  original_life_form <- get(".label_clusters_apply_life_form_layer", envir = asNamespace("cocktailr"))
+
+  mocked_semantic <- function(evidence, semantic_layer, ...) {
+    if (!isTRUE(semantic_layer)) {
+      return(list(
+        evidence = evidence,
+        used = FALSE,
+        status = "off",
+        error = NA_character_
+      ))
+    }
+
+    evidence$summaries$semantic_axes <- data.frame(
+      axis_name = "Light",
+      axis = "l",
+      score_0_10 = 8.04,
+      band = "very_bright",
+      coverage = 0.92,
+      confidence_tier = "high",
+      evidence_id = "E90",
+      stringsAsFactors = FALSE
+    )
+    evidence$meta$source$has_semantic_layer <- TRUE
+
+    list(
+      evidence = evidence,
+      used = TRUE,
+      status = "enriched",
+      error = NA_character_
+    )
+  }
+
+  mocked_life_form <- function(evidence, life_form_layer, ...) {
+    if (!isTRUE(life_form_layer)) {
+      return(list(
+        evidence = evidence,
+        used = FALSE,
+        status = "off",
+        error = NA_character_
+      ))
+    }
+
+    evidence$summaries$life_form_summary <- data.frame(
+      raw_flag = "tree",
+      label = "Tree",
+      phrase = "tree-form species are present among the matched cluster plants",
+      priority = 10L,
+      matched_species_count = 1L,
+      matched_species = "Abies alba",
+      evidence_id = "E91",
+      stringsAsFactors = FALSE
+    )
+    evidence$meta$source$has_life_form_layer <- TRUE
+
+    list(
+      evidence = evidence,
+      used = TRUE,
+      status = "enriched",
+      error = NA_character_
+    )
+  }
+
+  assignInNamespace(".label_clusters_apply_semantic_layer", mocked_semantic, ns = "cocktailr")
+  withr::defer(
+    assignInNamespace(".label_clusters_apply_semantic_layer", original_semantic, ns = "cocktailr")
+  )
+  assignInNamespace(".label_clusters_apply_life_form_layer", mocked_life_form, ns = "cocktailr")
+  withr::defer(
+    assignInNamespace(".label_clusters_apply_life_form_layer", original_life_form, ns = "cocktailr")
+  )
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = .label_clusters_test_selection_output(),
+      summary = "The same compact species core recurs across the evidence bundle.",
+      stop("Unexpected stage in enrichment-combination test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  combos <- list(
+    plain = list(semantic = FALSE, life = FALSE),
+    semantic_only = list(semantic = TRUE, life = FALSE),
+    life_only = list(semantic = FALSE, life = TRUE),
+    combined = list(semantic = TRUE, life = TRUE)
+  )
+
+  for (combo_name in names(combos)) {
+    combo <- combos[[combo_name]]
+    review_dir <- file.path(tempdir(), paste0("cocktailr-", combo_name, "-enrichment"))
+    unlink(review_dir, recursive = TRUE, force = TRUE)
+
+    res <- label_clusters(
+      x = x,
+      clusters = "c_1",
+      model = "fake-model",
+      variant = "label_primary_v1",
+      semantic_layer = combo$semantic,
+      life_form_layer = combo$life,
+      timeout_sec = 1,
+      review_dir = review_dir,
+      verbose = FALSE,
+      request_fn = fake_request
+    )
+
+    review_text <- cocktailr:::.format_cluster_evidence_review_prompt(
+      res$results$c_1$evidence
+    )
+
+    expect_equal(res$summary$semantic_layer_status[[1]], if (combo$semantic) "enriched" else "off")
+    expect_equal(res$summary$life_form_layer_status[[1]], if (combo$life) "enriched" else "off")
+    expect_equal(res$summary$semantic_layer_used[[1]], combo$semantic)
+    expect_equal(res$summary$life_form_layer_used[[1]], combo$life)
+    expect_equal(grepl("Semantic axes:", review_text, fixed = TRUE), combo$semantic)
+    expect_equal(grepl("Life-form evidence:", review_text, fixed = TRUE), combo$life)
+  }
+})
+
+test_that("label_clusters records life-form-layer failure and continues with ordinary evidence", {
+  x <- .build_label_clusters_test_cocktail()
+
+  original_life_form <- get(".label_clusters_apply_life_form_layer", envir = asNamespace("cocktailr"))
+  mocked_life_form <- function(evidence, life_form_layer, ...) {
+    if (!isTRUE(life_form_layer)) {
+      return(list(
+        evidence = evidence,
+        used = FALSE,
+        status = "off",
+        error = NA_character_
+      ))
+    }
+
+    list(
+      evidence = evidence,
+      used = FALSE,
+      status = "failed",
+      error = "forced life-form failure for test"
+    )
+  }
+
+  assignInNamespace(".label_clusters_apply_life_form_layer", mocked_life_form, ns = "cocktailr")
+  withr::defer(
+    assignInNamespace(".label_clusters_apply_life_form_layer", original_life_form, ns = "cocktailr")
+  )
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = .label_clusters_test_selection_output(),
+      summary = "The label stays grounded in the plain evidence bundle.",
+      stop("Unexpected stage in life-form failure test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-life-form-failed")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    life_form_layer = TRUE,
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_equal(res$summary$run_status[[1]], "success")
+  expect_equal(res$summary$life_form_layer_status[[1]], "failed")
+  expect_false(isTRUE(res$summary$life_form_layer_used[[1]]))
+  expect_match(
+    res$summary$life_form_layer_error[[1]],
+    "forced life-form failure for test",
+    fixed = TRUE
+  )
+  expect_null(res$results$c_1$evidence$summaries$life_form_summary)
+})
+
+test_that("label_clusters runs actual life_form_layer enrichment with workbook-backed species matches", {
+  x <- .build_label_clusters_life_form_test_cocktail()
+  state <- new.env(parent = emptyenv())
+  state$saw_life_form_prompt <- FALSE
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+
+    if (identical(stage, "selection")) {
+      user_text <- payload$messages[[2]]$content
+      expect_match(user_text, "Plant life-form context for the cluster:", fixed = TRUE)
+      expect_match(
+        user_text,
+        "Tree: tree-form species are present among the matched cluster plants.",
+        fixed = TRUE
+      )
+      expect_match(
+        user_text,
+        "Shrub: shrub-form species are present among the matched cluster plants.",
+        fixed = TRUE
+      )
+      state$saw_life_form_prompt <- TRUE
+    }
+
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = .label_clusters_test_selection_output(
+        display_label = "tree-shrub structural core"
+      ),
+      summary = "A tree-shrub structural core is consistently visible in the evidence bundle.",
+      stop("Unexpected stage in real life-form-layer test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-life-form-real")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    life_form_layer = TRUE,
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_true(isTRUE(state$saw_life_form_prompt))
+  expect_equal(res$summary$life_form_layer_status[[1]], "enriched")
+  expect_true(isTRUE(res$summary$life_form_layer_used[[1]]))
+  expect_gte(nrow(res$results$c_1$evidence$summaries$life_form_summary), 1L)
+  expect_true(file.exists(res$summary$review_file[[1]]))
 })
 
 test_that("label_clusters preserves experimental category fields from v3 prompts", {

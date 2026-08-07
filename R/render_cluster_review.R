@@ -243,6 +243,7 @@ render_cluster_review <- function(
   out
 }
 
+#' @method print cluster_review_artifact
 #' @export
 print.cluster_review_artifact <- function(x, ...) {
   cat(x$markdown, "\n", sep = "")
@@ -311,6 +312,21 @@ print.cluster_review_artifact <- function(x, ...) {
     user_added_data_present = isTRUE(evidence$meta$user_added_data_present %||% FALSE),
     user_added_data_entry_count = as.integer(
       evidence$meta$user_added_data_entry_count %||% 0L
+    ),
+    life_form_layer_present = isTRUE(
+      evidence$meta$source$has_life_form_layer %||% FALSE
+    ),
+    life_form_layer_status = .as_scalar_character(
+      evidence$meta$enrichment_layers$life_form_layer$status %||% NA_character_
+    ),
+    life_form_layer_error = .as_scalar_character(
+      evidence$meta$enrichment_layers$life_form_layer$error %||% NA_character_
+    ),
+    life_form_evidence_count = as.integer(
+      nrow(evidence$summaries$life_form_summary %||% data.frame())
+    ),
+    life_form_unmatched_count = as.integer(
+      length(evidence$summaries$life_form_unmatched_species %||% character(0))
     ),
     provider = provenance$provider,
     model = provenance$model,
@@ -611,6 +627,7 @@ print.cluster_review_artifact <- function(x, ...) {
   brainstorm_lines <- .cluster_review_brainstorm_lines(source)
   workflow_trace_lines <- .cluster_review_workflow_trace_lines(source)
   user_added_data_lines <- .cluster_review_user_added_data_lines(evidence)
+  life_form_lines <- .cluster_review_life_form_lines(evidence)
   claims_lines <- .cluster_review_claim_lines(output$basis_in_data)
   key_species_lines <- .cluster_review_key_species_lines(output$key_species)
   external_lines <- .cluster_review_external_knowledge_lines(output$external_knowledge)
@@ -644,6 +661,9 @@ print.cluster_review_artifact <- function(x, ...) {
       if (length(user_added_data_lines)) "" else NULL,
       if (length(user_added_data_lines)) "## User-added context" else NULL,
       user_added_data_lines,
+      if (length(life_form_lines)) "" else NULL,
+      if (length(life_form_lines)) "## Life-form context" else NULL,
+      life_form_lines,
       "",
       "## Review summary",
       summary_lines,
@@ -1415,6 +1435,76 @@ print.cluster_review_artifact <- function(x, ...) {
       label <- paste0(label, " (truncated)")
     }
     lines <- c(lines, paste0("- Included user-added entry: ", label))
+  }
+
+  lines
+}
+
+.cluster_review_life_form_lines <- function(evidence) {
+  summary <- evidence$summaries$life_form_summary %||% NULL
+  unmatched <- evidence$summaries$life_form_unmatched_species %||% character(0)
+  layer_meta <- evidence$meta$enrichment_layers$life_form_layer %||% list()
+  status <- .as_scalar_character(layer_meta$status %||% NA_character_)
+  error <- .as_scalar_character(layer_meta$error %||% NA_character_)
+
+  has_summary <- is.data.frame(summary) && nrow(summary)
+  has_unmatched <- length(unmatched) > 0L
+  has_status <- !is.na(status) && nzchar(status) && status != "off"
+
+  if (!has_summary && !has_unmatched && !has_status) {
+    return(character(0))
+  }
+
+  lines <- if (has_status) {
+    c(paste0("- Layer status: ", .md_code(status)))
+  } else {
+    character(0)
+  }
+
+  if (has_status && !is.na(error) && nzchar(error)) {
+    lines <- c(lines, paste0("- Layer error: ", .md_code(error)))
+  }
+
+  if (has_summary) {
+    summary <- as.data.frame(summary, stringsAsFactors = FALSE)
+    if (!"matched_species" %in% names(summary)) {
+      summary$matched_species <- ""
+    }
+
+    lines <- c(
+      lines,
+      paste0("- Distinct life-form signals: ", .md_code(as.character(nrow(summary))))
+    )
+
+    for (i in seq_len(nrow(summary))) {
+      species_part <- trimws(as.character(summary$matched_species[[i]]))
+      species_text <- if (nzchar(species_part)) {
+        paste0("; matched species: ", species_part)
+      } else {
+        ""
+      }
+
+      lines <- c(
+        lines,
+        paste0(
+          "- ",
+          summary$label[[i]],
+          ": ",
+          summary$phrase[[i]],
+          species_text
+        )
+      )
+    }
+  }
+
+  if (has_unmatched) {
+    lines <- c(
+      lines,
+      paste0(
+        "- Unmatched life-form species: ",
+        paste(as.character(unmatched), collapse = ", ")
+      )
+    )
   }
 
   lines

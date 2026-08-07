@@ -18,6 +18,7 @@ label_clusters(
   include_cover = TRUE,
   user_added_data = NULL,
   semantic_layer = FALSE,
+  life_form_layer = FALSE,
   semantic_min_phi = NULL,
   semantic_bootstrap = 200L,
   semantic_root = NULL,
@@ -86,6 +87,13 @@ evidence bundle with indicator-derived ecological axes from the optional
 semantic layer built from files under \code{data-raw/external/}. Failures
 in this auxiliary step are recorded in the batch summary and the workflow
 continues with the plain evidence bundle. Default \code{FALSE}.}
+
+\item{life_form_layer}{Logical. If \code{TRUE}, try to enrich each cluster's
+evidence bundle with structural plant life-form context from the optional
+life-form layer built from files under \code{data-raw/external/}. Failures
+in this auxiliary step are recorded in the batch summary and the workflow
+continues with the otherwise available evidence bundle. Default
+\code{FALSE}.}
 
 \item{semantic_min_phi}{Optional numeric scalar forwarded to
 \code{score_cluster_semantics()}.}

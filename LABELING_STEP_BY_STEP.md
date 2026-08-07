@@ -49,6 +49,7 @@ For a first run, do not change these:
 - `label_mode = "open"`
 - `use_brainstorm = TRUE`
 - `semantic_layer = TRUE`
+- `life_form_layer = FALSE`
 - `workflow_steps`
 - `internal_prompt_version`
 - `speculative_fallback_mode`
@@ -64,6 +65,10 @@ bundles that include it, such as the packaged `v2` bundle.
 This guide uses `semantic_layer = TRUE` by default. The run still
 continues without semantic enrichment if the optional resources cannot be
 built; check `summary$semantic_layer_status` after the run.
+
+Keep `life_form_layer = FALSE` for ordinary baseline runs. Turn it on only
+when you explicitly want structural plant life-form enrichment; check
+`summary$life_form_layer_status` after the run.
 
 ## What Gets Written Automatically vs What This Guide Saves Explicitly
 
@@ -544,9 +549,10 @@ Dry run is optional, but it is often the fastest way to confirm that:
 - the prompt is assembled successfully
 
 Dry run does not write review cards and does not contact Ollama.
-The `semantic_layer` switch belongs to `label_clusters()`, which builds and
-optionally enriches evidence before calling the model. In this direct
-`llm_label_cluster()` dry run, you are passing the evidence object yourself.
+The `semantic_layer` and `life_form_layer` switches belong to
+`label_clusters()`, which builds and optionally enriches evidence before
+calling the model. In this direct `llm_label_cluster()` dry run, you are
+passing the evidence object yourself.
 
 ## 8. Step 7: Smoke Test On One Cluster (optional)
 
@@ -568,6 +574,7 @@ smoke_run <- label_clusters(
   label_mode = "open",
   use_brainstorm = TRUE,
   semantic_layer = TRUE,
+  life_form_layer = FALSE,
   timeout_sec = TIMEOUT_SEC,
   num_predict = NUM_PREDICT,
   prompt_budget_chars = PROMPT_BUDGET_CHARS,

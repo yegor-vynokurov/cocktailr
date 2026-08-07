@@ -114,12 +114,12 @@ includes that asset (for example the packaged \code{"v2"} bundle).}
 category-compatible output fields with an experimental subcategorization
 strategy selected by \code{internal_prompt_version}: the packaged
 \code{"v5"} bundle runs a post-label classifier after label summary, and
-the packaged \code{"v6"}, \code{"v7"}, \code{"v8a"}, \code{"v8b"}, and
+the packaged \code{"v6"}, \code{"v7"}, \code{"v8a"}, \code{"v8b"},
 \code{"v8c"}, and \code{"v9"} bundles run staged general-name /
-uniqueness-detail flows.
-The \code{"v7"} bundle is an anti-repetition prompt experiment; the
-\code{"v8a"}-\code{"v8c"} bundles are A001 subcategory wording probes.
-The \code{"v9"} bundle supports the opt-in double-brainstorm experiment.
+uniqueness-detail flows. The \code{"v7"} bundle is an anti-repetition
+prompt experiment; the \code{"v8a"}-\code{"v8c"} bundles are A001
+subcategory wording probes; and \code{"v9"} supports the opt-in
+double-brainstorm experiment.
 Default \code{FALSE}; the ordinary staged labeling flow is unchanged when
 disabled.}
 
