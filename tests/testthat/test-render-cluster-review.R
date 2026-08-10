@@ -179,6 +179,33 @@ test_that("render_cluster_review full=TRUE builds an expanded markdown artifact"
   )
   ev$summaries$life_form_unmatched_species <- "Unknown plant"
   ev$meta$source$has_life_form_layer <- TRUE
+  ev$summaries$life_form_overlay_species <- data.frame(
+    species = "Abies alba",
+    phi = 0.91,
+    assignment_state = "mixed",
+    matched_labels = "Tree; Phanerophyte",
+    stringsAsFactors = FALSE
+  )
+  ev$summaries$life_form_overlay_metrics <- data.frame(
+    metric = "dominant_life_form_share",
+    metric_label = "Dominant life-form share",
+    value = 0.67,
+    value_text = "66.7%",
+    bucket_label = "concentrated",
+    bucket_phrase = "one life form dominates a clear majority of the matched species core",
+    stringsAsFactors = FALSE
+  )
+  ev$summaries$life_form_overlay_diagnosis <- data.frame(
+    label = "Structure balance",
+    phrase = "Dominance cue: one life form dominates a clear majority of the matched species core",
+    stringsAsFactors = FALSE
+  )
+  ev$meta$enrichment_layers$life_form_layer <- list(
+    enabled = TRUE,
+    mode = "complex",
+    status = "enriched",
+    error = NA_character_
+  )
   output <- .build_review_label_output(ev)
 
   art <- render_cluster_review(output, ev, full = TRUE)
@@ -187,6 +214,11 @@ test_that("render_cluster_review full=TRUE builds an expanded markdown artifact"
   expect_match(art$markdown, "cluster_id: \"c_1\"", fixed = TRUE)
   expect_match(art$markdown, "## Review summary", fixed = TRUE)
   expect_match(art$markdown, "## Life-form context", fixed = TRUE)
+  expect_match(art$markdown, "- Layer mode: `complex`", fixed = TRUE)
+  expect_match(art$markdown, "Species-first overlay rows: `1`", fixed = TRUE)
+  expect_match(art$markdown, "Abies alba (phi=0.91): mixed assignment; Tree; Phanerophyte", fixed = TRUE)
+  expect_match(art$markdown, "Metric Dominant life-form share: 66.7% (concentrated); one life form dominates a clear majority of the matched species core", fixed = TRUE)
+  expect_match(art$markdown, "Diagnosis Structure balance: Dominance cue: one life form dominates a clear majority of the matched species core", fixed = TRUE)
   expect_match(art$markdown, "Tree: tree-form species are present among the matched cluster plants; matched species: Abies alba", fixed = TRUE)
   expect_match(art$markdown, "Unmatched life-form species: Unknown plant", fixed = TRUE)
   expect_match(art$markdown, "- Label summary: ", fixed = TRUE)

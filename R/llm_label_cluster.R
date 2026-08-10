@@ -102,6 +102,13 @@
 #'   folder to \code{"v2"}, \code{"v3"}, and so on when you want to iterate on
 #'   the internal draft / decision / summary prompts without changing the
 #'   currently active production set.
+#' @param structured_prompt Logical. If \code{TRUE}, use the compact structured
+#'   synopsis path for ordinary brainstorm prompt assembly. If \code{FALSE}
+#'   (default), keep the legacy prompt path.
+#' @param represented_species Integer >= 0. Controls how many prompt-visible
+#'   species rows the structured synopsis path may render. Value \code{0}
+#'   enables summary-only mode. When \code{structured_prompt = FALSE}, the
+#'   argument is accepted but not used on the legacy branch.
 #' @param dry_run Logical; if \code{TRUE}, return the assembled prompt bundle
 #'   and Ollama request payload without making a network request.
 #' @param debug Logical. If \code{TRUE}, collect per-stage LLM debug logs
@@ -192,6 +199,8 @@ llm_label_cluster <- function(
     use_subcategorization = FALSE,
     use_double_brainstorm = FALSE,
     internal_prompt_version = .default_cluster_label_internal_prompt_version(),
+    structured_prompt = FALSE,
+    represented_species = 7L,
     dry_run = FALSE,
     debug = FALSE,
     log_dir = NULL,
@@ -228,6 +237,12 @@ llm_label_cluster <- function(
     use_double_brainstorm,
     "use_double_brainstorm"
   )
+  structured_prompt <- .normalize_cluster_label_structured_prompt(
+    structured_prompt
+  )
+  represented_species <- .normalize_cluster_label_represented_species(
+    represented_species
+  )
   if (isTRUE(use_double_brainstorm) && !isTRUE(use_brainstorm)) {
     stop("`use_double_brainstorm = TRUE` requires `use_brainstorm = TRUE`.")
   }
@@ -252,6 +267,12 @@ llm_label_cluster <- function(
     debug = debug,
     log_dir = log_dir
   )
+
+  old_opts <- options(
+    cocktailr.structured_prompt = isTRUE(structured_prompt),
+    cocktailr.represented_species = as.integer(represented_species)
+  )
+  on.exit(options(old_opts), add = TRUE)
 
   .llm_label_cluster_fixed_pipeline(
     evidence = evidence,
@@ -1282,6 +1303,8 @@ llm_label_cluster <- function(
   }
 
   list(
+    structured_prompt = prompt_bundle$structured_prompt %||% NULL,
+    represented_species = prompt_bundle$represented_species %||% NULL,
     prompt_budget_chars = budget$prompt_budget_chars %||% NULL,
     fixed_overhead_chars = budget$fixed_overhead_chars %||% NULL,
     schema_prompt_chars = budget$schema_prompt_chars %||% NULL,

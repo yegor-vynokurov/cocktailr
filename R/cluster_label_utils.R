@@ -121,6 +121,50 @@
   .arg_scalar_character(x, name)
 }
 
+.normalize_life_form_layer_mode <- function(x, name = "life_form_layer") {
+  if (is.null(x)) {
+    return(NULL)
+  }
+
+  if (is.logical(x)) {
+    stop(
+      "`",
+      name,
+      "` now uses the selector contract `NULL`, \"simple\", or \"complex\". Logical TRUE/FALSE values are no longer supported.",
+      call. = FALSE
+    )
+  }
+
+  x <- trimws(tolower(.arg_scalar_character(x, name)))
+  allowed <- c("simple", "complex")
+
+  if (!x %in% allowed) {
+    stop(
+      "`",
+      name,
+      "` must be NULL, \"simple\", or \"complex\".",
+      call. = FALSE
+    )
+  }
+
+  x
+}
+
+.normalize_cluster_label_structured_prompt <- function(
+    x,
+    name = "structured_prompt"
+) {
+  .arg_single_flag(x, name)
+}
+
+.normalize_cluster_label_represented_species <- function(
+    x,
+    name = "represented_species"
+) {
+  x <- .arg_non_negative_integer(x, name)
+  x
+}
+
 .arg_named_list_or_null <- function(x, name) {
   if (is.null(x)) {
     return(NULL)

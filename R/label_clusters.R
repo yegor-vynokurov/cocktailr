@@ -57,12 +57,19 @@
 #'   semantic layer built from files under \code{data-raw/external/}. Failures
 #'   in this auxiliary step are recorded in the batch summary and the workflow
 #'   continues with the plain evidence bundle. Default \code{FALSE}.
-#' @param life_form_layer Logical. If \code{TRUE}, try to enrich each cluster's
-#'   evidence bundle with structural plant life-form context from the optional
-#'   life-form layer built from files under \code{data-raw/external/}. Failures
-#'   in this auxiliary step are recorded in the batch summary and the workflow
-#'   continues with the otherwise available evidence bundle. Default
-#'   \code{FALSE}.
+#' @param life_form_layer Optional character selector controlling the
+#'   auxiliary plant life-form enrichment layer. Use \code{NULL} (default) to
+#'   disable it, \code{"simple"} to apply the delivered coarse cluster-level
+#'   summary, or \code{"complex"} to apply the species-first overlay path.
+#'   Failures in this auxiliary step are recorded in the batch summary and the
+#'   workflow continues with the otherwise available evidence bundle.
+#' @param structured_prompt Logical. If \code{TRUE}, use the compact structured
+#'   synopsis path for ordinary brainstorm prompt assembly. If \code{FALSE}
+#'   (default), keep the legacy prompt path.
+#' @param represented_species Integer >= 0. Controls how many prompt-visible
+#'   species rows the structured synopsis path may render. Value \code{0}
+#'   enables summary-only mode. When \code{structured_prompt = FALSE}, the
+#'   argument is accepted but not used on the legacy branch.
 #' @param semantic_min_phi Optional numeric scalar forwarded to
 #'   \code{score_cluster_semantics()}.
 #' @param semantic_bootstrap Integer bootstrap count for semantic axis
@@ -182,7 +189,9 @@ label_clusters <- function(
     include_cover = TRUE,
     user_added_data = NULL,
     semantic_layer = FALSE,
-    life_form_layer = FALSE,
+    life_form_layer = NULL,
+    structured_prompt = FALSE,
+    represented_species = 7L,
     semantic_min_phi = NULL,
     semantic_bootstrap = 200L,
     semantic_root = NULL,
@@ -266,7 +275,13 @@ label_clusters <- function(
   verbose <- .arg_single_flag(verbose, "verbose")
   labels_for_imgs <- .arg_single_flag(labels_for_imgs, "labels_for_imgs")
   semantic_layer <- .arg_single_flag(semantic_layer, "semantic_layer")
-  life_form_layer <- .arg_single_flag(life_form_layer, "life_form_layer")
+  life_form_layer <- .normalize_life_form_layer_mode(life_form_layer)
+  structured_prompt <- .normalize_cluster_label_structured_prompt(
+    structured_prompt
+  )
+  represented_species <- .normalize_cluster_label_represented_species(
+    represented_species
+  )
   semantic_bootstrap <- .arg_positive_integer(
     semantic_bootstrap,
     "semantic_bootstrap"
@@ -395,6 +410,8 @@ label_clusters <- function(
       use_subcategorization = use_subcategorization,
       use_double_brainstorm = use_double_brainstorm,
       internal_prompt_version = internal_prompt_version,
+      structured_prompt = structured_prompt,
+      represented_species = represented_species,
       dry_run = TRUE,
       request_fn = request_fn
     )
@@ -424,6 +441,8 @@ label_clusters <- function(
       use_subcategorization = use_subcategorization,
       use_double_brainstorm = use_double_brainstorm,
       internal_prompt_version = internal_prompt_version,
+      structured_prompt = structured_prompt,
+      represented_species = represented_species,
       max_iterations = max_iterations,
       review_dir = review_dir,
       verbose = verbose,
@@ -440,8 +459,11 @@ label_clusters <- function(
     cluster_run$semantic_layer_status <- semantic_step$status %||% "off"
     cluster_run$semantic_layer_error <- semantic_step$error %||% NA_character_
     cluster_run$life_form_layer_used <- isTRUE(life_form_step$used)
+    cluster_run$life_form_layer_mode <- life_form_step$mode %||% NA_character_
     cluster_run$life_form_layer_status <- life_form_step$status %||% "off"
     cluster_run$life_form_layer_error <- life_form_step$error %||% NA_character_
+    cluster_run$structured_prompt <- isTRUE(structured_prompt)
+    cluster_run$represented_species <- as.integer(represented_species)
 
     results[[i]] <- cluster_run
     summary_rows[[i]] <- data.frame(
@@ -485,8 +507,11 @@ label_clusters <- function(
       semantic_layer_status = cluster_run$semantic_layer_status %||% NA_character_,
       semantic_layer_error = cluster_run$semantic_layer_error %||% NA_character_,
       life_form_layer_used = isTRUE(cluster_run$life_form_layer_used),
+      life_form_layer_mode = cluster_run$life_form_layer_mode %||% NA_character_,
       life_form_layer_status = cluster_run$life_form_layer_status %||% NA_character_,
       life_form_layer_error = cluster_run$life_form_layer_error %||% NA_character_,
+      structured_prompt = isTRUE(cluster_run$structured_prompt),
+      represented_species = as.integer(cluster_run$represented_species %||% NA_integer_),
       label_origin = cluster_run$label_origin %||% NA_character_,
       species_entropy_band = cluster_run$species_entropy_band %||% NA_character_,
       species_entropy_text = cluster_run$species_entropy_text %||% NA_character_,
@@ -682,38 +707,68 @@ label_clusters <- function(
     verbose,
     cluster_tag
 ) {
-  if (!isTRUE(life_form_layer)) {
+  if (is.null(life_form_layer)) {
     evidence$meta$enrichment_layers$life_form_layer <- list(
       enabled = FALSE,
+      mode = NA_character_,
       status = "off",
       error = NA_character_
     )
     return(list(
       evidence = evidence,
       used = FALSE,
+      mode = NA_character_,
       status = "off",
       error = NA_character_
     ))
   }
 
-  .label_clusters_log(verbose, cluster_tag, ": life-form enrichment started.")
+  .label_clusters_log(
+    verbose,
+    cluster_tag,
+    ": life-form enrichment started (mode: ",
+    life_form_layer,
+    ")."
+  )
 
   attempt <- tryCatch(
     {
       root <- cocktailr_project_root()
 
-      life_form_result <- score_cluster_life_forms(
-        x = x,
-        clusters = evidence$meta$cluster_id,
-        root = root
-      )
+      if (identical(life_form_layer, "simple")) {
+        life_form_result <- score_cluster_life_forms(
+          x = x,
+          clusters = evidence$meta$cluster_id,
+          root = root
+        )
 
-      enriched <- .augment_cluster_evidence_with_life_form_layer(
-        evidence = evidence,
-        life_form_result = life_form_result
-      )
+        enriched <- .augment_cluster_evidence_with_life_form_layer(
+          evidence = evidence,
+          life_form_result = life_form_result
+        )
+      } else if (identical(life_form_layer, "complex")) {
+        life_form_overlay_result <- score_cluster_life_form_overlay(
+          x = x,
+          clusters = evidence$meta$cluster_id,
+          root = root
+        )
+
+        enriched <- .augment_cluster_evidence_with_life_form_overlay_layer(
+          evidence = evidence,
+          life_form_overlay_result = life_form_overlay_result
+        )
+      } else {
+        stop(
+          "Unsupported `life_form_layer` mode `",
+          life_form_layer,
+          "`.",
+          call. = FALSE
+        )
+      }
+
       enriched$meta$enrichment_layers$life_form_layer <- list(
         enabled = TRUE,
+        mode = life_form_layer,
         status = "enriched",
         error = NA_character_
       )
@@ -721,6 +776,7 @@ label_clusters <- function(
       list(
         evidence = enriched,
         used = TRUE,
+        mode = life_form_layer,
         status = "enriched",
         error = NA_character_
       )
@@ -728,12 +784,14 @@ label_clusters <- function(
     error = function(e) {
       evidence$meta$enrichment_layers$life_form_layer <- list(
         enabled = TRUE,
+        mode = life_form_layer,
         status = "failed",
         error = conditionMessage(e)
       )
       list(
         evidence = evidence,
         used = FALSE,
+        mode = life_form_layer,
         status = "failed",
         error = conditionMessage(e)
       )
@@ -741,12 +799,20 @@ label_clusters <- function(
   )
 
   if (identical(attempt$status, "enriched")) {
-    .label_clusters_log(verbose, cluster_tag, ": life-form enrichment completed.")
+    .label_clusters_log(
+      verbose,
+      cluster_tag,
+      ": life-form enrichment completed (mode: ",
+      attempt$mode,
+      ")."
+    )
   } else if (identical(attempt$status, "failed")) {
     .label_clusters_log(
       verbose,
       cluster_tag,
-      ": life-form enrichment failed; continuing without it. ",
+      ": life-form enrichment failed (mode: ",
+      attempt$mode,
+      "); continuing without it. ",
       attempt$error
     )
   }
@@ -854,6 +920,8 @@ label_clusters <- function(
     use_subcategorization,
     use_double_brainstorm,
     internal_prompt_version,
+    structured_prompt,
+    represented_species,
     max_iterations,
     review_dir,
     verbose,
@@ -961,6 +1029,8 @@ label_clusters <- function(
             use_subcategorization = use_subcategorization,
             use_double_brainstorm = use_double_brainstorm,
             internal_prompt_version = internal_prompt_version,
+            structured_prompt = structured_prompt,
+            represented_species = represented_species,
             label_mode = label_mode,
             ollama_options = ollama_options
           )
@@ -988,6 +1058,8 @@ label_clusters <- function(
             use_subcategorization = use_subcategorization,
             use_double_brainstorm = use_double_brainstorm,
             internal_prompt_version = internal_prompt_version,
+            structured_prompt = structured_prompt,
+            represented_species = represented_species,
             dry_run = FALSE,
             log_dir = log_dir,
             request_fn = request_fn
@@ -1857,6 +1929,8 @@ label_clusters <- function(
     use_subcategorization,
     use_double_brainstorm,
     internal_prompt_version,
+    structured_prompt,
+    represented_species,
     label_mode,
     ollama_options
 ) {
@@ -1889,6 +1963,12 @@ label_clusters <- function(
   } else {
     NULL
   }
+
+  old_opts <- options(
+    cocktailr.structured_prompt = isTRUE(structured_prompt),
+    cocktailr.represented_species = as.integer(represented_species)
+  )
+  on.exit(options(old_opts), add = TRUE)
 
   out <- .llm_label_cluster_fixed_pipeline(
     evidence = evidence,

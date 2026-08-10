@@ -49,7 +49,9 @@ For a first run, do not change these:
 - `label_mode = "open"`
 - `use_brainstorm = TRUE`
 - `semantic_layer = TRUE`
-- `life_form_layer = FALSE`
+- `life_form_layer = "complex"`
+- `structured_prompt = TRUE`
+- `represented_species = 5L`
 - `workflow_steps`
 - `internal_prompt_version`
 - `speculative_fallback_mode`
@@ -62,13 +64,122 @@ Leave `short_label_with_llm = FALSE` for normal runs. If you turn it on,
 the extra shortening-repair prompt is available only in internal prompt
 bundles that include it, such as the packaged `v2` bundle.
 
-This guide uses `semantic_layer = TRUE` by default. The run still
-continues without semantic enrichment if the optional resources cannot be
-built; check `summary$semantic_layer_status` after the run.
+This guide recommends the current bounded ordinary-labeling profile rather
+than the raw function defaults:
 
-Keep `life_form_layer = FALSE` for ordinary baseline runs. Turn it on only
-when you explicitly want structural plant life-form enrichment; check
-`summary$life_form_layer_status` after the run.
+- `semantic_layer = TRUE`
+- `life_form_layer = "complex"`
+- `structured_prompt = TRUE`
+- `represented_species = 5L`
+
+The function API still keeps broader defaults for backward compatibility,
+but this guide now opts into the current synopsis path on purpose.
+
+This guide uses `semantic_layer = TRUE` by default because ecological
+indicator evidence usually improves cluster interpretation when the
+optional semantic resources are available. The run still continues without
+semantic enrichment if those resources cannot be built; check
+`summary$semantic_layer_status` after the run.
+
+This guide uses `life_form_layer = "complex"` by default because the
+current term-light synopsis path converts the richer species-first
+life-form overlay into a compact structural summary without exposing the
+raw specialist terms directly to the model. After the run, check
+`summary$life_form_layer_status` and `summary$life_form_layer_mode`.
+
+This guide uses `represented_species = 5L` as the practical starting
+point, not as a universal truth. In the bounded Phase C ladder, `5`
+preserved a species list in the prompt while staying shorter than `7` and
+much shorter than `12`, but the resulting label quality still depended
+strongly on the dataset and the model. Treat `5L` as the default starting
+configuration for a new dataset, then vary it experimentally and inspect
+the label quality before you freeze a project workflow.
+
+Use these alternatives deliberately:
+
+- `represented_species = 0L` when the cluster summary is already strong
+  and the species rows seem to distract the model or overfill the prompt.
+- `represented_species = 7L` when five species feel too sparse for a
+  dataset with many diagnostic co-dominants or transitions.
+- `represented_species = 12L` only as an explicit large-context
+  comparison; it carries the most species detail but also the largest
+  prompt growth and, in the bounded ladder, did not produce a stability
+  advantage.
+- `life_form_layer = "simple"` when you want a lighter coarse structural
+  hint but do not need the newer species-first overlay path.
+- `life_form_layer = NULL` for ablation, legacy comparison, or when you
+  intentionally want to measure semantic-only behavior.
+- `semantic_layer = FALSE` when the external semantic inputs are missing or
+  when you intentionally want to isolate the contribution of life-form
+  evidence.
+- `structured_prompt = FALSE` only for legacy-path comparison runs; this
+  guide does not recommend it as the ordinary default anymore.
+
+## Where The Life-Form Prompt Data Comes From
+
+In the current recommended ordinary-labeling path, the life-form summary is
+not invented by the LLM. It is assembled programmatically from:
+
+- the external life-form workbook
+  `data-raw/external/life_forms/Life_form.xlsx`
+- the packaged base life-form dictionary
+  `inst/extdata/life_form_dictionary_v1.csv`
+- the packaged overlay interpretation dictionary
+  `inst/extdata/life_form_overlay_dictionary_v1.csv`
+
+There is also a third packaged dictionary file:
+
+- `inst/extdata/life_form_glossary_dictionary_v1.csv`
+
+That glossary dictionary stores short definitions and source links for raw
+life-form terms such as `Therophyte` or `Phanerophyte`. It is useful for
+term-definition flows and prompt-inspection work, but the current
+recommended term-light synopsis path does not depend on pushing those raw
+specialist terms directly into the model prompt.
+
+Use this mental model:
+
+- your current dataset supplies the cluster species list and species ranks
+- the workbook supplies the reference life-form assignments
+- `life_form_dictionary_v1.csv` tells the code which workbook flags belong
+  to which named life-form labels
+- `life_form_overlay_dictionary_v1.csv` converts derived metrics such as
+  dominance share, mixing, coverage gaps, and compression into short bucket
+  phrases that are later turned into the compact life-form summary
+
+Short provenance notes:
+
+- The workbook-backed life-form assignments are external reference data
+  reused across datasets; in code they are treated as the source layer for
+  species-to-life-form matching rather than as something learned from the
+  current run.
+- The packaged base dictionary
+  `inst/extdata/life_form_dictionary_v1.csv`
+  is a project mapping layer for the workbook columns. It defines the raw
+  flags the code recognizes, their human-readable labels, and their
+  priority order.
+- The packaged overlay dictionary
+  `inst/extdata/life_form_overlay_dictionary_v1.csv`
+  is an internal interpretation table created for this project. Its metric
+  buckets are based on the delivered overlay metrics and were tuned on the
+  bounded real-data forest-steppe experiments used in `CHG-0017` and
+  `CHG-0018`; it is not an external taxonomic standard.
+- The glossary dictionary
+  `inst/extdata/life_form_glossary_dictionary_v1.csv`
+  is literature/web-reference-backed. In the current packaged file, the
+  definitions cite Simple English Wikipedia or Wiktionary for `Tree` and
+  `Shrub`, and the Raunkiaer life-form article on Wikipedia for
+  `Chamaephyte`, `Geophyte`, `Hemicryptophyte`, `Phanerophyte`,
+  `Therophyte`, and related terms.
+
+The plain-language structural cues used in the current term-light synopsis
+rewrite were additionally grounded in the bounded `T019a` design notes
+under:
+
+- `temp/reports/forest_steppe_single_model_labeling/chg0018_compact_synopsis_builder_v1_t019a_pre_phase_c_life_form_summary_rerun_live_2026_08_10/analysis/synopsis_design_decisions.md`
+
+Those notes distinguish literature-backed ecological cues from internal
+heuristic wording for assignment clarity.
 
 ## What Gets Written Automatically vs What This Guide Saves Explicitly
 
@@ -574,7 +685,9 @@ smoke_run <- label_clusters(
   label_mode = "open",
   use_brainstorm = TRUE,
   semantic_layer = TRUE,
-  life_form_layer = FALSE,
+  life_form_layer = "complex",
+  structured_prompt = TRUE,
+  represented_species = 5L,
   timeout_sec = TIMEOUT_SEC,
   num_predict = NUM_PREDICT,
   prompt_budget_chars = PROMPT_BUDGET_CHARS,
@@ -645,6 +758,10 @@ run <- label_clusters(
   variant = "label_primary_v1",
   label_mode = "open",
   use_brainstorm = TRUE,
+  semantic_layer = TRUE,
+  life_form_layer = "complex",
+  structured_prompt = TRUE,
+  represented_species = 5L,
   timeout_sec = TIMEOUT_SEC,
   num_predict = NUM_PREDICT,
   prompt_budget_chars = PROMPT_BUDGET_CHARS,
@@ -653,8 +770,7 @@ run <- label_clusters(
   log_dir = file.path(full_root, "llm_logs"),
   debug = TRUE,
   labels_for_imgs = TRUE,
-  verbose = TRUE,
-  semantic_layer = TRUE
+  verbose = TRUE
 )
 
 saveRDS(
@@ -706,6 +822,14 @@ Also note:
 - inside `cluster_reviews/` and `llm_logs/`, expect a dataset-specific
   subfolder derived from `dataset_label`; in this guide that slug is
   `real_eval_long_numeric_v1`
+- the recommended ordinary-labeling profile in this guide is
+  `semantic_layer = TRUE`,
+  `life_form_layer = "complex"`,
+  `structured_prompt = TRUE`,
+  `represented_species = 5L`
+- if label quality looks too generic or too unstable on your dataset, the
+  first parameter to vary experimentally is usually `represented_species`,
+  followed by whether `life_form_layer` stays on
 
 ## 10. Optional: Category/Subcategory Labeling
 

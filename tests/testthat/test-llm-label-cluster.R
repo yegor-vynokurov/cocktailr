@@ -240,6 +240,69 @@ test_that("llm_label_cluster trims evidence blocks to fit prompt_budget_chars", 
   expect_false("cover_summary" %in% budget$blocks$id)
 })
 
+test_that("llm_label_cluster records prompt-visible species cap in the prompt bundle", {
+  ev <- .build_test_cluster_evidence()
+
+  old_opt <- options(cocktailr.prompt_visible_species_cap = 7L)
+  on.exit(options(old_opt), add = TRUE)
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "gemma4:12b",
+    variant = "label_primary_v1",
+    dry_run = TRUE
+  )
+
+  expect_identical(req$prompt$prompt_visible_species_cap, 7L)
+  expect_identical(req$prompt$evidence_budget$prompt_visible_species_cap, 7L)
+})
+
+test_that("llm_label_cluster can build the structured synopsis prompt path", {
+  ev <- .build_test_cluster_evidence()
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "gemma4:12b",
+    variant = "label_primary_v1",
+    structured_prompt = TRUE,
+    represented_species = 5L,
+    dry_run = TRUE
+  )
+
+  expect_true(isTRUE(req$prompt$structured_prompt))
+  expect_identical(req$prompt$represented_species, 5L)
+  expect_match(req$prompt$evidence_text, "Reference:", fixed = TRUE)
+  expect_match(req$prompt$evidence_text, "Cluster summary:", fixed = TRUE)
+  expect_match(req$prompt$evidence_text, "Represented species:", fixed = TRUE)
+  expect_false(grepl(
+    "Plants that regularly occur in this cluster:",
+    req$prompt$evidence_text,
+    fixed = TRUE
+  ))
+})
+
+test_that("llm_label_cluster keeps legacy prompt shaping when structured_prompt is FALSE", {
+  ev <- .build_test_cluster_evidence()
+
+  req <- llm_label_cluster(
+    evidence = ev,
+    model = "gemma4:12b",
+    variant = "label_primary_v1",
+    structured_prompt = FALSE,
+    represented_species = 0L,
+    dry_run = TRUE
+  )
+
+  expect_false(isTRUE(req$prompt$structured_prompt))
+  expect_identical(req$prompt$represented_species, 0L)
+  expect_match(
+    req$prompt$evidence_text,
+    "Plants that regularly occur in this cluster:",
+    fixed = TRUE
+  )
+  expect_false(grepl("Reference:", req$prompt$evidence_text, fixed = TRUE))
+})
+
 test_that("cluster label vocabulary helper reads the packaged coarse vocabulary", {
   catalog <- cocktailr:::.read_cluster_label_prompt_catalog()
   vocab <- cocktailr:::.read_cluster_label_vocabulary(

@@ -253,9 +253,50 @@ test_that("label_clusters keeps life_form_layer disabled by default and records 
   )
 
   expect_false(isTRUE(res$summary$life_form_layer_used[[1]]))
+  expect_true(is.na(res$summary$life_form_layer_mode[[1]]))
   expect_equal(res$summary$life_form_layer_status[[1]], "off")
   expect_true(is.na(res$summary$life_form_layer_error[[1]]))
   expect_null(res$results$c_1$evidence$summaries$life_form_summary)
+})
+
+test_that("label_clusters records the structured prompt contract in the batch summary", {
+  x <- .build_label_clusters_test_cocktail()
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = .label_clusters_test_selection_output(),
+      summary = "The same compact species core recurs across the evidence bundle.",
+      stop("Unexpected stage in structured-prompt summary test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-structured-summary")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    structured_prompt = TRUE,
+    represented_species = 5L,
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_true(isTRUE(res$summary$structured_prompt[[1]]))
+  expect_identical(res$summary$represented_species[[1]], 5L)
 })
 
 test_that("label_clusters distinguishes plain, semantic-only, life-form-only, and combined enrichment modes", {
@@ -295,10 +336,11 @@ test_that("label_clusters distinguishes plain, semantic-only, life-form-only, an
   }
 
   mocked_life_form <- function(evidence, life_form_layer, ...) {
-    if (!isTRUE(life_form_layer)) {
+    if (is.null(life_form_layer)) {
       return(list(
         evidence = evidence,
         used = FALSE,
+        mode = NA_character_,
         status = "off",
         error = NA_character_
       ))
@@ -315,10 +357,17 @@ test_that("label_clusters distinguishes plain, semantic-only, life-form-only, an
       stringsAsFactors = FALSE
     )
     evidence$meta$source$has_life_form_layer <- TRUE
+    evidence$meta$enrichment_layers$life_form_layer <- list(
+      enabled = TRUE,
+      mode = life_form_layer,
+      status = "enriched",
+      error = NA_character_
+    )
 
     list(
       evidence = evidence,
       used = TRUE,
+      mode = life_form_layer,
       status = "enriched",
       error = NA_character_
     )
@@ -351,10 +400,10 @@ test_that("label_clusters distinguishes plain, semantic-only, life-form-only, an
   }
 
   combos <- list(
-    plain = list(semantic = FALSE, life = FALSE),
-    semantic_only = list(semantic = TRUE, life = FALSE),
-    life_only = list(semantic = FALSE, life = TRUE),
-    combined = list(semantic = TRUE, life = TRUE)
+    plain = list(semantic = FALSE, life = NULL),
+    semantic_only = list(semantic = TRUE, life = NULL),
+    simple_only = list(semantic = FALSE, life = "simple"),
+    combined_complex = list(semantic = TRUE, life = "complex")
   )
 
   for (combo_name in names(combos)) {
@@ -380,11 +429,24 @@ test_that("label_clusters distinguishes plain, semantic-only, life-form-only, an
     )
 
     expect_equal(res$summary$semantic_layer_status[[1]], if (combo$semantic) "enriched" else "off")
-    expect_equal(res$summary$life_form_layer_status[[1]], if (combo$life) "enriched" else "off")
+    expect_equal(
+      res$summary$life_form_layer_status[[1]],
+      if (is.null(combo$life)) "off" else "enriched"
+    )
     expect_equal(res$summary$semantic_layer_used[[1]], combo$semantic)
-    expect_equal(res$summary$life_form_layer_used[[1]], combo$life)
+    expect_equal(res$summary$life_form_layer_used[[1]], !is.null(combo$life))
+    expect_equal(
+      is.na(res$summary$life_form_layer_mode[[1]]),
+      is.null(combo$life)
+    )
+    if (!is.null(combo$life)) {
+      expect_equal(res$summary$life_form_layer_mode[[1]], combo$life)
+    }
     expect_equal(grepl("Semantic axes:", review_text, fixed = TRUE), combo$semantic)
-    expect_equal(grepl("Life-form evidence:", review_text, fixed = TRUE), combo$life)
+    expect_equal(
+      grepl("Life-form evidence:", review_text, fixed = TRUE),
+      !is.null(combo$life)
+    )
   }
 })
 
@@ -393,10 +455,11 @@ test_that("label_clusters records life-form-layer failure and continues with ord
 
   original_life_form <- get(".label_clusters_apply_life_form_layer", envir = asNamespace("cocktailr"))
   mocked_life_form <- function(evidence, life_form_layer, ...) {
-    if (!isTRUE(life_form_layer)) {
+    if (is.null(life_form_layer)) {
       return(list(
         evidence = evidence,
         used = FALSE,
+        mode = NA_character_,
         status = "off",
         error = NA_character_
       ))
@@ -405,6 +468,7 @@ test_that("label_clusters records life-form-layer failure and continues with ord
     list(
       evidence = evidence,
       used = FALSE,
+      mode = life_form_layer,
       status = "failed",
       error = "forced life-form failure for test"
     )
@@ -440,7 +504,7 @@ test_that("label_clusters records life-form-layer failure and continues with ord
     clusters = "c_1",
     model = "fake-model",
     variant = "label_primary_v1",
-    life_form_layer = TRUE,
+    life_form_layer = "simple",
     timeout_sec = 1,
     review_dir = review_dir,
     verbose = FALSE,
@@ -449,6 +513,7 @@ test_that("label_clusters records life-form-layer failure and continues with ord
 
   expect_equal(res$summary$run_status[[1]], "success")
   expect_equal(res$summary$life_form_layer_status[[1]], "failed")
+  expect_equal(res$summary$life_form_layer_mode[[1]], "simple")
   expect_false(isTRUE(res$summary$life_form_layer_used[[1]]))
   expect_match(
     res$summary$life_form_layer_error[[1]],
@@ -507,7 +572,7 @@ test_that("label_clusters runs actual life_form_layer enrichment with workbook-b
     clusters = "c_1",
     model = "fake-model",
     variant = "label_primary_v1",
-    life_form_layer = TRUE,
+    life_form_layer = "simple",
     timeout_sec = 1,
     review_dir = review_dir,
     verbose = FALSE,
@@ -516,9 +581,92 @@ test_that("label_clusters runs actual life_form_layer enrichment with workbook-b
 
   expect_true(isTRUE(state$saw_life_form_prompt))
   expect_equal(res$summary$life_form_layer_status[[1]], "enriched")
+  expect_equal(res$summary$life_form_layer_mode[[1]], "simple")
   expect_true(isTRUE(res$summary$life_form_layer_used[[1]]))
   expect_gte(nrow(res$results$c_1$evidence$summaries$life_form_summary), 1L)
   expect_true(file.exists(res$summary$review_file[[1]]))
+})
+
+test_that("label_clusters runs complex life_form_layer enrichment with species-first overlay blocks", {
+  x <- .build_label_clusters_life_form_test_cocktail()
+  state <- new.env(parent = emptyenv())
+  state$saw_overlay_prompt <- FALSE
+
+  fake_request <- function(url, payload, timeout_sec) {
+    stage <- .label_clusters_request_stage(payload)
+
+    if (identical(stage, "selection")) {
+      user_text <- payload$messages[[2]]$content
+      expect_match(user_text, "Species-first plant life-form overlay:", fixed = TRUE)
+      expect_match(user_text, "Life-form structure metrics:", fixed = TRUE)
+      expect_match(user_text, "Life-form overlay diagnosis:", fixed = TRUE)
+      expect_match(user_text, "Plant life-form context for the cluster:", fixed = TRUE)
+      expect_match(
+        user_text,
+        "Abies alba (phi=1.00): mixed assignment -> Tree; Phanerophyte.",
+        fixed = TRUE
+      )
+      state$saw_overlay_prompt <- TRUE
+    }
+
+    content <- switch(
+      stage,
+      draft = .label_clusters_test_draft_text(),
+      selection = .label_clusters_test_selection_output(
+        display_label = "species-first tree-shrub structural core"
+      ),
+      summary = "A species-first tree-shrub structural core remains visible after the overlay interpretation.",
+      stop("Unexpected stage in complex life-form-layer test request.")
+    )
+
+    list(
+      status_code = 200L,
+      body_text = .label_clusters_test_outer(payload, content),
+      parsed = NULL
+    )
+  }
+
+  review_dir <- file.path(tempdir(), "cocktailr-label-clusters-life-form-complex")
+  unlink(review_dir, recursive = TRUE, force = TRUE)
+
+  res <- label_clusters(
+    x = x,
+    clusters = "c_1",
+    model = "fake-model",
+    variant = "label_primary_v1",
+    life_form_layer = "complex",
+    timeout_sec = 1,
+    review_dir = review_dir,
+    verbose = FALSE,
+    request_fn = fake_request
+  )
+
+  expect_true(isTRUE(state$saw_overlay_prompt))
+  expect_equal(res$summary$life_form_layer_status[[1]], "enriched")
+  expect_equal(res$summary$life_form_layer_mode[[1]], "complex")
+  expect_true(isTRUE(res$summary$life_form_layer_used[[1]]))
+  expect_gte(nrow(res$results$c_1$evidence$summaries$life_form_overlay_species), 1L)
+  expect_gte(nrow(res$results$c_1$evidence$summaries$life_form_overlay_metrics), 1L)
+  expect_gte(nrow(res$results$c_1$evidence$summaries$life_form_overlay_diagnosis), 1L)
+  expect_true(file.exists(res$summary$review_file[[1]]))
+})
+
+test_that("label_clusters rejects legacy logical life_form_layer values", {
+  x <- .build_label_clusters_test_cocktail()
+
+  expect_error(
+    label_clusters(
+      x = x,
+      clusters = "c_1",
+      model = "fake-model",
+      variant = "label_primary_v1",
+      life_form_layer = TRUE,
+      verbose = FALSE,
+      request_fn = function(...) stop("should not be called")
+    ),
+    "selector contract",
+    fixed = TRUE
+  )
 })
 
 test_that("label_clusters preserves experimental category fields from v3 prompts", {

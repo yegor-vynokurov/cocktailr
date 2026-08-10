@@ -1,0 +1,25 @@
+metric,lower,upper,label,phrase
+dominant_life_form_share,0.00,0.35,diffuse,no single life form clearly dominates the matched species core
+dominant_life_form_share,0.35,0.55,tilted,one life form is somewhat more common but does not dominate strongly
+dominant_life_form_share,0.55,0.75,concentrated,one life form dominates a clear majority of the matched species core
+dominant_life_form_share,0.75,1.01,strongly_concentrated,one life form dominates almost all matched species
+life_form_richness,0.00,1.50,narrow,very few distinct life forms are represented in the matched species core
+life_form_richness,1.50,2.50,limited,only a limited set of life forms is represented
+life_form_richness,2.50,4.50,mixed,several distinct life forms coexist in the selected species core
+life_form_richness,4.50,100.00,broad,"many distinct life forms are represented, so the structural profile is broad"
+fixed_assignment_share,0.00,0.25,mostly_nonfixed,most selected species do not resolve to a single life form
+fixed_assignment_share,0.25,0.50,partly_fixed,only part of the selected species core resolves to a single life form
+fixed_assignment_share,0.50,0.75,mostly_fixed,most selected species resolve to a single life form
+fixed_assignment_share,0.75,1.01,strongly_fixed,almost all selected species resolve to a single life form
+mixed_assignment_share,0.00,0.15,low_mixing,only a small part of the selected species core has mixed life-form assignments
+mixed_assignment_share,0.15,0.35,present_mixing,mixed life-form assignments are present but not dominant
+mixed_assignment_share,0.35,0.60,high_mixing,mixed life-form assignments affect a substantial part of the selected species core
+mixed_assignment_share,0.60,1.01,dominant_mixing,mixed life-form assignments dominate the selected species core
+unmatched_species_share,0.00,0.05,near_complete,workbook coverage is nearly complete for the selected species core
+unmatched_species_share,0.05,0.20,partial_gap,a small but visible part of the selected species core has no workbook life-form match
+unmatched_species_share,0.20,0.40,notable_gap,a notable part of the selected species core has no workbook life-form match
+unmatched_species_share,0.40,1.01,high_gap,a large part of the selected species core has no workbook life-form match
+species_to_life_form_compression,0.00,1.25,low_compression,species-level differences are preserved because few species collapse into the same life-form buckets
+species_to_life_form_compression,1.25,2.00,mild_compression,some species-level detail collapses into repeated life-form buckets
+species_to_life_form_compression,2.00,3.00,strong_compression,many species collapse into a smaller number of repeated life-form buckets
+species_to_life_form_compression,3.00,100.00,very_strong_compression,the life-form view compresses many species into very few structural categories

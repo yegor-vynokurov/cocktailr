@@ -879,8 +879,15 @@ Notes:
   task: they may lack enough ecological/background knowledge for stable
   cluster labeling and can fall back to generic labels or abstentions
   more often.
+- For ordinary local labeling on the current synopsis path, start with
+  `semantic_layer = TRUE`, `life_form_layer = "complex"`,
+  `structured_prompt = TRUE`, and `represented_species = 5L`.
+- Treat `represented_species = 5L` as a starting point, not a universal
+  best value: vary it experimentally per dataset and inspect label
+  quality, because the bounded Phase C ladder showed a clear prompt-size
+  tradeoff but not a universal label-stability winner.
 - For category/subcategory experiments on smaller local models, use
-  `semantic_layer = TRUE`, `life_form_layer = FALSE`,
+  `semantic_layer = TRUE`, `life_form_layer = NULL`,
   `short_label_with_llm = FALSE`, `use_subcategorization = TRUE`, and
   `internal_prompt_version = "v8a"`.
 - The two-brainstorm experiment additionally requires
@@ -893,18 +900,26 @@ Notes:
   cannot be built, `label_clusters()` records the outcome in
   `summary$semantic_layer_status` and continues with the plain evidence
   bundle.
-- `life_form_layer = TRUE` optionally enriches the evidence bundle with
-  structural plant life-form context from
-  `data-raw/external/life_forms/Life_form.xlsx` plus the packaged
-  dictionary `inst/extdata/life_form_dictionary_v1.csv`.
-- That life-form step uses the same local Excel-backend strategy and
-  sibling cache layout under `cache/life_form_layer/`. If enrichment
+- `life_form_layer` is now a nullable selector: use `NULL` to disable
+  life-form enrichment, `"simple"` for the delivered coarse life-form
+  summary, and `"complex"` for the species-first overlay path with
+  per-species annotations, structure metrics, and diagnosis cues.
+- The coarse `"simple"` path keeps its sibling cache under
+  `cache/life_form_layer/`; the `"complex"` overlay path uses its own
+  sibling cache under `cache/life_form_overlay_layer/`. If enrichment
   cannot be built, `label_clusters()` records the outcome in
   `summary$life_form_layer_status` and continues with the otherwise
   available evidence bundle.
-- The four supported enrichment modes are: plain (`FALSE/FALSE`),
-  semantic only (`TRUE/FALSE`), life-form only (`FALSE/TRUE`), and
-  combined (`TRUE/TRUE`).
+- Supported ordinary enrichment combinations are: plain
+  (`semantic_layer = FALSE`, `life_form_layer = NULL`), semantic only
+  (`TRUE`, `NULL`), simple life-form only (`FALSE`, `"simple"`),
+  complex life-form only (`FALSE`, `"complex"`), semantic plus simple
+  (`TRUE`, `"simple"`), and semantic plus complex (`TRUE`,
+  `"complex"`).
+- Use semantic plus complex as the current recommended ordinary-labeling
+  profile when you want the compact synopsis path to see both ecological
+  and life-form evidence; use the other combinations mainly for ablation,
+  debugging, or dataset-specific comparisons.
 - The default saved artifact is a compact markdown review card under
   `temp/reports/cluster_reviews/`.
 - Raw LLM logs via `log_dir` are optional and not part of the default

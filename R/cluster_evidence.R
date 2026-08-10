@@ -747,6 +747,9 @@ cluster_evidence <- function(
   } else {
     character(0)
   }
+  life_form_overlay_species_items <- .cluster_evidence_llm_life_form_overlay_species_items(x)
+  life_form_overlay_metric_items <- .cluster_evidence_llm_life_form_overlay_metric_items(x)
+  life_form_overlay_diagnosis_items <- .cluster_evidence_llm_life_form_overlay_diagnosis_items(x)
   life_form_unmatched_items <- as.character(
     x$summaries$life_form_unmatched_species %||% character(0)
   )
@@ -842,10 +845,34 @@ cluster_evidence <- function(
       retain_rank = 65L,
       lines = user_added_lines
     ),
+    .new_cluster_evidence_prompt_bulleted_block(
+      id = "life_form_overlay_species",
+      label = "Species-first life-form overlay",
+      display_order = 86L,
+      retain_rank = 66L,
+      header = "Species-first life-form overlay:",
+      items = life_form_overlay_species_items
+    ),
+    .new_cluster_evidence_prompt_bulleted_block(
+      id = "life_form_overlay_metrics",
+      label = "Life-form structure metrics",
+      display_order = 87L,
+      retain_rank = 67L,
+      header = "Life-form structure metrics:",
+      items = life_form_overlay_metric_items
+    ),
+    .new_cluster_evidence_prompt_bulleted_block(
+      id = "life_form_overlay_diagnosis",
+      label = "Life-form overlay diagnosis",
+      display_order = 88L,
+      retain_rank = 67L,
+      header = "Life-form overlay diagnosis:",
+      items = life_form_overlay_diagnosis_items
+    ),
     .new_cluster_evidence_prompt_inline_block(
       id = "life_form_summary",
       label = "Life-form evidence",
-      display_order = 88L,
+      display_order = 89L,
       retain_rank = 68L,
       header = "Life-form evidence: ",
       items = life_form_items,

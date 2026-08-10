@@ -319,6 +319,9 @@ print.cluster_review_artifact <- function(x, ...) {
     life_form_layer_status = .as_scalar_character(
       evidence$meta$enrichment_layers$life_form_layer$status %||% NA_character_
     ),
+    life_form_layer_mode = .as_scalar_character(
+      evidence$meta$enrichment_layers$life_form_layer$mode %||% NA_character_
+    ),
     life_form_layer_error = .as_scalar_character(
       evidence$meta$enrichment_layers$life_form_layer$error %||% NA_character_
     ),
@@ -1444,21 +1447,27 @@ print.cluster_review_artifact <- function(x, ...) {
   summary <- evidence$summaries$life_form_summary %||% NULL
   unmatched <- evidence$summaries$life_form_unmatched_species %||% character(0)
   layer_meta <- evidence$meta$enrichment_layers$life_form_layer %||% list()
+  mode <- .as_scalar_character(layer_meta$mode %||% NA_character_)
   status <- .as_scalar_character(layer_meta$status %||% NA_character_)
   error <- .as_scalar_character(layer_meta$error %||% NA_character_)
 
   has_summary <- is.data.frame(summary) && nrow(summary)
   has_unmatched <- length(unmatched) > 0L
   has_status <- !is.na(status) && nzchar(status) && status != "off"
+  has_mode <- !is.na(mode) && nzchar(mode)
 
-  if (!has_summary && !has_unmatched && !has_status) {
+  if (!has_summary && !has_unmatched && !has_status && !has_mode) {
     return(character(0))
   }
 
-  lines <- if (has_status) {
-    c(paste0("- Layer status: ", .md_code(status)))
-  } else {
-    character(0)
+  lines <- character(0)
+
+  if (has_mode) {
+    lines <- c(lines, paste0("- Layer mode: ", .md_code(mode)))
+  }
+
+  if (has_status) {
+    lines <- c(lines, paste0("- Layer status: ", .md_code(status)))
   }
 
   if (has_status && !is.na(error) && nzchar(error)) {
@@ -1492,6 +1501,78 @@ print.cluster_review_artifact <- function(x, ...) {
           ": ",
           summary$phrase[[i]],
           species_text
+        )
+      )
+    }
+  }
+
+  overlay_species <- evidence$summaries$life_form_overlay_species %||% NULL
+  if (is.data.frame(overlay_species) && nrow(overlay_species)) {
+    overlay_species <- as.data.frame(overlay_species, stringsAsFactors = FALSE)
+    lines <- c(
+      lines,
+      paste0(
+        "- Species-first overlay rows: ",
+        .md_code(as.character(nrow(overlay_species)))
+      )
+    )
+
+    for (i in seq_len(nrow(overlay_species))) {
+      row <- overlay_species[i, , drop = FALSE]
+      matched_labels <- .as_scalar_character(row$matched_labels[[1L]])
+      if (is.na(matched_labels) || !nzchar(matched_labels)) {
+        matched_labels <- "no workbook life-form match"
+      }
+
+      lines <- c(
+        lines,
+        paste0(
+          "- ",
+          row$species[[1L]],
+          " (phi=",
+          formatC(as.numeric(row$phi[[1L]]), digits = 2L, format = "f"),
+          "): ",
+          row$assignment_state[[1L]],
+          " assignment; ",
+          matched_labels
+        )
+      )
+    }
+  }
+
+  overlay_metrics <- evidence$summaries$life_form_overlay_metrics %||% NULL
+  if (is.data.frame(overlay_metrics) && nrow(overlay_metrics)) {
+    overlay_metrics <- as.data.frame(overlay_metrics, stringsAsFactors = FALSE)
+    for (i in seq_len(nrow(overlay_metrics))) {
+      row <- overlay_metrics[i, , drop = FALSE]
+      metric_line <- paste0(
+        "- Metric ",
+        row$metric_label[[1L]],
+        ": ",
+        row$value_text[[1L]]
+      )
+      if (nzchar(.as_scalar_character(row$bucket_label[[1L]]))) {
+        metric_line <- paste0(metric_line, " (", row$bucket_label[[1L]], ")")
+      }
+      if (nzchar(.as_scalar_character(row$bucket_phrase[[1L]]))) {
+        metric_line <- paste0(metric_line, "; ", row$bucket_phrase[[1L]])
+      }
+      lines <- c(lines, metric_line)
+    }
+  }
+
+  overlay_diagnosis <- evidence$summaries$life_form_overlay_diagnosis %||% NULL
+  if (is.data.frame(overlay_diagnosis) && nrow(overlay_diagnosis)) {
+    overlay_diagnosis <- as.data.frame(overlay_diagnosis, stringsAsFactors = FALSE)
+    for (i in seq_len(nrow(overlay_diagnosis))) {
+      row <- overlay_diagnosis[i, , drop = FALSE]
+      lines <- c(
+        lines,
+        paste0(
+          "- Diagnosis ",
+          row$label[[1L]],
+          ": ",
+          row$phrase[[1L]]
         )
       )
     }

@@ -191,9 +191,9 @@
     ) |>
     dplyr::arrange(.data$reference_name) |>
     dplyr::select(
-      .data$reference_name,
-      .data$taxon_key,
-      .data$binomial_key,
+      "reference_name",
+      "taxon_key",
+      "binomial_key",
       dplyr::all_of(flag_names)
     )
 
@@ -514,9 +514,9 @@ score_cluster_life_forms <- function(
   unmatched_species <- lookup |>
     dplyr::filter(.data$match_method == "unmatched") |>
     dplyr::select(
-      .data$input_species,
-      .data$lookup_name,
-      .data$match_method
+      "input_species",
+      "lookup_name",
+      "match_method"
     )
 
   paths <- .life_form_layer_paths(root)

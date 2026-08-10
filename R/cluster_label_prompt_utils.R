@@ -736,6 +736,18 @@
   paste(pieces, collapse = "\n\n")
 }
 
+.cluster_label_structured_prompt_enabled <- function() {
+  isTRUE(getOption("cocktailr.structured_prompt", FALSE))
+}
+
+.cluster_label_structured_represented_species <- function() {
+  value <- getOption("cocktailr.represented_species", 7L)
+  .normalize_cluster_label_represented_species(
+    value,
+    'getOption("cocktailr.represented_species")'
+  )
+}
+
 .compose_cluster_label_selection_context_text <- function(
     draft_analysis_text = NULL,
     candidates = list(),
@@ -1031,10 +1043,17 @@
   } else {
     as.integer(max(prompt_budget_chars - fixed_overhead_chars, 0L))
   }
-  evidence_render <- .serialize_cluster_evidence_llm_prompt(
-    evidence,
-    max_chars = evidence_budget_chars
-  )
+  evidence_render <- if (.cluster_label_structured_prompt_enabled()) {
+    .serialize_cluster_evidence_synopsis_prompt(
+      evidence,
+      represented_species = .cluster_label_structured_represented_species()
+    )
+  } else {
+    .serialize_cluster_evidence_llm_prompt(
+      evidence,
+      max_chars = evidence_budget_chars
+    )
+  }
   evidence_text <- evidence_render$text
 
   template_values <- c(
@@ -1076,6 +1095,12 @@
     extra_template_values = extra_template_values,
     evidence_text = evidence_text,
     evidence_text_full = evidence_render$full_text,
+    prompt_visible_species_cap = evidence_render$prompt_visible_species_cap %||% NULL,
+    structured_prompt = isTRUE(.cluster_label_structured_prompt_enabled()),
+    represented_species = as.integer(
+      evidence_render$represented_species %||%
+        .cluster_label_structured_represented_species()
+    ),
     evidence_budget = list(
       prompt_budget_chars = prompt_budget_chars,
       fixed_overhead_chars = fixed_overhead_chars,
@@ -1085,6 +1110,7 @@
       evidence_chars_full = evidence_render$chars_full,
       evidence_chars_used = evidence_render$chars_used,
       total_prompt_chars = total_prompt_chars,
+      prompt_visible_species_cap = evidence_render$prompt_visible_species_cap %||% NULL,
       fits_within_budget = if (is.null(prompt_budget_chars)) {
         TRUE
       } else {
@@ -1099,7 +1125,12 @@
       kept_block_ids = evidence_render$kept_block_ids,
       dropped_block_ids = evidence_render$dropped_block_ids,
       truncated_block_ids = evidence_render$truncated_block_ids,
-      blocks = evidence_render$blocks
+      blocks = evidence_render$blocks,
+      structured_prompt = isTRUE(.cluster_label_structured_prompt_enabled()),
+      represented_species = as.integer(
+        evidence_render$represented_species %||%
+          .cluster_label_structured_represented_species()
+      )
     ),
     label_mode_requested = mode_context$requested,
     label_mode_effective = mode_context$effective,
